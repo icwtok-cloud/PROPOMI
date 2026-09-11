@@ -20,7 +20,7 @@ export default function ComparePanel({ items, onClose }: { items: Property[]; on
       <div className="modal wide">
         <div className="modalhead">
           <div>
-            <span className="eyebrow">Decision layer</span>
+            <span className="eyebrow">Capa de decisión</span>
             <h2>Comparador</h2>
             <p className="muted">No buscamos solamente el precio más bajo. Buscamos qué opción tiene más sentido.</p>
           </div>
