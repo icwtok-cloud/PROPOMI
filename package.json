@@ -1,0 +1,1 @@
+{"name":"propomi","private":true,"scripts":{"dev:web":"npm --prefix apps/web run dev","build:web":"npm --prefix apps/web run build","dev:api":"uvicorn apps.api.app.main:app --reload"}}

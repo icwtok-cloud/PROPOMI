@@ -1,0 +1,19 @@
+﻿# Node
+node_modules/
+.next/
+out/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+propomi.db
+
+# Env
+.env
+.env.local
+apps/web/.env.local
+
+# Editor / OS
+.vscode/
+.DS_Store
