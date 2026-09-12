@@ -66,6 +66,8 @@ def validate_email_format(value: str | None) -> str | None:
 
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./propomi.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 ENV = os.getenv("ENV", "development").lower()
 JWT_SECRET = os.getenv("JWT_SECRET")
 if ENV == "production" and not JWT_SECRET:
@@ -624,11 +626,12 @@ def prop_dict(p: Property) -> dict[str, Any]:
 
 
 @app.get("/properties")
-def properties(zone: str | None = None, operation: str | None = None, rooms: int | None = None, max_price: float | None = None, parking: bool | None = None, credit: bool | None = None, agency_id: str | None = None):
+def properties(zone: str | None = None, type: str | None = None, operation: str | None = None, rooms: int | None = None, max_price: float | None = None, parking: bool | None = None, credit: bool | None = None, agency_id: str | None = None):
     with Session(engine) as db:
         ensure_seed(db)
         stmt = select(Property)
         if zone: stmt = stmt.where(Property.zone == zone)
+        if type: stmt = stmt.where(Property.type == type)
         if operation: stmt = stmt.where(Property.operation == operation)
         if rooms: stmt = stmt.where(Property.rooms == rooms)
         if max_price: stmt = stmt.where(Property.price <= max_price)
@@ -840,7 +843,7 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
         offer.contact_revealed = True
         offer.contact_revealed_at = now
         db.commit()
-        return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "method": "pay_per_lead"}
+        return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": "pay_per_lead"}
 
 
 if ENV != "production":

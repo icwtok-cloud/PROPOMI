@@ -4,13 +4,20 @@ import {Check,Handshake,Lock,RefreshCw,Unlock,X} from 'lucide-react';
 import {Offer,Session} from '../lib/types';
 import {counterOffer,mockCompletePayment,offerAction,revealContact} from '../lib/api';
 
+// Igual criterio que del lado comprador: nada de texto/números libres.
+// La contraoferta se arma con presets sobre el monto ofrecido por el
+// comprador, no tipeando un valor.
+const COUNTER_PRESETS=[3,5,8,12];
+const fmt=(n:number)=>Math.round(n).toLocaleString('en-US');
+
 export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;session:Session;onDone:(message:string)=>void}){
-  const [amount,setAmount]=useState(String(Math.round(offer.amount*1.03)));
+  const [pct,setPct]=useState(5);
   const [busy,setBusy]=useState(false);
   const [revealed,setRevealed]=useState<{buyer_name:string;buyer_phone:string;buyer_email?:string}|null>(
     offer.contact_revealed && offer.buyer_name && offer.buyer_phone ? {buyer_name:offer.buyer_name,buyer_phone:offer.buyer_phone,buyer_email:offer.buyer_email} : null
   );
   const [pendingPayment,setPendingPayment]=useState<string|null>(null);
+  const counterAmount=Math.round(offer.amount*(1+pct/100));
 
   async function action(a:'accept'|'reject'|'negotiate'){
     setBusy(true);
@@ -20,7 +27,7 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
 
   async function counter(){
     setBusy(true);
-    try{await counterOffer(offer.id,Number(amount),undefined,session);onDone('Contraoferta enviada.')}
+    try{await counterOffer(offer.id,counterAmount,undefined,session);onDone('Contraoferta enviada.')}
     finally{setBusy(false)}
   }
 
@@ -61,14 +68,18 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
     <button className="secondary" disabled={busy} onClick={()=>action('accept')}><Check size={15}/> Aceptar</button>
     <button className="secondary" disabled={busy} onClick={()=>action('reject')}><X size={15}/> Rechazar</button>
     <button className="secondary" disabled={busy} onClick={()=>action('negotiate')}><Handshake size={15}/> Negociar</button>
+
     <div className="counterline">
-      <input aria-label="Monto de contraoferta" value={amount} onChange={e=>setAmount(e.target.value)} inputMode="numeric"/>
-      <button className="primary" disabled={busy||Number(amount)<=0} onClick={counter}><RefreshCw size={15}/> Contraofertar</button>
+      <div className="quickrow">
+        {COUNTER_PRESETS.map(v=>
+          <button key={v} className={pct===v?'quickbtn active':'quickbtn'} onClick={()=>setPct(v)}>+{v}%</button>)}
+      </div>
+      <button className="primary" disabled={busy} onClick={counter}><RefreshCw size={15}/> Contraofertar USD {fmt(counterAmount)}</button>
     </div>
 
     {revealed ? (
       <div className="reveal-box reveal-box--done">
-        <Unlock size={15}/> <strong>{revealed.buyer_name}</strong> · {revealed.buyer_phone}{revealed.buyer_email ? ` · ${revealed.buyer_email}` : ''}
+        <Unlock size={15}/> <strong>{revealed.buyer_name}</strong> · {revealed.buyer_phone}{revealed.buyer_email?` · ${revealed.buyer_email}`:''}
       </div>
     ) : pendingPayment ? (
       <div className="reveal-box reveal-box--pending">

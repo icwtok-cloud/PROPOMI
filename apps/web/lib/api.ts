@@ -1,4 +1,4 @@
-import {Agency,EventName,Intent,Offer,Opportunity,Property,Role,Session} from './types';
+import {Agency,BuyerProfile,EventName,Intent,Offer,Opportunity,Property,Role,Session} from './types';
 
 import {PROPERTIES} from './data';
 const base=process.env.NEXT_PUBLIC_API_URL;
@@ -10,6 +10,18 @@ const BUYER_KEY='propomi-buyer-session';
 function getBuyerSession():Session|null{try{const raw=localStorage.getItem(BUYER_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 function setBuyerSession(session:Session){localStorage.setItem(BUYER_KEY,JSON.stringify(session))}
 export async function getOrCreateBuyerSession():Promise<Session|null>{if(!base)return getBuyerSession();const existing=getBuyerSession();if(existing)return existing;const r=await req<{token:string;user:Session['user']}>('/auth/guest',{method:'POST'});const session={token:r.token,user:r.user};setBuyerSession(session);return session}
+
+// Perfil de contacto del comprador: se pide UNA sola vez (nunca dentro del
+// wizard de oferta) y se reutiliza en todas las acciones de alta intención
+// (oferta, visita, consulta). Nunca se expone a la agencia hasta el reveal.
+const BUYER_PROFILE_KEY='propomi-buyer-profile';
+export function getBuyerProfile():BuyerProfile|null{try{const raw=localStorage.getItem(BUYER_PROFILE_KEY);return raw?JSON.parse(raw):null}catch{return null}}
+export function setBuyerProfile(profile:BuyerProfile){localStorage.setItem(BUYER_PROFILE_KEY,JSON.stringify(profile))}
+
+const AGENT_KEY='propomi-agent-session';
+export function getAgentSession():Session|null{try{const raw=localStorage.getItem(AGENT_KEY);return raw?JSON.parse(raw):null}catch{return null}}
+export function setAgentSession(session:Session){localStorage.setItem(AGENT_KEY,JSON.stringify(session))}
+export function clearAgentSession(){localStorage.removeItem(AGENT_KEY)}
 export async function saveIntent(property_id:string,intent:string,level:number,data:Intent,session?:Session|null){if(!base)return;const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/intents',{method:'POST',body:JSON.stringify({property_id,intent,level,...data})},s.token)}
 export async function createOffer(payload:{property_id:string;amount:number;payment_form:string;capital?:number;timeframe?:string;comment?:string;buyer_name:string;buyer_phone:string;buyer_email?:string},session?:Session|null){if(!base)return {id:`demo-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/offers',{method:'POST',body:JSON.stringify(payload)},s.token)}
 export async function listOffers(session?:Session|null){if(!base)return [];const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req<Offer[]>('/offers',undefined,s.token)}

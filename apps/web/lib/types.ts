@@ -6,3 +6,4 @@ export type EventName='property_view'|'property_save'|'property_compare'|'proper
 export type Offer={id:string;user_id:string;property_id:string;amount:number;currency:string;payment_form:string;capital?:number;timeframe?:string;comment?:string;status:string;created_at:string;contact_revealed:boolean;buyer_name?:string;buyer_phone?:string;buyer_email?:string};
 export type Agency={id:string;name:string;city:string;verified:boolean;claimed:boolean;phone?:string|null};
 export type Opportunity={id:number;property_id?:string;user_id?:string;event:string;created_at:string;context:Record<string,unknown>};
+export type BuyerProfile={name:string;phone:string;email?:string};
