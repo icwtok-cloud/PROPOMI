@@ -1,4 +1,4 @@
-'use client';import {useMemo,useState} from 'react';import {Property,Intent,Session} from '../lib/types';import {createOffer,saveIntent,trackEvent,getOrCreateBuyerSession} from '../lib/api';import {ShieldCheck,ChevronLeft,ChevronRight,Check} from 'lucide-react';
+'use client';import {useMemo,useState} from 'react';import {Property,Intent,Session} from '../lib/types';import {createOffer,saveIntent,trackEvent,getOrCreateBuyerSession} from '../lib/api';import {ShieldCheck,ChevronLeft,ChevronRight} from 'lucide-react';
 
 const CAPITAL_STEPS=[30000,60000,90000,120000,150000];
 const PAYMENT_FORMS=[['CASH','Contado'],['FINANCING','Financiación'],['MIXED','Mixta']] as const;
@@ -6,10 +6,14 @@ const TIMEFRAMES=['0-30 días','30-60 días','60-90 días','Más de 90 días'];
 const CONDITIONS=['Mudanza rápida','Tengo otra propiedad para entregar/vender','Busco financiación bancaria','Sin condicionantes particulares'];
 const DISCOUNTS=[0,-5,-10,-15];
 
-const STEPS=['Precio','Capital','Pago','Plazo','Condiciones','Tus datos','Confirmar'] as const;
+// Todo el flujo entra en 3 pantallas: 1) los dos números (precio y capital,
+// donde la persona quiere sentir control fino vía slider), 2) preferencias
+// rápidas de un solo toque (pago, plazo, condiciones) y 3) datos de contacto
+// + confirmación en la misma pantalla. Menos pasos = menos fricción/abandono.
+const PANES=['Tu oferta','Preferencias','Contacto'] as const;
 
 export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>void;onDone:(msg:string)=>void}){
-  const [step,setStep]=useState(0);
+  const [pane,setPane]=useState(0);
   const [discount,setDiscount]=useState(-5);
   const [capital,setCapital]=useState(90000);
   const [form,setForm]=useState<'CASH'|'FINANCING'|'MIXED'>('MIXED');
@@ -24,6 +28,7 @@ export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>vo
   const amount=useMemo(()=>Math.round(p.price*(1+discount/100)),[p.price,discount]);
   const capitalLabel=capital>=150000?'USD 150.000+':`USD ${capital.toLocaleString('en-US')}`;
   const comment=useMemo(()=>conditions.length?conditions.join(' · '):'Sin condicionantes particulares',[conditions]);
+  const paymentLabel=PAYMENT_FORMS.find(([v])=>v===form)?.[1];
 
   function toggleCondition(c:string){
     if(c==='Sin condicionantes particulares'){setConditions(['Sin condicionantes particulares']);return}
@@ -33,23 +38,13 @@ export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>vo
     });
   }
 
-  function canAdvance(){
-    if(step===5) return buyerName.trim().length>=2 && buyerPhone.trim().length>=6;
-    return true;
-  }
-
-  function next(){
-    setError(null);
-    if(step===5){
-      if(buyerName.trim().length<2){setError('Ingresá tu nombre y apellido.');return}
-      if(buyerPhone.trim().length<6){setError('Ingresá un teléfono de contacto válido.');return}
-    }
-    setStep(s=>Math.min(s+1,STEPS.length-1));
-  }
-  function back(){setError(null);setStep(s=>Math.max(s-1,0))}
+  function next(){setError(null);setPane(s=>Math.min(s+1,PANES.length-1))}
+  function back(){setError(null);setPane(s=>Math.max(s-1,0))}
 
   async function send(){
     setError(null);
+    if(buyerName.trim().length<2){setError('Ingresá tu nombre y apellido.');return}
+    if(buyerPhone.trim().length<6){setError('Ingresá un teléfono de contacto válido.');return}
     setBusy(true);
     try{
       const session:Session|null=await getOrCreateBuyerSession();
@@ -71,42 +66,34 @@ export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>vo
       <button className="close" onClick={onClose}>×</button>
     </div>
 
-    <div className="wizardsteps">{STEPS.map((s,i)=><div key={s} className={i===step?'wizarddot active':i<step?'wizarddot done':'wizarddot'}>{i<step?<Check size={11}/>:i+1}</div>)}</div>
+    <div className="wizardsteps">{PANES.map((s,i)=><div key={s} className={i===pane?'wizarddot active':i<pane?'wizarddot done':'wizarddot'}/>)}</div>
 
-    {step===0 && <div className="wizardpane">
+    {pane===0 && <div className="wizardpane">
       <h3>¿Cuánto querés ofertar?</h3>
       <div className="pricebig">USD {amount.toLocaleString('en-US')}</div>
       <p className="muted small">Sobre el precio de lista de USD {p.price.toLocaleString('en-US')} ({discount===0?'precio de lista':`${discount}%`})</p>
       <div className="chiprow">{DISCOUNTS.map(d=><button key={d} className={d===discount?'chip active':'chip'} onClick={()=>setDiscount(d)}>{d===0?'Precio de lista':`${d}%`}</button>)}</div>
       <input type="range" min={-20} max={0} step={1} value={discount} onChange={e=>setDiscount(Number(e.target.value))} className="wizardslider"/>
-      <div className="rangelabels"><span>-20%</span><span>Precio de lista</span></div>
-    </div>}
 
-    {step===1 && <div className="wizardpane">
-      <h3>¿Con cuánto capital disponible contás?</h3>
+      <h3 className="pane-subhead">¿Con cuánto capital disponible contás?</h3>
       <div className="pricebig">{capitalLabel}</div>
       <div className="chiprow">{CAPITAL_STEPS.map(c=><button key={c} className={c===capital?'chip active':'chip'} onClick={()=>setCapital(c)}>{c>=150000?'USD 150.000+':`USD ${(c/1000)}.000`}</button>)}</div>
       <input type="range" min={30000} max={150000} step={30000} value={capital} onChange={e=>setCapital(Number(e.target.value))} className="wizardslider"/>
-      <div className="rangelabels"><span>USD 30.000</span><span>USD 150.000+</span></div>
     </div>}
 
-    {step===2 && <div className="wizardpane">
+    {pane===1 && <div className="wizardpane">
       <h3>¿Cómo pensás pagar?</h3>
       <div className="chiprow big">{PAYMENT_FORMS.map(([v,label])=><button key={v} className={v===form?'chip active':'chip'} onClick={()=>setForm(v)}>{label}</button>)}</div>
-    </div>}
 
-    {step===3 && <div className="wizardpane">
-      <h3>¿En qué plazo te gustaría avanzar?</h3>
+      <h3 className="pane-subhead">¿En qué plazo te gustaría avanzar?</h3>
       <div className="chiprow big">{TIMEFRAMES.map(t=><button key={t} className={t===time?'chip active':'chip'} onClick={()=>setTime(t)}>{t}</button>)}</div>
-    </div>}
 
-    {step===4 && <div className="wizardpane">
-      <h3>¿Alguna condición para tu compra?</h3>
-      <p className="muted small">Elegí las que apliquen. Sin campos de texto: así protegemos el contacto de ambas partes.</p>
+      <h3 className="pane-subhead">¿Alguna condición para tu compra?</h3>
       <div className="chiprow big wrap">{CONDITIONS.map(c=><button key={c} className={conditions.includes(c)?'chip active':'chip'} onClick={()=>toggleCondition(c)}>{c}</button>)}</div>
     </div>}
 
-    {step===5 && <div className="wizardpane">
+    {pane===2 && <div className="wizardpane">
+      <div className="offersummary">USD {amount.toLocaleString('en-US')} · {paymentLabel} · {time}</div>
       <h3>Tus datos de contacto</h3>
       <p className="muted small">Quedan ocultos para el agente hasta que decida revelar el contacto.</p>
       <div className="formgrid">
@@ -114,29 +101,17 @@ export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>vo
         <label>Celular<input value={buyerPhone} onChange={e=>setBuyerPhone(e.target.value)} placeholder="Ej: 11 5555 5555" inputMode="tel"/></label>
         <label>Email (opcional)<input value={buyerEmail} onChange={e=>setBuyerEmail(e.target.value)} placeholder="Ej: maria@email.com" inputMode="email"/></label>
       </div>
-    </div>}
-
-    {step===6 && <div className="wizardpane">
-      <h3>Revisá tu oferta</h3>
-      <div className="profile">
-        <div><span>Monto ofertado</span><b>USD {amount.toLocaleString('en-US')}</b></div>
-        <div><span>Capital disponible</span><b>{capitalLabel}</b></div>
-        <div><span>Forma de pago</span><b>{PAYMENT_FORMS.find(([v])=>v===form)?.[1]}</b></div>
-        <div><span>Plazo</span><b>{time}</b></div>
-        <div><span>Condiciones</span><b>{comment}</b></div>
-        <div><span>Contacto</span><b>{buyerName || '—'}</b></div>
-      </div>
       <div className="notice"><ShieldCheck size={15}/> Tus datos se resguardan por seguridad: el agente solo los ve si decide revelar el contacto (pagando o con su suscripción), y nunca los usamos para enviarte spam ni se comparten fuera de este flujo.</div>
     </div>}
 
     {error && <div className="notice notice-error">{error}</div>}
 
     <div className="modalactions">
-      {step===0
+      {pane===0
         ? <button className="secondary" onClick={onClose}>Cancelar</button>
         : <button className="secondary" onClick={back}><ChevronLeft size={16}/> Atrás</button>}
-      {step<STEPS.length-1
-        ? <button className="primary" disabled={!canAdvance()} onClick={next}>Siguiente <ChevronRight size={16}/></button>
+      {pane<PANES.length-1
+        ? <button className="primary" onClick={next}>Siguiente <ChevronRight size={16}/></button>
         : <button className="primary" disabled={busy} onClick={send}>{busy?'Enviando…':'Enviar oferta'}</button>}
     </div>
   </div></div>
