@@ -1,55 +1,143 @@
-'use client';import {useState} from 'react';import {Property,Intent,Session} from '../lib/types';import {createOffer,saveIntent,trackEvent,getOrCreateBuyerSession} from '../lib/api';
+'use client';import {useMemo,useState} from 'react';import {Property,Intent,Session} from '../lib/types';import {createOffer,saveIntent,trackEvent,getOrCreateBuyerSession} from '../lib/api';import {ShieldCheck,ChevronLeft,ChevronRight,Check} from 'lucide-react';
+
+const CAPITAL_STEPS=[30000,60000,90000,120000,150000];
+const PAYMENT_FORMS=[['CASH','Contado'],['FINANCING','Financiación'],['MIXED','Mixta']] as const;
+const TIMEFRAMES=['0-30 días','30-60 días','60-90 días','Más de 90 días'];
+const CONDITIONS=['Mudanza rápida','Tengo otra propiedad para entregar/vender','Busco financiación bancaria','Sin condicionantes particulares'];
+const DISCOUNTS=[0,-5,-10,-15];
+
+const STEPS=['Precio','Capital','Pago','Plazo','Condiciones','Tus datos','Confirmar'] as const;
+
 export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>void;onDone:(msg:string)=>void}){
+  const [step,setStep]=useState(0);
+  const [discount,setDiscount]=useState(-5);
+  const [capital,setCapital]=useState(90000);
+  const [form,setForm]=useState<'CASH'|'FINANCING'|'MIXED'>('MIXED');
+  const [time,setTime]=useState(TIMEFRAMES[1]);
+  const [conditions,setConditions]=useState<string[]>([]);
   const [buyerName,setBuyerName]=useState('');
   const [buyerPhone,setBuyerPhone]=useState('');
-  const [amount,setAmount]=useState(String(Math.round(p.price*.92)));
-  const [capital,setCapital]=useState('80000');
-  const [form,setForm]=useState('MIXED');
-  const [time,setTime]=useState('30-60 días');
-  const [comment,setComment]=useState('');
+  const [buyerEmail,setBuyerEmail]=useState('');
   const [error,setError]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);
 
+  const amount=useMemo(()=>Math.round(p.price*(1+discount/100)),[p.price,discount]);
+  const capitalLabel=capital>=150000?'USD 150.000+':`USD ${capital.toLocaleString('en-US')}`;
+  const comment=useMemo(()=>conditions.length?conditions.join(' · '):'Sin condicionantes particulares',[conditions]);
+
+  function toggleCondition(c:string){
+    if(c==='Sin condicionantes particulares'){setConditions(['Sin condicionantes particulares']);return}
+    setConditions(prev=>{
+      const withoutNone=prev.filter(x=>x!=='Sin condicionantes particulares');
+      return withoutNone.includes(c)?withoutNone.filter(x=>x!==c):[...withoutNone,c];
+    });
+  }
+
+  function canAdvance(){
+    if(step===5) return buyerName.trim().length>=2 && buyerPhone.trim().length>=6;
+    return true;
+  }
+
+  function next(){
+    setError(null);
+    if(step===5){
+      if(buyerName.trim().length<2){setError('Ingresá tu nombre y apellido.');return}
+      if(buyerPhone.trim().length<6){setError('Ingresá un teléfono de contacto válido.');return}
+    }
+    setStep(s=>Math.min(s+1,STEPS.length-1));
+  }
+  function back(){setError(null);setStep(s=>Math.max(s-1,0))}
+
   async function send(){
     setError(null);
-    if(buyerName.trim().length<2){setError('Ingresá tu nombre y apellido.');return}
-    if(buyerPhone.trim().length<6){setError('Ingresá un teléfono de contacto válido.');return}
     setBusy(true);
     try{
       const session:Session|null=await getOrCreateBuyerSession();
-      const data:Intent={offer:true,budget:p.price,capital:Number(capital),financing:form==='FINANCING'?'YES':'NO',timeframe:time,alternatives:true,comment};
-      await createOffer({property_id:p.id,amount:Number(amount),payment_form:form,capital:Number(capital),timeframe:time,comment,buyer_name:buyerName.trim(),buyer_phone:buyerPhone.trim()},session);
+      const data:Intent={offer:true,budget:p.price,capital,financing:form==='FINANCING'?'YES':'NO',timeframe:time,alternatives:conditions.includes('Tengo otra propiedad para entregar/vender'),comment};
+      await createOffer({property_id:p.id,amount,payment_form:form,capital,timeframe:time,comment,buyer_name:buyerName.trim(),buyer_phone:buyerPhone.trim(),buyer_email:buyerEmail.trim()||undefined},session);
       await saveIntent(p.id,'OFFER',8,data,session);
-      await trackEvent('offer_created',p.id,{amount:Number(amount)},session);
-      onDone('Oferta enviada. Tu nombre y teléfono quedan ocultos: el agente solo los ve si decide revelar el contacto.');
+      await trackEvent('offer_created',p.id,{amount},session);
+      onDone('Oferta enviada. Tus datos quedan protegidos: el agente solo los ve si decide revelar el contacto, y nunca se comparten para spam.');
     }catch(e:any){
-      // El backend rechaza con 400 si el comentario contiene un teléfono, email
-      // o usuario de redes — mostramos el motivo tal cual lo explica la API.
       setError(e?.message||'No se pudo enviar la oferta. Revisá los datos e intentá de nuevo.');
     }finally{
       setBusy(false);
     }
   }
 
-  return <div className="modalback"><div className="modal">
+  return <div className="modalback"><div className="modal wizard">
     <div className="modalhead">
       <div><span className="eyebrow">Negociación</span><h2>Proponer un precio</h2><p className="muted">{p.title} · USD {p.price.toLocaleString('en-US')}</p></div>
       <button className="close" onClick={onClose}>×</button>
     </div>
-    <div className="formgrid">
-      <label>Nombre y apellido<input value={buyerName} onChange={e=>setBuyerName(e.target.value)} placeholder="Ej: María Fernández"/></label>
-      <label>Celular<input value={buyerPhone} onChange={e=>setBuyerPhone(e.target.value)} placeholder="Ej: 11 5555 5555" inputMode="tel"/></label>
-      <label>Monto de oferta<input value={amount} onChange={e=>setAmount(e.target.value)}/></label>
-      <label>Capital disponible<input value={capital} onChange={e=>setCapital(e.target.value)}/></label>
-      <label>Forma de pago<select value={form} onChange={e=>setForm(e.target.value)}><option value="MIXED">Mixta</option><option value="CASH">Contado</option><option value="FINANCING">Financiación</option></select></label>
-      <label>Plazo<select value={time} onChange={e=>setTime(e.target.value)}><option>0-30 días</option><option>30-60 días</option><option>60-90 días</option><option>Más de 90 días</option></select></label>
-    </div>
-    <label>Comentario opcional<textarea value={comment} onChange={e=>setComment(e.target.value)} placeholder="Condiciones o contexto (sin teléfonos, emails ni links: se rechaza automáticamente)"/></label>
+
+    <div className="wizardsteps">{STEPS.map((s,i)=><div key={s} className={i===step?'wizarddot active':i<step?'wizarddot done':'wizarddot'}>{i<step?<Check size={11}/>:i+1}</div>)}</div>
+
+    {step===0 && <div className="wizardpane">
+      <h3>¿Cuánto querés ofertar?</h3>
+      <div className="pricebig">USD {amount.toLocaleString('en-US')}</div>
+      <p className="muted small">Sobre el precio de lista de USD {p.price.toLocaleString('en-US')} ({discount===0?'precio de lista':`${discount}%`})</p>
+      <div className="chiprow">{DISCOUNTS.map(d=><button key={d} className={d===discount?'chip active':'chip'} onClick={()=>setDiscount(d)}>{d===0?'Precio de lista':`${d}%`}</button>)}</div>
+      <input type="range" min={-20} max={0} step={1} value={discount} onChange={e=>setDiscount(Number(e.target.value))} className="wizardslider"/>
+      <div className="rangelabels"><span>-20%</span><span>Precio de lista</span></div>
+    </div>}
+
+    {step===1 && <div className="wizardpane">
+      <h3>¿Con cuánto capital disponible contás?</h3>
+      <div className="pricebig">{capitalLabel}</div>
+      <div className="chiprow">{CAPITAL_STEPS.map(c=><button key={c} className={c===capital?'chip active':'chip'} onClick={()=>setCapital(c)}>{c>=150000?'USD 150.000+':`USD ${(c/1000)}.000`}</button>)}</div>
+      <input type="range" min={30000} max={150000} step={30000} value={capital} onChange={e=>setCapital(Number(e.target.value))} className="wizardslider"/>
+      <div className="rangelabels"><span>USD 30.000</span><span>USD 150.000+</span></div>
+    </div>}
+
+    {step===2 && <div className="wizardpane">
+      <h3>¿Cómo pensás pagar?</h3>
+      <div className="chiprow big">{PAYMENT_FORMS.map(([v,label])=><button key={v} className={v===form?'chip active':'chip'} onClick={()=>setForm(v)}>{label}</button>)}</div>
+    </div>}
+
+    {step===3 && <div className="wizardpane">
+      <h3>¿En qué plazo te gustaría avanzar?</h3>
+      <div className="chiprow big">{TIMEFRAMES.map(t=><button key={t} className={t===time?'chip active':'chip'} onClick={()=>setTime(t)}>{t}</button>)}</div>
+    </div>}
+
+    {step===4 && <div className="wizardpane">
+      <h3>¿Alguna condición para tu compra?</h3>
+      <p className="muted small">Elegí las que apliquen. Sin campos de texto: así protegemos el contacto de ambas partes.</p>
+      <div className="chiprow big wrap">{CONDITIONS.map(c=><button key={c} className={conditions.includes(c)?'chip active':'chip'} onClick={()=>toggleCondition(c)}>{c}</button>)}</div>
+    </div>}
+
+    {step===5 && <div className="wizardpane">
+      <h3>Tus datos de contacto</h3>
+      <p className="muted small">Quedan ocultos para el agente hasta que decida revelar el contacto.</p>
+      <div className="formgrid">
+        <label>Nombre y apellido<input value={buyerName} onChange={e=>setBuyerName(e.target.value)} placeholder="Ej: María Fernández"/></label>
+        <label>Celular<input value={buyerPhone} onChange={e=>setBuyerPhone(e.target.value)} placeholder="Ej: 11 5555 5555" inputMode="tel"/></label>
+        <label>Email (opcional)<input value={buyerEmail} onChange={e=>setBuyerEmail(e.target.value)} placeholder="Ej: maria@email.com" inputMode="email"/></label>
+      </div>
+    </div>}
+
+    {step===6 && <div className="wizardpane">
+      <h3>Revisá tu oferta</h3>
+      <div className="profile">
+        <div><span>Monto ofertado</span><b>USD {amount.toLocaleString('en-US')}</b></div>
+        <div><span>Capital disponible</span><b>{capitalLabel}</b></div>
+        <div><span>Forma de pago</span><b>{PAYMENT_FORMS.find(([v])=>v===form)?.[1]}</b></div>
+        <div><span>Plazo</span><b>{time}</b></div>
+        <div><span>Condiciones</span><b>{comment}</b></div>
+        <div><span>Contacto</span><b>{buyerName || '—'}</b></div>
+      </div>
+      <div className="notice"><ShieldCheck size={15}/> Tus datos se resguardan por seguridad: el agente solo los ve si decide revelar el contacto (pagando o con su suscripción), y nunca los usamos para enviarte spam ni se comparten fuera de este flujo.</div>
+    </div>}
+
     {error && <div className="notice notice-error">{error}</div>}
-    <div className="notice">🔒 Tu nombre y teléfono quedan ocultos para el agente hasta que decida revelar el contacto (pagando o con su suscripción). Nunca los compartimos por fuera de este flujo.</div>
+
     <div className="modalactions">
-      <button className="secondary" onClick={onClose}>Cancelar</button>
-      <button className="primary" disabled={busy} onClick={send}>{busy?'Enviando…':'Enviar oferta'}</button>
+      {step===0
+        ? <button className="secondary" onClick={onClose}>Cancelar</button>
+        : <button className="secondary" onClick={back}><ChevronLeft size={16}/> Atrás</button>}
+      {step<STEPS.length-1
+        ? <button className="primary" disabled={!canAdvance()} onClick={next}>Siguiente <ChevronRight size={16}/></button>
+        : <button className="primary" disabled={busy} onClick={send}>{busy?'Enviando…':'Enviar oferta'}</button>}
     </div>
   </div></div>
 }

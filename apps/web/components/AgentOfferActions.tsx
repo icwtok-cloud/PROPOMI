@@ -7,8 +7,8 @@ import {counterOffer,mockCompletePayment,offerAction,revealContact} from '../lib
 export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;session:Session;onDone:(message:string)=>void}){
   const [amount,setAmount]=useState(String(Math.round(offer.amount*1.03)));
   const [busy,setBusy]=useState(false);
-  const [revealed,setRevealed]=useState<{buyer_name:string;buyer_phone:string}|null>(
-    offer.contact_revealed && offer.buyer_name && offer.buyer_phone ? {buyer_name:offer.buyer_name,buyer_phone:offer.buyer_phone} : null
+  const [revealed,setRevealed]=useState<{buyer_name:string;buyer_phone:string;buyer_email?:string}|null>(
+    offer.contact_revealed && offer.buyer_name && offer.buyer_phone ? {buyer_name:offer.buyer_name,buyer_phone:offer.buyer_phone,buyer_email:offer.buyer_email} : null
   );
   const [pendingPayment,setPendingPayment]=useState<string|null>(null);
 
@@ -28,7 +28,7 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
     setBusy(true);
     try{
       const r=await revealContact(offer.id,session);
-      setRevealed({buyer_name:r.buyer_name,buyer_phone:r.buyer_phone});
+      setRevealed({buyer_name:r.buyer_name,buyer_phone:r.buyer_phone,buyer_email:r.buyer_email});
       onDone('Contacto revelado.');
     }catch(e:any){
       if(e?.status===402 && e?.detail?.transaction_id){
@@ -48,7 +48,7 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
     try{
       const r=await mockCompletePayment(pendingPayment,session);
       if(r.buyer_name && r.buyer_phone){
-        setRevealed({buyer_name:r.buyer_name,buyer_phone:r.buyer_phone});
+        setRevealed({buyer_name:r.buyer_name,buyer_phone:r.buyer_phone,buyer_email:r.buyer_email});
         setPendingPayment(null);
         onDone('Pago confirmado (modo desarrollo) — contacto revelado.');
       }
@@ -68,7 +68,7 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
 
     {revealed ? (
       <div className="reveal-box reveal-box--done">
-        <Unlock size={15}/> <strong>{revealed.buyer_name}</strong> · {revealed.buyer_phone}
+        <Unlock size={15}/> <strong>{revealed.buyer_name}</strong> · {revealed.buyer_phone}{revealed.buyer_email ? ` · ${revealed.buyer_email}` : ''}
       </div>
     ) : pendingPayment ? (
       <div className="reveal-box reveal-box--pending">

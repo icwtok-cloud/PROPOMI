@@ -53,6 +53,18 @@ def sanitize_free_text(texto: str | None, campo: str = "comentario") -> str | No
         )
     return texto
 
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
+
+
+def validate_email_format(value: str | None) -> str | None:
+    if value is None or value.strip() == "":
+        return None
+    value = value.strip()
+    if not _EMAIL_RE.match(value):
+        raise HTTPException(status_code=400, detail="Ingresá un email válido.")
+    return value
+
+
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./propomi.db")
 ENV = os.getenv("ENV", "development").lower()
 JWT_SECRET = os.getenv("JWT_SECRET")
@@ -182,6 +194,7 @@ class Offer(Base):
     buyer_name: Mapped[str] = mapped_column(String(120))
     buyer_phone_raw: Mapped[str] = mapped_column(String(40))
     buyer_phone_normalized: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    buyer_email: Mapped[str | None] = mapped_column(String(160), nullable=True)
     contact_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
     contact_revealed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
@@ -284,6 +297,7 @@ def ensure_schema_columns() -> None:
             "buyer_name": "VARCHAR(120) DEFAULT ''",
             "buyer_phone_raw": "VARCHAR(40) DEFAULT ''",
             "buyer_phone_normalized": "VARCHAR(30)",
+            "buyer_email": "VARCHAR(160)",
             "contact_revealed": "BOOLEAN DEFAULT FALSE",
             "contact_revealed_at": "TIMESTAMP",
         },
@@ -430,11 +444,17 @@ class OfferIn(BaseModel):
     # Contacto real — obligatorio: sin esto no hay nada que revelar después.
     buyer_name: str = Field(min_length=2, max_length=120)
     buyer_phone: str = Field(min_length=6, max_length=40)
+    buyer_email: str | None = Field(default=None, max_length=160)
 
     @field_validator("comment")
     @classmethod
     def check_comment_leak(cls, v: str | None) -> str | None:
         return sanitize_free_text(v, campo="comentario")
+
+    @field_validator("buyer_email")
+    @classmethod
+    def check_email_format(cls, v: str | None) -> str | None:
+        return validate_email_format(v)
 
 
 class CounterIn(BaseModel):
@@ -716,6 +736,7 @@ def list_offers(status: str | None = None, session: dict[str, Any] = Depends(cur
             if o.contact_revealed:
                 row["buyer_name"] = o.buyer_name
                 row["buyer_phone"] = o.buyer_phone_raw
+                row["buyer_email"] = o.buyer_email
             result.append(row)
         return result
 
@@ -760,7 +781,7 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
             raise HTTPException(status_code=403, detail="Oferta fuera de tu agencia")
 
         if offer.contact_revealed:
-            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "already_revealed": True}
+            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "already_revealed": True}
 
         agency = db.get(Agency, session["agency_id"])
         if not agency:
@@ -782,7 +803,7 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
             ))
             db.add(Event(name="contact_revealed", property_id=prop.id, user_id=offer.user_id, agency_id=agency.id, context={"method": "subscription_quota"}))
             db.commit()
-            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "method": "subscription_quota"}
+            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": "subscription_quota"}
 
         # Sin cupo de suscripción: pay-per-lead. Buscar si ya hay una
         # transacción completada pendiente de aplicar (idempotencia básica).
@@ -796,7 +817,7 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
             offer.contact_revealed = True
             offer.contact_revealed_at = now
             db.commit()
-            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "method": "pay_per_lead"}
+            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": "pay_per_lead"}
 
         transaction_id = f"rt-{uuid.uuid4().hex[:12]}"
         charged = payment_gateway.charge(agency_id=agency.id, amount_usd=PAY_PER_LEAD_USD, reference=transaction_id)
@@ -839,7 +860,7 @@ if ENV != "production":
                 offer.contact_revealed = True
                 offer.contact_revealed_at = txn.completed_at
             db.commit()
-            return {"status": "COMPLETED", "buyer_name": offer.buyer_name if offer else None, "buyer_phone": offer.buyer_phone_raw if offer else None}
+            return {"status": "COMPLETED", "buyer_name": offer.buyer_name if offer else None, "buyer_phone": offer.buyer_phone_raw if offer else None, "buyer_email": offer.buyer_email if offer else None}
 def offer_action(offer_id: str, action: str, session: dict[str, Any] = Depends(require_agent)):
     if action not in {"accept", "reject", "negotiate"}: raise HTTPException(status_code=400, detail="Acción inválida")
     with Session(engine) as db:
