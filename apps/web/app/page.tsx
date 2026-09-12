@@ -198,7 +198,6 @@ export default function Home(){
     </div>}
     {compared.length>0&&<ComparePanel items={compareItems} onClose={()=>setCompared([])}/>}
 
-    {pendingAction&&<BuyerIdentityModal onClose={()=>setPendingAction(null)} onDone={onIdentityDone}/>}
     {offer&&<OfferModal p={offer} onClose={()=>setOffer(null)} onDone={m=>{setOffer(null);setToast(m);refreshOffers()}}/>}
 
     {detail&&<div className="modalback"><div className="modal wide">
@@ -211,14 +210,16 @@ export default function Home(){
           <div className="specs large">{detail.surface} m² · {detail.rooms} ambientes · {detail.bedrooms} dormitorios · {detail.bathrooms} baño</div>
           <div className="tags"><span>Fuente: {detail.source}</span><span>{detail.freshness}</span></div>
           <div className="detailactions">
-            <button className="secondary" onClick={()=>withIdentity(()=>askQuestion(detail))}><MessageSquare size={15}/> Hacer pregunta</button>
-            <button className="secondary" onClick={()=>withIdentity(()=>askVisit(detail))}><CalendarDays size={15}/> Pedir visita</button>
+            <button className="secondary" onClick={()=>{setDetail(null);withIdentity(()=>askQuestion(detail))}}><MessageSquare size={15}/> Hacer pregunta</button>
+            <button className="secondary" onClick={()=>{setDetail(null);withIdentity(()=>askVisit(detail))}}><CalendarDays size={15}/> Pedir visita</button>
             <button className="primary" onClick={()=>{setDetail(null);withIdentity(()=>setOffer(detail))}}>Proponer precio</button>
           </div>
           <div className="notice"><b>Privacidad:</b> ninguna de estas acciones comparte automáticamente tu teléfono o email.</div>
         </div>
       </div>
     </div></div>}
+
+    {pendingAction&&<BuyerIdentityModal onClose={()=>setPendingAction(null)} onDone={onIdentityDone}/>}
 
     {toast&&<div className="toast"><Check size={17}/>{toast}</div>}
     <footer className="footer"><div className="container">
