@@ -90,7 +90,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V43 |
+| INSTRUCCIONES.md | V44 |
 | apps/api/app/main.py | V17 |
 | apps/web/lib/types.ts | V7 |
 | apps/web/lib/api.ts | V11 |
@@ -201,6 +201,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 041 | Alta manual: hasta 5 URLs de foto (una por línea) → `images[]` para la galería. | AgentDashboard.tsx | etapa-041_multi-foto-alta-manual | Pendiente de push |
 | 042 | Thumbs + contador de fotos en listado «Tus publicaciones» del agente. | AgentDashboard.tsx | etapa-042_thumbs-listado-propiedades-agente | Pendiente de push |
 | 043 | Badge «Multi-agente · N» en PropertyCard + copy de rango de precio. | PropertyCard.tsx | etapa-043_badge-multi-agente-card | Pendiente de push |
+| 044 | Detalle (home + tienda): precio en rango si multi-agente + nota de N publicaciones. | page.tsx, tienda/[slug]/page.tsx | etapa-044_detalle-precio-rango-multi-agente | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -237,8 +238,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 044)
+## Próximo paso lógico (candidato para etapa 045)
 
+- Crawler: reformatear más adelante (pedido del usuario).
 - Lemon: en pausa hasta verificación de store.
 - T5.1: PENDIENTE DE CONFIRMACIÓN.
-- Si querés parar de pulir UX, indicar prioridad de negocio (crawler, admin, etc.).

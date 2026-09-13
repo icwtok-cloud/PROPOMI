@@ -260,7 +260,15 @@ export default function Home(){
             </div>
           );
         })()}
-        <div><div className="bigprice">USD {detail.price.toLocaleString('en-US')}</div><p>{detail.description}</p>
+        <div><div className="bigprice">
+            {detail.priceMin!=null&&detail.priceMax!=null&&detail.priceMin!==detail.priceMax
+              ? <>USD {detail.priceMin.toLocaleString('en-US')} – {detail.priceMax.toLocaleString('en-US')}</>
+              : <>USD {detail.price.toLocaleString('en-US')}</>}
+          </div>
+          {detail.groupMemberCount!=null&&detail.groupMemberCount>1&&(
+            <p className="muted small">Ficha multi-agente · {detail.groupMemberCount} publicaciones</p>
+          )}
+          <p>{detail.description}</p>
           <div className="specs large">{detail.surface} m² · {detail.rooms} ambientes · {detail.bedrooms} dormitorios · {detail.bathrooms} baño</div>
           <div className="tags"><span>Fuente: {detail.source}</span><span>{detail.freshness}</span></div>
           <div className="detailactions">
