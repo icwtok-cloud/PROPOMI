@@ -23,7 +23,7 @@ export function getAgentSession():Session|null{try{const raw=localStorage.getIte
 export function setAgentSession(session:Session){localStorage.setItem(AGENT_KEY,JSON.stringify(session))}
 export function clearAgentSession(){localStorage.removeItem(AGENT_KEY)}
 export async function saveIntent(property_id:string,intent:string,level:number,data:Intent,session?:Session|null){if(!base)return;const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/intents',{method:'POST',body:JSON.stringify({property_id,intent,level,...data})},s.token)}
-export async function createOffer(payload:{property_id:string;amount:number;payment_form:string;capital?:number;timeframe?:string;comment?:string;buyer_name:string;buyer_phone:string;buyer_email?:string},session?:Session|null){if(!base)return {id:`demo-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/offers',{method:'POST',body:JSON.stringify(payload)},s.token)}
+export async function createOffer(payload:{property_id:string;amount:number;payment_form:string;capital?:number;timeframe?:string;comment?:string;buyer_name:string;buyer_phone:string;buyer_email?:string;origin?:string},session?:Session|null){if(!base)return {id:`demo-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/offers',{method:'POST',body:JSON.stringify(payload)},s.token)}
 export async function listOffers(session?:Session|null){if(!base)return [];const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req<Offer[]>('/offers',undefined,s.token)}
 export async function counterOffer(id:string,amount:number,comment?:string,session?:Session|null){if(!base)return {status:'SENT'};return req(`/offers/${id}/counter`,{method:'POST',body:JSON.stringify({amount,comment})},session?.token)}
 export async function offerAction(id:string,action:'accept'|'reject'|'negotiate',session?:Session|null){if(!base)return {status:action};return req(`/offers/${id}/${action}`,{method:'POST'},session?.token)}
@@ -157,34 +157,23 @@ export async function completeOnboarding(
   return req(`/onboarding/${encodeURIComponent(token)}/complete`,{method:'POST',body:JSON.stringify(data)},session.token);
 }
 
-
-export type ColdStartTaskItem={
-  id:string;
-  offerId:string;
-  propertyId:string;
-  agencyId?:string|null;
-  targetPhone:string;
-  amount:number;
-  currency:string;
-  propertyTitle:string;
-  propertyZone:string;
-  onboardingToken:string;
-  onboardingPath:string;
-  status:string;
-  createdAt?:string|null;
-  messageTemplate:string;
-};
-
-export async function getColdStartPending(adminKey:string):Promise<ColdStartTaskItem[]>{
-  if(!base)return [];
-  return adminReq('/admin/cold-start/pending',adminKey);
+const PROP_ORIGIN_KEY='propomi-offer-origin';
+export function captureOfferOriginFromUrl(){
+  if(typeof window==='undefined')return;
+  try{
+    const q=new URLSearchParams(window.location.search);
+    const o=(q.get('o')||q.get('origin')||'').trim().toLowerCase();
+    if(o && /^[a-z0-9][a-z0-9_-]{0,79}$/.test(o)){
+      sessionStorage.setItem(PROP_ORIGIN_KEY,o);
+    }
+  }catch{}
 }
-
-export async function markColdStartSent(id:string,adminKey:string,notes?:string):Promise<{id:string;status:string;sentAt:string}>{
-  if(!base)return {id,status:'SENT',sentAt:new Date().toISOString()};
-  return adminReq(`/admin/cold-start/${id}/mark-sent`,adminKey,{
-    method:'POST',
-    body:notes?JSON.stringify({notes}):undefined,
-  });
+export function getOfferOrigin():string|undefined{
+  if(typeof window==='undefined')return undefined;
+  try{return sessionStorage.getItem(PROP_ORIGIN_KEY)||undefined}catch{return undefined}
 }
-
+export function buildShareUrl(propertyId:string,origin:string):string{
+  const baseUrl=typeof window!=='undefined'?window.location.origin:'https://propomi.lat';
+  const o=origin.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,80);
+  return `${baseUrl}/?property=${encodeURIComponent(propertyId)}&o=${encodeURIComponent(o)}`;
+}

@@ -323,6 +323,10 @@ class Offer(Base):
     buyer_email: Mapped[str | None] = mapped_column(String(160), nullable=True)
     contact_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
     contact_revealed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # T9.3: canal de origen del link compartible (ej. "storefront", "wa-agente",
+    # slug de agencia). Nunca texto libre del comprador — solo un código corto
+    # validado. Permite al agente distinguir de qué canal vino cada oferta.
+    origin: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -476,6 +480,7 @@ def ensure_schema_columns() -> None:
             "buyer_email": "VARCHAR(160)",
             "contact_revealed": "BOOLEAN DEFAULT FALSE",
             "contact_revealed_at": "TIMESTAMP",
+            "origin": "VARCHAR(80)",
         },
     }
     inspector = inspect(engine)
@@ -948,11 +953,23 @@ class OfferIn(BaseModel):
     buyer_name: str = Field(min_length=2, max_length=120)
     buyer_phone: str = Field(min_length=6, max_length=40)
     buyer_email: str | None = Field(default=None, max_length=160)
+    # T9.3: código de canal (solo [a-z0-9_-], máx 80). No es texto libre.
+    origin: str | None = Field(default=None, max_length=80)
 
     @field_validator("comment")
     @classmethod
     def check_comment_leak(cls, v: str | None) -> str | None:
         return sanitize_free_text(v, campo="comentario")
+
+    @field_validator("origin")
+    @classmethod
+    def check_origin(cls, v: str | None) -> str | None:
+        if v is None or v.strip() == "":
+            return None
+        v = v.strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", v):
+            raise HTTPException(status_code=400, detail="Origen inválido.")
+        return v
 
     @field_validator("buyer_email")
     @classmethod
@@ -1548,7 +1565,10 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
             **offer_data,
         )
         db.add(offer)
-        db.add(Event(name="offer_created", property_id=p.id, user_id=session["user_id"], agency_id=p.agency_id, context={"amount": payload.amount}))
+        event_ctx: dict[str, Any] = {"amount": payload.amount}
+        if payload.origin:
+            event_ctx["origin"] = payload.origin
+        db.add(Event(name="offer_created", property_id=p.id, user_id=session["user_id"], agency_id=p.agency_id, context=event_ctx))
 
         # T6.1 cold start: oferta real sobre agencia no reclamada (o sin
         # agency pero con teléfono scrapeado) → tarea de notificación manual.
@@ -1594,7 +1614,7 @@ def list_offers(status: str | None = None, session: dict[str, Any] = Depends(cur
         offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
         result = []
         for o in offers:
-            row = {"id":o.id,"user_id":o.user_id,"property_id":o.property_id,"amount":o.amount,"currency":o.currency,"payment_form":o.payment_form,"capital":o.capital,"timeframe":o.timeframe,"comment":o.comment,"status":o.status,"created_at":o.created_at.isoformat(),"contact_revealed":o.contact_revealed}
+            row = {"id":o.id,"user_id":o.user_id,"property_id":o.property_id,"amount":o.amount,"currency":o.currency,"payment_form":o.payment_form,"capital":o.capital,"timeframe":o.timeframe,"comment":o.comment,"status":o.status,"created_at":o.created_at.isoformat(),"contact_revealed":o.contact_revealed,"origin":getattr(o,"origin",None)}
             # El contacto del comprador SOLO viaja en la respuesta si ya fue
             # revelado formalmente — nunca antes, aunque sea el propio agente
             # dueño de la propiedad quien esté consultando.

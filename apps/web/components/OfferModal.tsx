@@ -1,7 +1,7 @@
 'use client';
 import {useState,useRef,useEffect} from 'react';
 import {Property,Intent,Session} from '../lib/types';
-import {createOffer,saveIntent,trackEvent,getOrCreateBuyerSession,getBuyerProfile,setBuyerProfile,requestOtp,verifyOtpBuyer,setBuyerSession,linkGoogleIdentity} from '../lib/api';
+import {createOffer,saveIntent,trackEvent,getOrCreateBuyerSession,getBuyerProfile,setBuyerProfile,requestOtp,verifyOtpBuyer,setBuyerSession,linkGoogleIdentity,getOfferOrigin} from '../lib/api';
 import {renderGoogleButton} from '../lib/google';
 
 const CAPITAL_BUCKETS=[
@@ -112,7 +112,8 @@ export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>vo
       const payment_form=PAYMENT_FORMS[paymentIdx].value;
       const comment=conditions.length?conditions.join(', '):undefined; // frases predefinidas, nunca texto libre
       const data:Intent={offer:true,budget:p.price,capital,financing:payment_form==='FINANCING'?'YES':'NO',timeframe,alternatives:true,comment};
-      await createOffer({property_id:p.id,amount,payment_form,capital,timeframe,comment,buyer_name:profile.name,buyer_phone:profile.phone,buyer_email:profile.email},session);
+      const origin=getOfferOrigin();
+      await createOffer({property_id:p.id,amount,payment_form,capital,timeframe,comment,buyer_name:profile.name,buyer_phone:profile.phone,buyer_email:profile.email,origin},session);
       await saveIntent(p.id,'OFFER',8,data,session);
       await trackEvent('offer_created',p.id,{amount},session);
       onDone('Oferta enviada. Tu nombre y teléfono quedan ocultos: el agente solo los ve si decide revelar el contacto.');

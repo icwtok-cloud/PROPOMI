@@ -90,14 +90,15 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V27 |
-| apps/api/app/main.py | V11 |
-| apps/web/lib/types.ts | V3 |
-| apps/web/lib/api.ts | V7 |
+| INSTRUCCIONES.md | V28 |
+| apps/api/app/main.py | V12 |
+| apps/web/lib/types.ts | V4 |
+| apps/web/lib/api.ts | V8 |
 | apps/web/app/admin/page.tsx | V2 |
-| apps/api/app/main.py | V11 |
-| apps/web/components/AgentDashboard.tsx | V4 |
+| apps/api/app/main.py | V12 |
+| apps/web/components/AgentDashboard.tsx | V5 |
 | apps/web/components/PropertyCard.tsx | V1 |
+| apps/web/components/OfferModal.tsx | V2 |
 | apps/web/app/globals.css | V1 |
 | apps/web/middleware.ts | V1 (nuevo) |
 | apps/web/app/tienda/[slug]/page.tsx | V1 (nuevo) |
@@ -183,6 +184,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 025 | T6.1 cold start: tabla `cold_start_tasks` + al crear oferta sobre agencia no reclamada (o sin agency con teléfono scrapeado) se genera tarea PENDING con resumen (monto/título/zona) + token onboarding. GET `/admin/cold-start/pending` (único lugar que expone targetPhone). POST mark-sent. Comprador NUNCA viaja en la tarea. | apps/api/app/main.py | etapa-025_cold-start-notification-task | Pendiente de push |
 | 026 | T6.2 onboarding: GET `/onboarding/{token}` (público, sin teléfonos) + POST `/onboarding/{token}/complete` (agente OTP, Instagram requerido, token un solo uso → CLAIMED, expira 14 días). Página `/onboarding/[token]` con OTP + form. | apps/api/app/main.py, apps/web/lib/api.ts, apps/web/app/onboarding/[token]/page.tsx | etapa-026_onboarding-token-claim | Pendiente de push |
 | 027 | Cola cold-start en `/admin`: pestaña Cold start, lista GET `/admin/cold-start/pending`, copiar mensaje/tel, mark-sent. | apps/web/lib/api.ts, apps/web/app/admin/page.tsx | etapa-027_admin-cola-cold-start | Pendiente de push |
+| 028 | T9.3 tracking de origen: `Offer.origin` + `OfferIn.origin` (código `[a-z0-9_-]`). Evento `offer_created` guarda origin. Frontend: `?o=`/`?origin=` → sessionStorage; storefront usa slug; createOffer lo manda; dashboard muestra origen en ofertas. | main.py, api.ts, types.ts, OfferModal, page, tienda, AgentDashboard | etapa-028_tracking-origen-ofertas | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -219,8 +221,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 028)
+## Próximo paso lógico (candidato para etapa 029)
 
-- T5.1 endpoints CRUD de suscripción (tocan dinero — confirmar si conviene ahora o esperar Lemon aprobado).
-- T9.3 links compartibles con tracking de origen.
+- T5.1 endpoints CRUD de suscripción (tocan dinero — confirmar).
+- Botón «Copiar link con tracking» en pestaña Propiedades del dashboard (usa buildShareUrl).
 - Lemon Squeezy: checklist operativo cuando aprueben.

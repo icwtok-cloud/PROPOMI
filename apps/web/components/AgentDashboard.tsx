@@ -218,6 +218,7 @@ export default function AgentDashboard(){
       {offers.length===0 && <div className="empty">Todavía no recibiste ofertas. En cuanto un comprador proponga un precio en alguna de tus publicaciones, va a aparecer acá.</div>}
       {offers.map(o=><div key={o.id} className="offercard">
         <div className="offercardhead"><strong>USD {o.amount.toLocaleString('en-US')}</strong><span className="pill">{o.status}</span></div>
+        {o.origin && <p className="muted small">Origen: {o.origin}</p>}
         <div className="muted small">{o.payment_form} · {o.timeframe||'Plazo sin especificar'} · Capital: {o.capital?`USD ${o.capital.toLocaleString('en-US')}`:'—'}</div>
         {o.comment && <p className="muted small">{o.comment}</p>}
         <AgentOfferActions offer={o} session={session} onDone={(m)=>{notify(m);refreshOffers()}}/>

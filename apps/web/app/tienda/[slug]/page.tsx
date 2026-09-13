@@ -5,7 +5,7 @@ import {ShieldCheck} from 'lucide-react';
 import PropertyCard from '../../../components/PropertyCard';
 import OfferModal from '../../../components/OfferModal';
 import BuyerIdentityModal from '../../../components/BuyerIdentityModal';
-import {getAgencyBySlug,getProperties,trackEvent,getBuyerProfile} from '../../../lib/api';
+import {getAgencyBySlug,getProperties,trackEvent,getBuyerProfile,captureOfferOriginFromUrl} from '../../../lib/api';
 import {Agency,BuyerProfile,Property} from '../../../lib/types';
 
 // Etapa 015 (subdominios por agencia): storefront público mínimo de UNA
@@ -27,6 +27,18 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
   const [detail,setDetail] = useState<Property | null>(null);
   const [toast,setToast] = useState('');
   const [pendingAction,setPendingAction] = useState<null | (() => void)>(null);
+
+  useEffect(() => {
+    // T9.3: el storefront marca origen = slug de la agencia (o ?o= si viene).
+    try {
+      const q = new URLSearchParams(window.location.search);
+      if (!(q.get('o') || q.get('origin'))) {
+        sessionStorage.setItem('propomi-offer-origin', slug.toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,80));
+      } else {
+        captureOfferOriginFromUrl();
+      }
+    } catch {}
+  }, [slug]);
 
   useEffect(() => {
     let cancelled = false;
