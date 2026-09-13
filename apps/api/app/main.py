@@ -2404,6 +2404,42 @@ def admin_reject_agency(agency_id: str, payload: AgencyReviewIn | None = None, _
         return agency_admin_dict(a)
 
 
+
+@app.get("/admin/agencies")
+def admin_list_agencies(
+    status: str | None = None,
+    q: str | None = None,
+    limit: int = 100,
+    _: None = Depends(require_admin),
+):
+    """Listado de soporte: todas las agencias (o filtradas por status / texto).
+    No expone datos de compradores — solo perfil de agencia."""
+    limit = max(1, min(limit, 500))
+    with Session(engine) as db:
+        ensure_seed(db)
+        stmt = select(Agency)
+        if status:
+            st = status.strip().upper()
+            if st not in {"PENDING", "VERIFIED", "REJECTED"}:
+                raise HTTPException(status_code=400, detail="status inválido")
+            stmt = stmt.where(Agency.verification_status == st)
+        rows = list(db.scalars(stmt.order_by(Agency.name)).all())
+        if q:
+            needle = q.strip().lower()
+            def match(a: Agency) -> bool:
+                blob = " ".join([
+                    a.id or "", a.name or "", a.city or "", a.phone or "",
+                    a.instagram or "", a.slug or "", a.website_link or "",
+                ]).lower()
+                return needle in blob
+            rows = [a for a in rows if match(a)]
+        return {
+            "count": len(rows[:limit]),
+            "totalMatched": len(rows),
+            "items": [agency_admin_dict(a) for a in rows[:limit]],
+        }
+
+
 @app.get("/admin/cold-start/pending")
 def admin_cold_start_pending(_: None = Depends(require_admin)):
     """Cola de notificaciones manuales T6.1. Único endpoint que expone el

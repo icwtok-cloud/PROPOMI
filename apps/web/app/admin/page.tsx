@@ -2,7 +2,7 @@ use client';
 import {useEffect,useState} from 'react';
 import {
   getPendingAgencies,approveAgency,rejectAgency,getReviewQueue,resolveReviewItem,
-  getColdStartPending,markColdStartSent,ColdStartTaskItem,
+  getColdStartPending,markColdStartSent,ColdStartTaskItem,listAdminAgencies,
 } from '../../lib/api';
 import {PendingAgency,ReviewQueueItem} from '../../lib/types';
 
@@ -11,10 +11,13 @@ const ADMIN_KEY_STORAGE='propomi-admin-key';
 export default function AdminPage(){
   const [adminKey,setAdminKey]=useState<string>('');
   const [keyInput,setKeyInput]=useState('');
-  const [tab,setTab]=useState<'agencies'|'duplicates'|'coldstart'>('agencies');
+  const [tab,setTab]=useState<'agencies'|'duplicates'|'coldstart'|'directory'>('agencies');
   const [agencies,setAgencies]=useState<PendingAgency[]>([]);
   const [queue,setQueue]=useState<ReviewQueueItem[]>([]);
   const [coldStart,setColdStart]=useState<ColdStartTaskItem[]>([]);
+  const [directory,setDirectory]=useState<PendingAgency[]>([]);
+  const [dirStatus,setDirStatus]=useState<string>('');
+  const [dirQ,setDirQ]=useState('');
   const [counts,setCounts]=useState({agencies:0,duplicates:0,coldstart:0});
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState<string|null>(null);
@@ -28,7 +31,7 @@ export default function AdminPage(){
   function saveKey(){if(!keyInput.trim())return;localStorage.setItem(ADMIN_KEY_STORAGE,keyInput.trim());setAdminKey(keyInput.trim())}
   function clearKey(){
     localStorage.removeItem(ADMIN_KEY_STORAGE);
-    setAdminKey('');setKeyInput('');setAgencies([]);setQueue([]);setColdStart([]);
+    setAdminKey('');setKeyInput('');setAgencies([]);setQueue([]);setColdStart([]);setDirectory([]);
     setCounts({agencies:0,duplicates:0,coldstart:0});
   }
   function setNote(id:string,v:string){setNotes(n=>({...n,[id]:v}))}
@@ -49,7 +52,11 @@ export default function AdminPage(){
     try{
       if(tab==='agencies')setAgencies(await getPendingAgencies(adminKey));
       else if(tab==='duplicates')setQueue((await getReviewQueue(adminKey)).items);
-      else setColdStart(await getColdStartPending(adminKey));
+      else if(tab==='coldstart')setColdStart(await getColdStartPending(adminKey));
+      else {
+        const r=await listAdminAgencies(adminKey,{status:dirStatus||undefined,q:dirQ||undefined,limit:200});
+        setDirectory(r.items);
+      }
     }catch(e:any){
       if(e?.status===401){setError('Clave de administración inválida.');clearKey()}
       else setError(e?.message||'No se pudo cargar.');
@@ -113,6 +120,9 @@ export default function AdminPage(){
       </button>
       <button className={tab==='coldstart'?'tab active':'tab'} style={{color:tab==='coldstart'?'#102033':undefined,borderColor:'#d9e0e8'}} onClick={()=>setTab('coldstart')}>
         Cold start {counts.coldstart>0?`(${counts.coldstart})`:''}
+      </button>
+      <button className={tab==='directory'?'tab active':'tab'} style={{color:tab==='directory'?'#102033':undefined,borderColor:'#d9e0e8'}} onClick={()=>setTab('directory')}>
+        Directorio
       </button>
     </div>
 
@@ -198,6 +208,42 @@ export default function AdminPage(){
             </label>
             <pre style={{marginTop:12,whiteSpace:'pre-wrap',fontSize:12,background:'#f5f7fa',padding:12,borderRadius:8}}>{t.messageTemplate}</pre>
           </div>
+        )}
+      </div>
+    )}
+
+    
+    {!loading && tab==='directory' && (
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'flex-end'}}>
+          <label style={{margin:0}}>Estado
+            <select value={dirStatus} onChange={e=>setDirStatus(e.target.value)}>
+              <option value="">Todos</option>
+              <option value="PENDING">PENDING</option>
+              <option value="VERIFIED">VERIFIED</option>
+              <option value="REJECTED">REJECTED</option>
+            </select>
+          </label>
+          <label style={{margin:0,flex:1,minWidth:180}}>Buscar
+            <input value={dirQ} onChange={e=>setDirQ(e.target.value)} placeholder="nombre, tel, IG, ciudad, slug…" onKeyDown={e=>{if(e.key==='Enter')loadTab()}}/>
+          </label>
+          <button className="primary" onClick={loadTab} disabled={loading}>Buscar</button>
+        </div>
+        {directory.length===0 ? <div className="empty">Sin resultados.</div> : (
+          <div className="tablewrap"><table><thead><tr>
+            <th>Nombre</th><th>Estado</th><th>Ciudad</th><th>Tel</th><th>IG</th><th>Claimed</th>
+          </tr></thead><tbody>
+            {directory.map(a=>(
+              <tr key={a.id}>
+                <td>{a.name}<div className="muted small">{a.id}</div></td>
+                <td>{a.verificationStatus}</td>
+                <td>{a.city}</td>
+                <td>{a.phone||'—'}</td>
+                <td>{a.instagram||'—'}</td>
+                <td>{a.claimed?'sí':'no'}</td>
+              </tr>
+            ))}
+          </tbody></table></div>
         )}
       </div>
     )}

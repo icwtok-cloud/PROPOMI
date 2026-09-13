@@ -284,3 +284,18 @@ export async function markColdStartSent(id:string,adminKey:string,notes?:string)
     body:notes?JSON.stringify({notes}):undefined,
   });
 }
+
+export type AdminAgencyList={count:number;totalMatched:number;items:PendingAgency[]};
+
+export async function listAdminAgencies(
+  adminKey:string,
+  opts?:{status?:string;q?:string;limit?:number},
+):Promise<AdminAgencyList>{
+  if(!base)return {count:0,totalMatched:0,items:[]};
+  const qs=new URLSearchParams();
+  if(opts?.status)qs.set('status',opts.status);
+  if(opts?.q)qs.set('q',opts.q);
+  if(opts?.limit)qs.set('limit',String(opts.limit));
+  const path=`/admin/agencies${qs.toString()?`?${qs}`:''}`;
+  return adminReq(path,adminKey);
+}
