@@ -88,7 +88,7 @@ El flujo real, en orden, es siempre:
    decisiones quedaron tomadas) — esto es lo que le permite a una sesión
    futura, con cero contexto previo, retomar exactamente donde quedó.
 
-## Versión de este archivo: v6
+## Versión de este archivo: v7
 
 ## Regla de comunicación y forma de trabajo (NUEVA — crítica, v6)
 
@@ -108,6 +108,34 @@ lo expliqué antes" o "anotalo para la próxima", eso es una falla de proceso
 de la sesión anterior, no algo a resolver solo en el momento — hay que
 buscar en `CLAUDE.md` si ya estaba y no se leyó, o agregarlo si nunca se
 anotó.
+
+## Decidir el próximo paso sin preguntar (NUEVA — crítica, v7)
+
+El usuario pidió explícitamente que, **al cerrar una parte chica y entregar
+sus archivos para pushear, Claude NO pregunte "¿con qué seguimos?"**. En vez
+de eso, Claude tiene que:
+
+1. Decidir por su cuenta cuál es el siguiente paso lógico del roadmap
+   (sección 10 del plan maestro + estado real en `PROGRESS_LOG.md`),
+   priorizando lo que quedó "pendiente / no se tocó" de la entrada anterior
+   o, si no hay nada pendiente colgado, la siguiente etapa numerada del
+   roadmap que no esté cerrada.
+2. Avanzar directamente con esa siguiente parte chica: generar los
+   archivos, la explicación breve de qué hace, y los comandos de
+   PowerShell — todo en la misma respuesta, sin esperar confirmación del
+   usuario sobre qué construir.
+3. El usuario solo interviene pusheando y avisando si algo rompió — no para
+   elegir el temario. Si el usuario quiere cambiar el rumbo, lo dice él
+   explícitamente en cualquier momento (eso sí se respeta al toque).
+4. Esto **no** anula la regla de trabajar en partes chicas (siguen siendo
+   entregas chicas y pusheables una por una) ni la de avisar si una etapa
+   no se puede partir sin dejar el repo roto a medio camino — eso sigue
+   requiriendo avisar antes de arrancar. Lo que se elimina es la pregunta
+   de "qué querés que haga ahora", no el criterio ni las alertas de riesgo.
+5. Excepción: preguntar SÍ corresponde cuando la decisión toca algo
+   irreversible, de privacidad (sección 5) o de dinero (secciones 6 y 8) —
+   ahí se sigue avisando/confirmando como ya establece la sección "Si algo
+   es ambiguo" más abajo.
 
 ## Trabajar en partes CHICAS
 
