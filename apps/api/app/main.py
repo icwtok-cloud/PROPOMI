@@ -749,6 +749,37 @@ class PropertyIngestIn(BaseModel):
         return v[:MAX_PROPERTY_IMAGES]
 
 
+
+class PropertyCreateIn(BaseModel):
+    """Alta manual de propiedad por un agente verificado (T7.1 / T7.2 backend).
+    No es ingesta de crawler: el agente escribe los datos, agency_id se fuerza
+    a la sesión, y la descripción pasa por sanitize_free_text (rechaza fugas)."""
+    title: str = Field(min_length=1, max_length=200)
+    type: str = "Departamento"
+    operation: str = "Venta"
+    price: float = Field(gt=0)
+    currency: str = "USD"
+    zone: str = Field(min_length=1, max_length=100)
+    city: str = Field(min_length=1, max_length=100)
+    country: str = "Argentina"
+    surface: float = Field(gt=0)
+    rooms: int = Field(ge=0)
+    bedrooms: int = 1
+    bathrooms: int = 1
+    parking: bool = False
+    pool: bool = False
+    balcony: bool = False
+    pet_friendly: bool = False
+    credit: bool = False
+    images: list[str] = Field(default_factory=list)
+    description: str = ""
+
+    @field_validator("images")
+    @classmethod
+    def cap_images(cls, v: list[str]) -> list[str]:
+        return v[:MAX_PROPERTY_IMAGES]
+
+
 def find_possible_duplicate(db: Session, zone: str, price: float, surface: float, exclude_id: str | None = None) -> Property | None:
     """Regla de dedup simple pedida (doc 05, sin IA todavía): misma zona +
     precio dentro de ±5% + superficie dentro de ±10% de alguna propiedad ya
@@ -1338,6 +1369,82 @@ def property_detail(property_id: str):
         p = db.get(Property, property_id)
         if not p: raise HTTPException(status_code=404, detail="Propiedad no encontrada")
         return prop_dict(p)
+
+
+@app.post("/properties", status_code=201)
+def create_property(payload: PropertyCreateIn, session: dict[str, Any] = Depends(require_agent)):
+    """T7.1/T7.2 (backend): alta manual de propiedad por un agente con
+    verification_status=VERIFIED. agency_id se toma de la sesión (nunca del
+    body). Descripción tipada por persona → sanitize_free_text (rechaza
+    fugas). Si matchea dedup con otra agencia, se agrupa con listing_group_id
+    (misma regla de la etapa 019); si matchea con la misma agencia, se marca
+    needs_review."""
+    with Session(engine) as db:
+        agency = db.get(Agency, session["agency_id"])
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        if agency.verification_status != "VERIFIED":
+            raise HTTPException(
+                status_code=403,
+                detail="Tu agencia todavía no está verificada. Solo agencias verificadas pueden cargar propiedades.",
+            )
+        description = sanitize_free_text(payload.description or "", campo="description") or ""
+        images = list(payload.images or [])[:MAX_PROPERTY_IMAGES]
+        cover = images[0] if images else ""
+        now = datetime.now(timezone.utc)
+        duplicate = find_possible_duplicate(db, payload.zone, payload.price, payload.surface)
+        group_id = None
+        needs_review = False
+        possible_duplicate_of = None
+        if duplicate:
+            same_agency = duplicate.agency_id == agency.id
+            if same_agency or not duplicate.agency_id or not agency.id:
+                needs_review = True
+                possible_duplicate_of = duplicate.id
+            else:
+                group_id = duplicate.listing_group_id or f"lg-{uuid.uuid4().hex[:12]}"
+                if not duplicate.listing_group_id:
+                    duplicate.listing_group_id = group_id
+        prop = Property(
+            id=f"p-{uuid.uuid4().hex[:12]}",
+            title=payload.title.strip(),
+            type=payload.type,
+            operation=payload.operation,
+            price=payload.price,
+            currency=payload.currency,
+            zone=payload.zone.strip(),
+            city=payload.city.strip(),
+            country=payload.country,
+            surface=payload.surface,
+            rooms=payload.rooms,
+            bedrooms=payload.bedrooms,
+            bathrooms=payload.bathrooms,
+            parking=payload.parking,
+            pool=payload.pool,
+            balcony=payload.balcony,
+            pet_friendly=payload.pet_friendly,
+            credit=payload.credit,
+            freshness="Publicada por la agencia",
+            origin_published_at="Publicada en Propomi",
+            source=agency.name,
+            source_url="#",
+            image=cover,
+            images=images,
+            description=description,
+            agency_id=agency.id,
+            contact_phone_raw=agency.phone,
+            contact_phone_normalized=agency.phone,
+            detected_at=now,
+            last_seen_at=now,
+            needs_review=needs_review,
+            possible_duplicate_of=possible_duplicate_of,
+            listing_group_id=group_id,
+        )
+        db.add(prop)
+        db.commit()
+        db.refresh(prop)
+        return prop_dict(prop)
+
 
 
 @app.post("/events", status_code=201)

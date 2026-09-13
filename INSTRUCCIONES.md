@@ -90,11 +90,12 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V20 |
+| INSTRUCCIONES.md | V22 |
+| apps/api/app/main.py | V9 |
 | apps/web/lib/types.ts | V3 |
 | apps/web/lib/api.ts | V4 |
 | apps/web/app/admin/page.tsx | V1 |
-| apps/api/app/main.py | V8 |
+| apps/api/app/main.py | V9 |
 | apps/web/components/AgentDashboard.tsx | V2 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/app/globals.css | V1 |
@@ -174,6 +175,8 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 019 | Primer recorte (backend, deliberadamente chico) de "múltiples agentes por propiedad con fusión de rango de precio", ya decidido en el plan maestro (sección 6.1) — no confundir con la revisión manual de duplicados de la etapa 011/012, que sigue intacta para el caso que resolvía (misma agencia cargando datos sucios/repetidos). Columna nueva `Property.listing_group_id` (nullable, indexada), migrada en `ensure_schema_columns`. En `POST /properties/ingest`: cuando `find_possible_duplicate()` (misma función de la 011, sin tocar) encuentra un candidato y ESE candidato es de una agencia DISTINTA a la de la propiedad que se está ingresando, ya no se marca `needs_review` (no es un error a revisar: es la misma propiedad real publicada por otro agente) — en cambio se le asigna un `listing_group_id` compartido (reusa el del candidato si ya tenía uno de una fusión previa, si no crea uno nuevo y se lo backfillea también al candidato). Si el duplicado es de la MISMA agencia (o ninguna de las dos tiene agencia), se mantiene exactamente el comportamiento viejo (`needs_review`+`possible_duplicate_of`, cola de revisión manual de la 012). `prop_dict()` expone `listingGroupId`. Endpoint público nuevo `GET /properties/{id}/group`: si la propiedad no está agrupada devuelve `grouped: false` con ella misma como único miembro (no es un error, es el caso normal); si está agrupada, devuelve todos los miembros del grupo + `priceMin`/`priceMax` calculados sobre esa lista — esto es el "precio en rango" que pide el plan maestro, calculado al leer, sin desnormalizar nada. Deliberadamente NO incluido en esta etapa (queda para una etapa aparte, con confirmación previa porque decide cómo se reparte un lead entre agencias — toca el negocio, no solo el dato): la notificación a todas las agencias del grupo a la vez, "gana el que revela primero" y la cola de prioridad por antigüedad de suscripción con timeout 24h/6h que también describe el plan maestro 6.1. Verificado en sandbox: `pytest` 9/11 (mismos 2 preexistentes de siempre) y prueba manual end-to-end con `TestClient` (ingest agencia A -> ingest agencia B con precio/zona/superficie similar -> segunda queda con `listing_group_id` y sin `needs_review` -> `GET /properties/{id}/group` devuelve ambos miembros con `priceMin=100000`/`priceMax=102000` sobre un caso de prueba real). No hay frontend todavia consumiendo `GET /properties/{id}/group` (panel interno puro, como el resto de la 011/012, hasta que se decida como mostrarlo). | apps/api/app/main.py | etapa-019_listing-group-multi-agente-rango-precio | Pendiente de push |
 
 | 020 | **Auditoría real por fetch (no historial)**, pedida por el usuario después de que la sesión anterior se cortó sin dejar el push confirmado. Se fetcheó directo desde GitHub `main.py`, `types.ts`, `api.ts`, `AgentDashboard.tsx`, `AgentOfferActions.tsx`. Resultado: el registro de "017-019 completas y pusheadas" del cierre de la sexta sesión es **falso** — ninguna de las 3 (Lemon Squeezy real, `checkout_url`/`paymentStatus` en frontend, `listing_group_id`/`GET /properties/{id}/group`) está en el repo real. Backend real hoy: verificación en 2 niveles, slugs, free leads, cupos, cola de admin, dedup, analytics de demanda — pero solo `MockPaymentGateway` (sin Lemon Squeezy), sin `listing_group_id`, sin `GET /properties/{id}/group`, sin `GET /payments/{id}/status`. `api.ts` y `AgentOfferActions.tsx` SÍ están adelantados (ya llaman a `paymentStatus()` y esperan `checkout_url`, que no existen del lado del backend). `AgentDashboard.tsx` estaba atrasado y roto: `updateAgency(id, nameDraft.trim(), session)` pasaba un string donde la función real espera `{name, instagram, website_link}` — se corrigió (mismo fix que ya describía la etapa 004, que tampoco había llegado a pushearse de verdad), sumando badge de verificación, Instagram, sitio web, `freeLeadsRemaining` y link de storefront por slug. Pendiente de confirmar por el usuario: si `globals.css` ya tiene `.pill-ok`/`.pill-error`/`.pill-pending` (se usaron esas clases nuevas para el badge; si no existen, hereda el estilo base de `.pill` sin color). | apps/web/components/AgentDashboard.tsx | etapa-020_auditoria-real-y-fix-agentdashboard | Pendiente de push |
+| 021 | Lemon Squeezy en verificación (usuario). Código 017–020 confirmado en GitHub por fetch real (commits etapa-017…020). No se puede probar e2e de pagos hasta que Lemon apruebe la cuenta. Se anota preferencia: partes muy pequeñas, un archivo por entrega, usuario pushea. Próximo código independiente de Lemon: pendiente de confirmación (multi-agente lead distribution o UI suscripción tocan dinero). Mientras tanto, checklist operativo Lemon (env vars + product/variant + webhook) queda listo para cuando aprueben. | INSTRUCCIONES.md | etapa-021_lemon-en-verificacion-y-estado-real | Pendiente de push |
+| 022 | T7.1/T7.2 backend: `POST /properties` alta manual de propiedad solo para agencias `VERIFIED`. `agency_id` forzado desde la sesión. Descripción con `sanitize_free_text`. Dedup multi-agencia → `listing_group_id`; misma agencia → `needs_review`. Sin frontend todavía (formulario = etapa siguiente). Lemon S sigue en verificación — no se tocó pagos. | apps/api/app/main.py | etapa-022_post-properties-alta-manual-agente | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -210,38 +213,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 021)
+## Próximo paso lógico (candidato para etapa 023)
 
-- **Corregido tras la auditoría de la etapa 020**: el punto de abajo asumía
-  que el código de Lemon Squeezy (017/018) ya estaba en el repo y solo
-  faltaban las variables de entorno. Fetch real confirmó que el código
-  tampoco está — `main.py` solo tiene `MockPaymentGateway`. El próximo paso
-  real es **escribir** `LemonSqueezyPaymentGateway` + el webhook (lo que
-  describe la fila 017) y `GET /payments/{id}/status` (fila 018), no solo
-  configurar variables de entorno — eso viene después, ya con el código
-  andando.
-- Alternativa: la segunda mitad de "múltiples agentes por propiedad" (plan
-  maestro 6.1) — pero esta requiere primero construir de verdad
-  `listing_group_id` + `GET /properties/{id}/group` (fila 019), que
-  tampoco está en el repo.
-- Ambas tocan negocio/reparto de dinero → se confirma con el usuario antes
-  de arrancar cualquiera (regla "si algo es ambiguo, no se asume en
-  silencio").
-- **A confirmar con el usuario antes de arrancar (toca el negocio, no solo
-  el dato)**: la segunda mitad de "múltiples agentes por propiedad" (plan
-  maestro 6.1) que la etapa 019 dejó afuera a propósito — notificar a todas
-  las agencias del grupo a la vez, "gana el que revela primero", con cola
-  de prioridad por antigüedad de suscripción y timeout 24h (con
-  suscriptores) / 6h (sin ninguno). Esto decide cómo se reparte un lead
-  pago entre agencias, así que no se asume en silencio.
-- De la lista de pendientes que quedó registrada en
-  `/areas/proferta-realestate.md` (memoria de Claude, no de este repo),
-  siguen abiertos además de lo anterior, en orden aproximado de impacto:
-  (a) UI de planes de suscripción y facturación real (ahora que ya existe
-  una pasarela real, esto se vuelve más viable — probablemente también vía
-  Lemon Squeezy, a confirmar con el usuario); (b) feature "Busco propiedad"
-  (demanda particular) y su dashboard de métricas premium. Al abrir la
-  próxima sesión, si el usuario no da una dirección explícita, proponer la
-  cola de prioridad de arriba o (a), confirmando antes de arrancar
-  cualquiera de las dos porque ambas tocan dinero/reparto de negocio (regla
-  "Si algo es ambiguo", no se asume en silencio).
+- **Frontend de T7.2**: formulario de alta manual en el dashboard de agencia (`AgentDashboard`) que llame a `POST /properties` (backend ya en 022). Un solo componente/archivo.
+- **Lemon Squeezy**: sigue en verificación — checklist operativo (producto/variant + 4 env vars + webhook) cuando aprueben.
+- No arrancar multi-agente lead distribution ni UI de planes sin confirmación (tocan dinero).
