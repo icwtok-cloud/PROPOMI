@@ -25,6 +25,7 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
   const [saved,setSaved] = useState<string[]>([]);
   const [offer,setOffer] = useState<Property | null>(null);
   const [detail,setDetail] = useState<Property | null>(null);
+  const [photoIdx,setPhotoIdx] = useState(0);
   const [toast,setToast] = useState('');
   const [pendingAction,setPendingAction] = useState<null | (() => void)>(null);
 
@@ -68,7 +69,7 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
     setSaved(next);
     trackEvent('property_save', p.id);
   }
-  function openDetail(p: Property) { setDetail(p); trackEvent('property_view', p.id); }
+  function openDetail(p: Property) { setDetail(p);setPhotoIdx(0); trackEvent('property_view', p.id); }
 
   if (notFound) {
     return <div className="container" style={{padding: '80px 0', textAlign: 'center'}}>
@@ -110,7 +111,27 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
         <div><span className="eyebrow">Detalle · {detail.freshness}</span><h2>{detail.title}</h2><p className="muted">{detail.zone}, {detail.city}</p></div>
         <button className="close" onClick={() => setDetail(null)}>×</button>
       </div>
-      <div className="detail"><img src={detail.image} alt={detail.title}/>
+      <div className="detail">
+        {(() => {
+          const photos=(detail.images&&detail.images.length>0)?detail.images:(detail.image?[detail.image]:[]);
+          const current=photos[Math.min(photoIdx,Math.max(photos.length-1,0))]||detail.image;
+          return (
+            <div>
+              <img src={current} alt={detail.title}/>
+              {photos.length>1 && (
+                <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap',alignItems:'center'}}>
+                  {photos.map((src,i)=>(
+                    <button key={src+i} type="button" onClick={()=>setPhotoIdx(i)}
+                      style={{padding:0,border:i===photoIdx?'2px solid #c2632f':'2px solid transparent',borderRadius:8,overflow:'hidden',width:56,height:56,cursor:'pointer',background:'#f0ebe6'}}>
+                      <img src={src} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+                    </button>
+                  ))}
+                  <span className="muted small">{photoIdx+1}/{photos.length}</span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
         <div><div className="bigprice">USD {detail.price.toLocaleString('en-US')}</div><p>{detail.description}</p>
           <div className="specs large">{detail.surface} m² · {detail.rooms} ambientes · {detail.bedrooms} dormitorios · {detail.bathrooms} baño</div>
           <div className="detailactions">
