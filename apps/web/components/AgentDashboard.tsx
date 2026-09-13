@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Building2,Check,Globe,Inbox,LogOut,RefreshCw,ShieldCheck,ShieldAlert,Sparkles,TrendingUp,User} from 'lucide-react';
+import {Building2,Check,ExternalLink,Inbox,Instagram,LogOut,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
 import {Agency,Offer,Session} from '../lib/types';
 import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
@@ -15,13 +15,14 @@ const EVENT_LABELS:Record<string,string>={
   negotiation_started:'Inició negociación',operation_advanced:'Avanzó la operación',
 };
 
-// Etapa 004: etiquetas legibles para Agency.verificationStatus (PENDING |
-// VERIFIED | REJECTED), tal como lo devuelve el backend en GET /agencies/{id}.
-const VERIFICATION_LABELS:Record<string,string>={
-  VERIFIED:'Verificada',
-  PENDING:'Pendiente de revisión',
-  REJECTED:'Rechazada — revisá los datos y volvé a intentar',
-};
+// Espejo de Agency.verificationStatus ('PENDING'|'VERIFIED'|'REJECTED') —
+// mismo texto/color en el header y en "Mi cuenta" para no tener dos
+// representaciones distintas del mismo estado en la misma pantalla.
+function VerificationBadge({status}:{status?:string}){
+  if(status==='VERIFIED') return <span className="pill pill-ok"><ShieldCheck size={13}/> Verificada</span>;
+  if(status==='REJECTED') return <span className="pill pill-error"><ShieldX size={13}/> Rechazada</span>;
+  return <span className="pill pill-pending"><ShieldQuestion size={13}/> Pendiente de verificación</span>;
+}
 
 function LoginForm({onLoggedIn}:{onLoggedIn:(s:Session)=>void}){
   const [phone,setPhone]=useState('');
@@ -82,9 +83,6 @@ export default function AgentDashboard(){
   const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'cuenta'>('ofertas');
   const [toast,setToast]=useState('');
   const [nameDraft,setNameDraft]=useState('');
-  // Etapa 004: antes no existían estos campos en el formulario — sin ellos
-  // la agencia nunca podía enviar los datos que el panel admin (Etapa 4 del
-  // backend) necesita para aprobarla.
   const [instagramDraft,setInstagramDraft]=useState('');
   const [websiteDraft,setWebsiteDraft]=useState('');
   const [busy,setBusy]=useState(false);
@@ -97,22 +95,34 @@ export default function AgentDashboard(){
       getAgencyOpportunities(session.user.agency_id,session),
       getAnalytics(session),
     ]);
-    setAgency(a);setNameDraft(a.name);setInstagramDraft(a.instagram||'');setWebsiteDraft(a.websiteLink||'');setOffers(o);setOpps(opp as OppData);setAnalytics(an as any);
+    setAgency(a);setNameDraft(a.name);setInstagramDraft(a.instagram||'');setWebsiteDraft(a.websiteLink||'');
+    setOffers(o);setOpps(opp as OppData);setAnalytics(an as any);
   })().catch(()=>{})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
 
   async function refreshOffers(){if(!session)return;setOffers(await listOffers(session))}
 
+  // Fix: antes se llamaba updateAgency(id, nameDraft.trim(), session) —
+  // pasaba un string donde la función espera {name, instagram, website_link}.
+  // Ahora manda los tres campos, coherente con la firma real de api.ts y con
+  // lo que el backend necesita para poder pasar de PENDING a VERIFIED (doc 06.2.8).
   async function saveAccount(){
     if(!session||!agency)return;
     setBusy(true);
     try{
-      const updated=await updateAgency(session.user.agency_id,{name:nameDraft.trim(),instagram:instagramDraft.trim()||undefined,website_link:websiteDraft.trim()||undefined},session);
+      const updated=await updateAgency(session.user.agency_id,{
+        name:nameDraft.trim(),
+        instagram:instagramDraft.trim()||undefined,
+        website_link:websiteDraft.trim()||undefined,
+      },session);
       setAgency(prev=>prev?{...prev,...updated}:updated);
       notify('Datos de la agencia actualizados.');
-    }catch(e:any){notify(e?.message||'No pudimos guardar los cambios.')}
-    finally{setBusy(false)}
+    }catch(e:any){
+      notify(e?.message||'No pudimos guardar los cambios.');
+    }finally{
+      setBusy(false);
+    }
   }
 
   async function relink(){
@@ -122,42 +132,23 @@ export default function AgentDashboard(){
     finally{setBusy(false)}
   }
 
-  // Etapa 016: URL pública del storefront de la agencia (etapa 015). El
-  // backend expone `slug` desde la etapa 014 — si por lo que sea todavía no
-  // llegó (agencia recién creada, backfill de slugs no corrió aún), no se
-  // muestra nada en vez de armar un link roto. `NEXT_PUBLIC_ROOT_DOMAIN` es
-  // el mismo env que usa `middleware.ts`; si no está seteado (ej. corriendo
-  // solo en el deploy de Vercel sin dominio propio todavía) se cae a la ruta
-  // relativa `/tienda/{slug}`, que ya funciona sin DNS wildcard.
-  const rootDomain=process.env.NEXT_PUBLIC_ROOT_DOMAIN;
-  const storefrontUrl=agency?.slug?(rootDomain?`https://${agency.slug}.${rootDomain}`:`/tienda/${agency.slug}`):null;
-  async function copyStorefrontUrl(){
-    if(!storefrontUrl)return;
-    const full=storefrontUrl.startsWith('http')?storefrontUrl:`${window.location.origin}${storefrontUrl}`;
-    try{await navigator.clipboard.writeText(full);notify('Link copiado.')}
-    catch{notify('No pudimos copiar el link — copialo manualmente.')}
-  }
-
   function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers([]);setOpps(null)}
 
   if(!ready) return null;
 
   if(!session) return <div className="container"><div className="agentdash-card"><LoginForm onLoggedIn={setSession}/></div></div>;
 
-  const isVerified=agency?.verificationStatus==='VERIFIED';
+  const storefrontPath=agency?.slug?`/tienda/${agency.slug}`:null;
 
   return <div className="container">
     <div className="agentdashhead">
       <div>
         <span className="eyebrow">Panel de agencia</span>
         <h2>{agency?.name||'Tu agencia'}</h2>
-        <p className="muted small">{agency?.city}</p>
-        {agency?.verificationStatus && (
-          <p className={isVerified?'notice notice-ok small':'notice notice-warn small'}>
-            {isVerified?<ShieldCheck size={14}/>:<ShieldAlert size={14}/>} {VERIFICATION_LABELS[agency.verificationStatus]||agency.verificationStatus}
-            {!isVerified && ' — completá Instagram o tu web en "Mi cuenta" para acelerar la revisión.'}
-          </p>
-        )}
+        <p className="muted small">
+          {agency?.city}
+          {' · '}<VerificationBadge status={agency?.verificationStatus}/>
+        </p>
       </div>
       <button className="secondary" onClick={logout}><LogOut size={15}/> Salir</button>
     </div>
@@ -166,14 +157,9 @@ export default function AgentDashboard(){
       <div><b>{offers.filter(o=>o.status==='SENT').length}</b><span>Ofertas nuevas</span></div>
       <div><b>{opps?.active??0}</b><span>Oportunidades activas</span></div>
       <div><b>{offers.filter(o=>o.contact_revealed).length}</b><span>Contactos revelados</span></div>
+      <div><b>{analytics?.properties??0}</b><span>Publicaciones</span></div>
       <div><b>{agency?.freeLeadsRemaining??0}</b><span>Reveals gratis restantes</span></div>
     </div>
-
-    {!isVerified && (
-      <div className="notice notice-warn">
-        Tu agencia todavía no está verificada: podés ver tus ofertas y oportunidades, pero no vas a poder revelar el contacto de un comprador hasta que la revisión manual apruebe tu cuenta.
-      </div>
-    )}
 
     <div className="agentdashtabs">
       <button className={section==='ofertas'?'tab active':'tab'} onClick={()=>setSection('ofertas')}><Inbox size={15}/> Ofertas</button>
@@ -205,22 +191,32 @@ export default function AgentDashboard(){
     </div>}
 
     {section==='cuenta' && <div className="agentdashpane">
-      {storefrontUrl && <label>Tu página pública<div className="agentloginrow">
-          <input readOnly value={storefrontUrl} onFocus={e=>e.target.select()}/>
-          <button type="button" className="secondary" onClick={copyStorefrontUrl}><Globe size={15}/> Copiar link</button>
-        </div>
-        <span className="muted small">Esta URL muestra solo tus propiedades, con tu nombre y logo de agencia.</span>
-      </label>}
       <label>Nombre de la agencia<input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}/></label>
-      <label>Instagram<input value={instagramDraft} onChange={e=>setInstagramDraft(e.target.value)} placeholder="@tuagencia"/></label>
-      <label>Sitio web<input value={websiteDraft} onChange={e=>setWebsiteDraft(e.target.value)} placeholder="https://tuagencia.com"/></label>
+      <label>Instagram (requerido para verificarte)<input value={instagramDraft} onChange={e=>setInstagramDraft(e.target.value)} placeholder="@tuagencia"/></label>
+      <label>Sitio web (opcional)<input value={websiteDraft} onChange={e=>setWebsiteDraft(e.target.value)} placeholder="https://tuagencia.com"/></label>
+
+      {agency?.verificationStatus!=='VERIFIED' && (
+        <div className="notice">
+          Completá Instagram (y opcionalmente tu sitio) y guardá los cambios: eso es lo que revisa el equipo de Propomi para pasarte a <strong>Verificada</strong> y poder revelar contactos.
+        </div>
+      )}
+
       <div className="modalactions" style={{justifyContent:'flex-start'}}>
         <button className="primary" disabled={busy} onClick={saveAccount}><Check size={15}/> Guardar</button>
         <button className="secondary" disabled={busy} onClick={relink}><Building2 size={15}/> Vincular publicaciones por teléfono</button>
-        <button className="secondary" disabled={busy} onClick={()=>{}}><RefreshCw size={15}/> Actualizar</button>
       </div>
+
+      {agency?.instagram && (
+        <p className="muted small"><Instagram size={13}/> {agency.instagram}</p>
+      )}
+
+      {storefrontPath && (
+        <p className="muted small">
+          Tu vidriera pública: <a href={storefrontPath} target="_blank" rel="noopener noreferrer">{storefrontPath} <ExternalLink size={12}/></a>
+        </p>
+      )}
+
       <p className="muted small">Tu teléfono de acceso es el mismo que usan tus publicaciones para identificarte automáticamente como dueño.</p>
-      {!isVerified && <p className="muted small">Instagram o sitio web son necesarios para que el equipo de Propomi revise y verifique tu agencia (así podés revelar contactos de compradores).</p>}
     </div>}
 
     {toast && <div className="toast"><Check size={17}/>{toast}</div>}

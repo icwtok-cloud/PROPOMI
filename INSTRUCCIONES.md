@@ -173,6 +173,8 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 018 | Cierra el hueco que quedó anotado al final de la 017: ningún frontend mostraba el `checkout_url` del 402 de `/offers/{id}/reveal`. `AgentOfferActions.tsx`: cuando el 402 trae `checkout_url`, se guarda en estado y se muestra un link "Pagar con Lemon Squeezy" (`target="_blank"`) junto al box de "pago pendiente" ya existente. Al volver de pagar, el agente no aterriza de nuevo en este modal (el `redirect_url` del checkout es fijo, a `/mi-cuenta`), así que se agregó un botón "Ya pagué, verificar" que NO reintenta `revealContact` directo (eso generaría un checkout nuevo si Lemon Squeezy todavía no confirmó, duplicando transacciones) — primero consulta el estado real con el endpoint nuevo `GET /payments/{transaction_id}/status` (solo devuelve `PENDING`/`COMPLETED`, nunca el contacto) y, únicamente si ya está `COMPLETED`, recién ahí llama a `revealContact` (que ya sabe devolver el contacto sin volver a cobrar gracias a la idempotencia de la 017). Se mantiene el botón "Confirmar pago (dev)" tal cual (sigue pegándole al mock-complete, que sigue bloqueado en producción). Nuevas funciones en `api.ts`: `paymentStatus()`. Verificado en sandbox: `pytest` 9/11 (mismos 2 preexistentes), `npx tsc --noEmit` sin errores, `npx next build` completo y exitoso (mismas 5 rutas, sin cambios de tamaño relevantes, mismo warning de autoprefixer preexistente). Pendiente real (no de código, ver "Próximo paso lógico"): probar el flujo de punta a punta contra Lemon Squeezy de verdad, cosa que este sandbox no puede hacer sin credenciales ni acceso de red a `api.lemonsqueezy.com`. | apps/api/app/main.py, apps/web/lib/api.ts, apps/web/components/AgentOfferActions.tsx | etapa-018_checkout-url-y-verificacion-pago-frontend | Pendiente de push |
 | 019 | Primer recorte (backend, deliberadamente chico) de "múltiples agentes por propiedad con fusión de rango de precio", ya decidido en el plan maestro (sección 6.1) — no confundir con la revisión manual de duplicados de la etapa 011/012, que sigue intacta para el caso que resolvía (misma agencia cargando datos sucios/repetidos). Columna nueva `Property.listing_group_id` (nullable, indexada), migrada en `ensure_schema_columns`. En `POST /properties/ingest`: cuando `find_possible_duplicate()` (misma función de la 011, sin tocar) encuentra un candidato y ESE candidato es de una agencia DISTINTA a la de la propiedad que se está ingresando, ya no se marca `needs_review` (no es un error a revisar: es la misma propiedad real publicada por otro agente) — en cambio se le asigna un `listing_group_id` compartido (reusa el del candidato si ya tenía uno de una fusión previa, si no crea uno nuevo y se lo backfillea también al candidato). Si el duplicado es de la MISMA agencia (o ninguna de las dos tiene agencia), se mantiene exactamente el comportamiento viejo (`needs_review`+`possible_duplicate_of`, cola de revisión manual de la 012). `prop_dict()` expone `listingGroupId`. Endpoint público nuevo `GET /properties/{id}/group`: si la propiedad no está agrupada devuelve `grouped: false` con ella misma como único miembro (no es un error, es el caso normal); si está agrupada, devuelve todos los miembros del grupo + `priceMin`/`priceMax` calculados sobre esa lista — esto es el "precio en rango" que pide el plan maestro, calculado al leer, sin desnormalizar nada. Deliberadamente NO incluido en esta etapa (queda para una etapa aparte, con confirmación previa porque decide cómo se reparte un lead entre agencias — toca el negocio, no solo el dato): la notificación a todas las agencias del grupo a la vez, "gana el que revela primero" y la cola de prioridad por antigüedad de suscripción con timeout 24h/6h que también describe el plan maestro 6.1. Verificado en sandbox: `pytest` 9/11 (mismos 2 preexistentes de siempre) y prueba manual end-to-end con `TestClient` (ingest agencia A -> ingest agencia B con precio/zona/superficie similar -> segunda queda con `listing_group_id` y sin `needs_review` -> `GET /properties/{id}/group` devuelve ambos miembros con `priceMin=100000`/`priceMax=102000` sobre un caso de prueba real). No hay frontend todavia consumiendo `GET /properties/{id}/group` (panel interno puro, como el resto de la 011/012, hasta que se decida como mostrarlo). | apps/api/app/main.py | etapa-019_listing-group-multi-agente-rango-precio | Pendiente de push |
 
+| 020 | **Auditoría real por fetch (no historial)**, pedida por el usuario después de que la sesión anterior se cortó sin dejar el push confirmado. Se fetcheó directo desde GitHub `main.py`, `types.ts`, `api.ts`, `AgentDashboard.tsx`, `AgentOfferActions.tsx`. Resultado: el registro de "017-019 completas y pusheadas" del cierre de la sexta sesión es **falso** — ninguna de las 3 (Lemon Squeezy real, `checkout_url`/`paymentStatus` en frontend, `listing_group_id`/`GET /properties/{id}/group`) está en el repo real. Backend real hoy: verificación en 2 niveles, slugs, free leads, cupos, cola de admin, dedup, analytics de demanda — pero solo `MockPaymentGateway` (sin Lemon Squeezy), sin `listing_group_id`, sin `GET /properties/{id}/group`, sin `GET /payments/{id}/status`. `api.ts` y `AgentOfferActions.tsx` SÍ están adelantados (ya llaman a `paymentStatus()` y esperan `checkout_url`, que no existen del lado del backend). `AgentDashboard.tsx` estaba atrasado y roto: `updateAgency(id, nameDraft.trim(), session)` pasaba un string donde la función real espera `{name, instagram, website_link}` — se corrigió (mismo fix que ya describía la etapa 004, que tampoco había llegado a pushearse de verdad), sumando badge de verificación, Instagram, sitio web, `freeLeadsRemaining` y link de storefront por slug. Pendiente de confirmar por el usuario: si `globals.css` ya tiene `.pill-ok`/`.pill-error`/`.pill-pending` (se usaron esas clases nuevas para el badge; si no existen, hereda el estilo base de `.pill` sin color). | apps/web/components/AgentDashboard.tsx | etapa-020_auditoria-real-y-fix-agentdashboard | Pendiente de push |
+
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
 16. **Gateway de pago elegido: Lemon Squeezy** (no Mercado Pago/Stripe, que
@@ -189,26 +191,42 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
     wildcard resuelve, hay que pedirle al usuario que abra el link él mismo
     y comparta qué ve, o pegar el resultado de un `curl`/navegador.
 
-## Cierre de sesión (2026-09-13, sexta sesión) — arrancar la próxima sesión directo desde acá
+## Cierre de sesión (2026-09-13, séptima sesión) — arrancar la próxima sesión directo desde acá
 
-Etapas 017-019 completas y pusheadas: Lemon Squeezy real como
-`PaymentGateway` (checkout + webhook), su consumo en `AgentOfferActions.tsx`,
-y el primer recorte de datos de "múltiples agentes por propiedad" (
-`listing_group_id` + `GET /properties/{id}/group` con precio en rango).
-Ver detalle en las filas 017/018/019 de "Historial de etapas".
+**Corrección sobre el cierre anterior**: lo anotado como "017-019 completas y
+pusheadas" NO estaba en GitHub (confirmado por fetch real, etapa 020). A
+partir de ahora, ninguna etapa se marca "pusheada" en este archivo sin que
+el usuario confirme el push en el mismo turno — hasta entonces queda
+"Pendiente de push" aunque el código ya se haya generado y entregado.
 
-## Próximo paso lógico (candidato para etapa 020)
+Estado real confirmado por fetch (no por este archivo) al cierre de esta
+sesión:
+- `AgentDashboard.tsx`: fix entregado (etapa 020), **pendiente de que el
+  usuario confirme el push** antes de darlo por hecho en la próxima sesión.
+- `main.py`, `api.ts`, `AgentOfferActions.tsx`: siguen exactamente como se
+  describe en la etapa 020 — Lemon Squeezy real, `listing_group_id` y
+  `GET /properties/{id}/group` NO existen todavía en el repo real, pese a
+  lo que digan las filas 017/018/019 de la tabla de arriba (se dejan esas
+  filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
+  — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-- **Pendiente 100% del usuario, fuera de este chat**: cargar las 4 variables
-  de entorno de Lemon Squeezy en Render (`LEMON_SQUEEZY_API_KEY`,
-  `LEMON_SQUEEZY_STORE_ID`, `LEMON_SQUEEZY_VARIANT_ID`,
-  `LEMON_SQUEEZY_WEBHOOK_SECRET`) y, del lado de Lemon Squeezy, registrar la
-  URL del webhook (`https://<host-de-render>/payments/webhooks/lemonsqueezy`)
-  con el mismo secreto. Sin esto, la integración de 017/018 queda escrita
-  pero inactiva (sigue cayendo al mock). Una vez cargado, conviene un pago
-  real de prueba end-to-end antes de confiar en el flujo — este sandbox no
-  puede probarlo (sin credenciales ni acceso de red a
-  `api.lemonsqueezy.com`).
+## Próximo paso lógico (candidato para etapa 021)
+
+- **Corregido tras la auditoría de la etapa 020**: el punto de abajo asumía
+  que el código de Lemon Squeezy (017/018) ya estaba en el repo y solo
+  faltaban las variables de entorno. Fetch real confirmó que el código
+  tampoco está — `main.py` solo tiene `MockPaymentGateway`. El próximo paso
+  real es **escribir** `LemonSqueezyPaymentGateway` + el webhook (lo que
+  describe la fila 017) y `GET /payments/{id}/status` (fila 018), no solo
+  configurar variables de entorno — eso viene después, ya con el código
+  andando.
+- Alternativa: la segunda mitad de "múltiples agentes por propiedad" (plan
+  maestro 6.1) — pero esta requiere primero construir de verdad
+  `listing_group_id` + `GET /properties/{id}/group` (fila 019), que
+  tampoco está en el repo.
+- Ambas tocan negocio/reparto de dinero → se confirma con el usuario antes
+  de arrancar cualquiera (regla "si algo es ambiguo, no se asume en
+  silencio").
 - **A confirmar con el usuario antes de arrancar (toca el negocio, no solo
   el dato)**: la segunda mitad de "múltiples agentes por propiedad" (plan
   maestro 6.1) que la etapa 019 dejó afuera a propósito — notificar a todas
