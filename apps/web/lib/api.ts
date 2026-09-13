@@ -3,7 +3,7 @@ import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Offer,Opportunity,Pen
 import {PROPERTIES} from './data';
 const base=process.env.NEXT_PUBLIC_API_URL;
 async function req<T>(path:string,init?:RequestInit,token?:string):Promise<T>{const r=await fetch(`${base}${path}`,{...init,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{}) ,...(init?.headers||{})},cache:'no-store'});if(!r.ok){let message=`Error ${r.status}`;let detail:any=undefined;try{const body=await r.json();detail=body?.detail;message=typeof detail==='string'?detail:(detail?.message||JSON.stringify(detail)||message)}catch{try{message=await r.text()||message}catch{}}const err:any=new Error(message);err.status=r.status;err.detail=detail;throw err}return r.json()}
-export async function getProperties(filters?:Record<string,string|number|boolean>){if(!base)return PROPERTIES;const qs=new URLSearchParams();Object.entries(filters||{}).forEach(([k,v])=>v!==''&&v!==undefined&&qs.set(k,String(v)));return req<Property[]>(`/properties?${qs}`)}
+export async function getProperties(filters?:Record<string,string|number|boolean>){if(!base){const agencyId=filters?.agency_id;return agencyId?PROPERTIES.filter(p=>p.agencyId===agencyId):PROPERTIES}const qs=new URLSearchParams();Object.entries(filters||{}).forEach(([k,v])=>v!==''&&v!==undefined&&qs.set(k,String(v)));return req<Property[]>(`/properties?${qs}`)}
 export async function getProperty(id:string){if(!base)return PROPERTIES.find(p=>p.id===id)!;return req<Property>(`/properties/${id}`)}
 export async function trackEvent(name:EventName,property_id?:string,context?:Record<string,unknown>,session?:Session|null){if(!base)return;return req('/events',{method:'POST',body:JSON.stringify({name,property_id,session_id:'web-session',context})},session?.token)}
 const BUYER_KEY='propomi-buyer-session';
@@ -76,3 +76,20 @@ export async function approveAgency(id:string,adminKey:string,notes?:string):Pro
 export async function rejectAgency(id:string,adminKey:string,notes?:string):Promise<PendingAgency>{if(!base)return {} as PendingAgency;return adminReq(`/admin/agencies/${id}/reject`,adminKey,{method:'POST',body:notes?JSON.stringify({notes}):undefined})}
 export async function getReviewQueue(adminKey:string):Promise<{count:number;items:ReviewQueueItem[]}>{if(!base)return {count:0,items:[]};return adminReq('/properties/review-queue',adminKey)}
 export async function resolveReviewItem(id:string,action:'confirm_duplicate'|'not_duplicate',adminKey:string){if(!base)return {id,status:action,needsReview:false};return adminReq(`/properties/${id}/review`,adminKey,{method:'POST',body:JSON.stringify({action})})}
+
+// Etapa 015 (subdominios por agencia): resuelve el storefront público
+// `/tienda/[slug]` (a su vez destino del rewrite de middleware.ts para
+// `{slug}.propomi.lat`). Sin auth, a diferencia de getAgency() que exige
+// que el agente esté logueado como dueño de esa agencia — este endpoint
+// solo expone lo que ya es público en otras pantallas. En modo demo (sin
+// NEXT_PUBLIC_API_URL) resuelve contra las 3 agencias semilla del backend
+// para poder probar el flujo sin backend real conectado.
+const DEMO_AGENCIES_BY_SLUG:Record<string,Agency>={
+  'inmobiliaria-norte':{id:'a1',name:'Inmobiliaria Norte',city:'Buenos Aires',verified:true,claimed:true,verificationStatus:'VERIFIED',slug:'inmobiliaria-norte'},
+  'red-urbana':{id:'a2',name:'Red Urbana',city:'Buenos Aires',verified:true,claimed:false,verificationStatus:'VERIFIED',slug:'red-urbana'},
+  'urbania':{id:'a3',name:'Urbania',city:'Buenos Aires',verified:false,claimed:false,verificationStatus:'PENDING',slug:'urbania'},
+};
+export async function getAgencyBySlug(slug:string):Promise<Agency>{
+  if(!base){const a=DEMO_AGENCIES_BY_SLUG[slug];if(!a){const err:any=new Error('Agencia no encontrada');err.status=404;throw err}return a}
+  return req<Agency>(`/agencies/by-slug/${slug}`);
+}
