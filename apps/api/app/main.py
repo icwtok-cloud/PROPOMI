@@ -1355,3 +1355,53 @@ def analytics(session: dict[str, Any] = Depends(require_agent)):
         counts: dict[str, int] = {}
         for name in rows: counts[name] = counts.get(name, 0) + 1
         return {"properties": db.query(Property).count(), "events": db.query(Event).count(), "offers": db.query(Offer).count(), "funnel": counts}
+
+
+@app.get("/analytics/demand")
+def demand(limit: int = 500, session: dict[str, Any] = Depends(require_agent)):
+    """Etapa 3 (sección 10 / fase Intelligence): lee los eventos
+    `search_performed` que ya se vienen guardando desde GET /properties y
+    los agrega en rankings simples de demanda (zonas y tipos más buscados).
+    No hay tabla propia de agregación todavía — se calcula al vuelo sobre
+    los últimos `limit` eventos (default 500) para no recorrer toda la
+    tabla en cada llamada a medida que crezca. Es agregado y anónimo: nunca
+    devuelve user_id ni ningún dato de una búsqueda individual, solo
+    conteos totales por valor de filtro.
+    """
+    with Session(engine) as db:
+        events = db.scalars(
+            select(Event)
+            .where(Event.name == "search_performed")
+            .order_by(Event.created_at.desc())
+            .limit(limit)
+        ).all()
+        zone_counts: dict[str, int] = {}
+        type_counts: dict[str, int] = {}
+        operation_counts: dict[str, int] = {}
+        result_counts_sum = 0
+        result_counts_n = 0
+        for e in events:
+            filters = (e.context or {}).get("filters", {})
+            zone = filters.get("zone")
+            if zone:
+                zone_counts[zone] = zone_counts.get(zone, 0) + 1
+            prop_type = filters.get("type")
+            if prop_type:
+                type_counts[prop_type] = type_counts.get(prop_type, 0) + 1
+            operation = filters.get("operation")
+            if operation:
+                operation_counts[operation] = operation_counts.get(operation, 0) + 1
+            result_count = (e.context or {}).get("result_count")
+            if isinstance(result_count, (int, float)):
+                result_counts_sum += result_count
+                result_counts_n += 1
+        top_zones = sorted(zone_counts.items(), key=lambda kv: kv[1], reverse=True)
+        top_types = sorted(type_counts.items(), key=lambda kv: kv[1], reverse=True)
+        top_operations = sorted(operation_counts.items(), key=lambda kv: kv[1], reverse=True)
+        return {
+            "sampleSize": len(events),
+            "topZones": [{"zone": z, "count": c} for z, c in top_zones],
+            "topTypes": [{"type": t, "count": c} for t, c in top_types],
+            "topOperations": [{"operation": o, "count": c} for o, c in top_operations],
+            "avgResultCount": (result_counts_sum / result_counts_n) if result_counts_n else None,
+        }

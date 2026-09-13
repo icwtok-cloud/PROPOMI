@@ -1,3 +1,42 @@
+## 2026-09-13 — Etapa 3 v2: endpoint `GET /analytics/demand`
+
+- **Objetivo:** cerrar el ciclo de la v1 de esta etapa — ahora hay una forma
+  de LEER lo que `search_performed` viene guardando desde `GET /properties`.
+- **Archivo pusheado:** `apps/api/app/main.py` → versión **v5**.
+- **Nuevo endpoint `GET /analytics/demand`** (requiere sesión de agente,
+  mismo guard `require_agent` que `/analytics/summary`):
+  - Toma los últimos `limit` eventos `search_performed` (query param,
+    default 500, para no recorrer toda la tabla a medida que crezca — no
+    hay todavía una tabla de agregación propia, se calcula al vuelo).
+  - Devuelve `topZones`, `topTypes`, `topOperations` (rankings por cantidad
+    de búsquedas que usaron ese filtro) y `avgResultCount` (promedio de
+    resultados devueltos por búsqueda, útil para detectar filtros
+    demasiado restrictivos con poca oferta real).
+  - Es agregado y anónimo por diseño: nunca devuelve `user_id` ni datos de
+    una búsqueda puntual, solo conteos totales.
+- **No se tocó:** `GET /properties`, `ALLOWED_EVENTS`, ni ningún otro
+  endpoint — cambio acotado a agregar este endpoint nuevo al final del
+  archivo, después de `/analytics/summary`.
+- **Validado en este entorno (Claude):** `python3 -m py_compile` sin
+  errores. Mismo alcance de verificación que la v1 (sin `pytest` local
+  disponible) — primera corrida real en Render.
+- **Pendiente / no se tocó en esta etapa:**
+  - No hay UI en el frontend todavía que consuma este endpoint (ej. un
+    panel "Demanda" dentro de `/agencia`) — es un pedacito de backend
+    puro, a propósito, para no mezclar back+front en la misma entrega.
+  - Si en el futuro el volumen de `search_performed` crece mucho, este
+    endpoint recorre solo los últimos `limit` — no hay paginación ni
+    agregación pre-calculada (tabla de rollup) todavía; no hace falta
+    hasta que el volumen real lo justifique.
+- **Próxima etapa a encarar:** a definir con el usuario — candidatos:
+  (a) UI de "Demanda" en el dashboard de agencia consumiendo este
+  endpoint, o (b) seguir avanzando otro punto de la fase Intelligence /
+  otra fase del roadmap.
+- Archivos tocados: `apps/api/app/main.py` (v5), `PROGRESS_LOG.md` (v9 —
+  este mismo archivo).
+
+---
+
 ## 2026-09-13 — Etapa 3 v1: evento `search_performed`
 
 - **Objetivo (roadmap sección 10, fase Intelligence):** loguear cada
