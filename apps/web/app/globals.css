@@ -38,6 +38,12 @@
 .agentloginrow{display:flex;gap:8px;margin-top:14px}
 .agentloginrow input{flex:1;border:1px solid #d9e1e9;border-radius:9px;padding:11px;background:#fff;color:#102033}
 .notice-error{margin-top:10px;padding:11px 13px;background:#FBEDE7;color:#9E3F28;border-radius:9px;font-size:12.5px}
+/* Etapa 006: notice-ok / notice-warn faltaban desde la etapa 004
+   (AgentDashboard.tsx las usa para el badge de verificación de agencia).
+   Se reutiliza la misma paleta que reveal-box--done / reveal-box--pending
+   para mantener consistencia visual en todo el panel de agencia. */
+.notice-ok{background:#eef8f1;color:#1f6b3b;display:flex;align-items:center;gap:6px}
+.notice-warn{background:#fff7e8;color:#8a6116;display:flex;align-items:center;gap:6px}
 .small{font-size:12.5px}
 .agentdashhead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:36px 0 22px}
 .agentdashhead h2{margin:2px 0}
