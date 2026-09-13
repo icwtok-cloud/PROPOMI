@@ -77,6 +77,8 @@ JWT_ALGORITHM = "HS256"
 OTP_TTL_SECONDS = 5 * 60
 OTP_RATE_WINDOW = 10 * 60
 OTP_MAX_REQUESTS = 3
+MAX_PROPERTY_IMAGES = 5  # doc 06.1: hasta 5 fotos por propiedad, decisión ya tomada
+FREE_LEADS_ON_VERIFICATION = 10  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
@@ -111,10 +113,23 @@ class Property(Base):
     balcony: Mapped[bool] = mapped_column(Boolean, default=False)
     pet_friendly: Mapped[bool] = mapped_column(Boolean, default=False)
     credit: Mapped[bool] = mapped_column(Boolean, default=False)
+    # DEPRECATED: texto libre que mezclaba "hace cuánto la detectamos" con
+    # "lo que el portal de origen declara". Se mantiene solo por compatibilidad
+    # de datos viejos — usar detected_at (ya existía) + origin_published_at
+    # (nuevo, abajo) para todo desarrollo nuevo. Ver doc 04.2 / 12.
     freshness: Mapped[str] = mapped_column(String(100))
+    # Antigüedad declarada por el portal de origen tal cual viene (ej. "publicado
+    # hace 3 días") — se preserva sin reinterpretar, separada de detected_at
+    # (que es cuándo el crawler/seed de Propomi la vio por primera vez).
+    origin_published_at: Mapped[str | None] = mapped_column(String(100), nullable=True)
     source: Mapped[str] = mapped_column(String(160))
     source_url: Mapped[str] = mapped_column(String(500), default="#")
+    # DEPRECATED: una sola imagen. Se mantiene por compatibilidad hacia atrás
+    # (frontends viejos que todavía lean `image`) — el dato real y de uso
+    # nuevo es `images` (lista JSON de hasta 5 URLs). ensure_schema_columns
+    # migra automáticamente image -> images=[image] en filas viejas.
     image: Mapped[str] = mapped_column(String(1000))
+    images: Mapped[list[str]] = mapped_column(JSON, default=list)
     description: Mapped[str] = mapped_column(Text)
     agency_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     contact_phone_raw: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -140,9 +155,23 @@ class Agency(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     name: Mapped[str] = mapped_column(String(180))
     city: Mapped[str] = mapped_column(String(100))
+    # DEPRECATED en favor de verification_status — se mantiene por compatibilidad
+    # con datos/código viejo. Ver verification_status para el estado real.
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     claimed: Mapped[bool] = mapped_column(Boolean, default=False)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True, unique=True)
+    # Verificación en dos niveles (doc 06/10, etapa 1). Una agencia recién
+    # "claimeada" empieza en PENDING: ya tiene dashboard básico (ve que tiene
+    # leads esperando, sin detalle) pero no puede revelar contacto ni pagar
+    # hasta pasar a VERIFIED por revisión manual (panel interno, etapa 4).
+    verification_status: Mapped[str] = mapped_column(String(20), default="PENDING")  # PENDING | VERIFIED | REJECTED
+    instagram: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    website_link: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # Prioridad de cola de verificación: quien ya se suscribió antes de
+    # verificarse pasa primero (SLA 24hs para ese caso). Mayor = más prioridad.
+    verification_priority: Mapped[int] = mapped_column(Integer, default=0)
+    verification_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    verification_notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # Suscripción — null significa pay-per-lead puro (sin plan activo).
     # plan_lead_quota: None = ilimitado (plan USD 99); un número = tope mensual.
     subscription_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -150,6 +179,10 @@ class Agency(Base):
     leads_used_current_period: Mapped[int] = mapped_column(Integer, default=0)
     subscription_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Los primeros 10 reveals son gratis al verificarse (doc 06.2.3 / 08).
+    # Es un contador propio, separado del cupo de suscripción, para que no
+    # se pisen ni se dupliquen entre sí (reveal_contact consume de acá primero).
+    free_leads_remaining: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class AgencyPhone(Base):
@@ -293,14 +326,27 @@ def ensure_schema_columns() -> None:
         "properties": {
             "contact_phone_raw": "VARCHAR(80)",
             "contact_phone_normalized": "VARCHAR(30)",
+            # Etapa 1: imágenes múltiples + fecha de origen separada de
+            # freshness. SQLite/Postgres guardan `images` como TEXT;
+            # SQLAlchemy JSON serializa/deserializa igual para ambos motores
+            # sin necesitar un tipo nativo json en la columna.
+            "images": "TEXT DEFAULT '[]'",
+            "origin_published_at": "VARCHAR(100)",
         },
         "agencies": {
             "phone": "VARCHAR(30)",
+            "verification_status": "VARCHAR(20) DEFAULT 'PENDING'",
+            "instagram": "VARCHAR(160)",
+            "website_link": "VARCHAR(300)",
+            "verification_priority": "INTEGER DEFAULT 0",
+            "verification_reviewed_at": "TIMESTAMP",
+            "verification_notes": "VARCHAR(300)",
             "subscription_tier": "VARCHAR(20)",
             "plan_lead_quota": "INTEGER",
             "leads_used_current_period": "INTEGER DEFAULT 0",
             "subscription_started_at": "TIMESTAMP",
             "current_period_start": "TIMESTAMP",
+            "free_leads_remaining": "INTEGER DEFAULT 0",
         },
         "contact_requests": {
             "requester_role": "VARCHAR(20) DEFAULT 'COMPRADOR'",
@@ -330,9 +376,26 @@ def ensure_schema_columns() -> None:
 
 
 
-ensure_schema_columns()
+def migrate_legacy_property_images() -> None:
+    """Decisión explícita (doc 04.2 / 06): migrar el dato viejo en vez de
+    arrancar de cero. Toda fila que todavía tenga `images` vacío pero sí
+    tenga el `image` (string) viejo, pasa a `images=[image]`. Es idempotente:
+    una vez migrada, `images` deja de estar vacío y no se vuelve a tocar."""
+    with Session(engine) as db:
+        rows = db.scalars(select(Property)).all()
+        changed = False
+        for p in rows:
+            if not p.images and p.image:
+                p.images = [p.image][:MAX_PROPERTY_IMAGES]
+                changed = True
+        if changed:
+            db.commit()
 
-app = FastAPI(title="Propomi API", version="1.1.0")
+
+ensure_schema_columns()
+migrate_legacy_property_images()
+
+app = FastAPI(title="Propomi API", version="1.2.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -428,10 +491,10 @@ def require_agent(session: dict[str, Any] = Depends(current_session)) -> dict[st
 
 
 DEMO = [
-    {"id":"p1","title":"Departamento luminoso 2 ambientes","type":"Departamento","operation":"Venta","price":118000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":45,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":False,"pool":False,"balcony":True,"pet_friendly":True,"credit":False,"freshness":"Detectada hace 2 días","source":"Inmobiliaria Norte","source_url":"#","image":"https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=85","description":"Unidad renovada, muy luminosa y con balcón.","agency_id":"a1","contact_phone_raw":"11 5555-0101"},
-    {"id":"p2","title":"Departamento moderno con balcón","type":"Departamento","operation":"Venta","price":120000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":43,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":True,"pool":False,"balcony":True,"pet_friendly":False,"credit":True,"freshness":"Actualizada hace 4 días","source":"Red Urbana","source_url":"#","image":"https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=85","description":"Edificio moderno con cochera y amenities.","agency_id":"a2","contact_phone_raw":"+54 9 11 5555-0202"},
-    {"id":"p3","title":"2 ambientes amplio a estrenar","type":"Departamento","operation":"Venta","price":125000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":48,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":False,"pool":True,"balcony":True,"pet_friendly":True,"credit":False,"freshness":"Detectada hace 6 días","source":"Habitar","source_url":"#","image":"https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85","description":"A estrenar, excelente distribución.","agency_id":"a1","contact_phone_raw":"11 5555-0101"},
-    {"id":"p4","title":"Departamento 3 ambientes con patio","type":"Departamento","operation":"Venta","price":138000,"currency":"USD","zone":"Villa Crespo","city":"Buenos Aires","surface":62,"rooms":3,"bedrooms":2,"bathrooms":1,"parking":False,"pool":False,"balcony":False,"pet_friendly":True,"credit":True,"freshness":"Actualizada hace 1 día","source":"Urbania","source_url":"#","image":"https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1000&q=85","description":"Patio y ambientes amplios para familia.","agency_id":"a3","contact_phone_raw":"11 5555-0303"},
+    {"id":"p1","title":"Departamento luminoso 2 ambientes","type":"Departamento","operation":"Venta","price":118000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":45,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":False,"pool":False,"balcony":True,"pet_friendly":True,"credit":False,"freshness":"Detectada hace 2 días","origin_published_at":"Publicado hace 2 días","source":"Inmobiliaria Norte","source_url":"#","image":"https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=85"],"description":"Unidad renovada, muy luminosa y con balcón.","agency_id":"a1","contact_phone_raw":"11 5555-0101"},
+    {"id":"p2","title":"Departamento moderno con balcón","type":"Departamento","operation":"Venta","price":120000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":43,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":True,"pool":False,"balcony":True,"pet_friendly":False,"credit":True,"freshness":"Actualizada hace 4 días","origin_published_at":"Publicado hace 4 días","source":"Red Urbana","source_url":"#","image":"https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=85"],"description":"Edificio moderno con cochera y amenities.","agency_id":"a2","contact_phone_raw":"+54 9 11 5555-0202"},
+    {"id":"p3","title":"2 ambientes amplio a estrenar","type":"Departamento","operation":"Venta","price":125000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":48,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":False,"pool":True,"balcony":True,"pet_friendly":True,"credit":False,"freshness":"Detectada hace 6 días","origin_published_at":"Publicado hace 6 días","source":"Habitar","source_url":"#","image":"https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85"],"description":"A estrenar, excelente distribución.","agency_id":"a1","contact_phone_raw":"11 5555-0101"},
+    {"id":"p4","title":"Departamento 3 ambientes con patio","type":"Departamento","operation":"Venta","price":138000,"currency":"USD","zone":"Villa Crespo","city":"Buenos Aires","surface":62,"rooms":3,"bedrooms":2,"bathrooms":1,"parking":False,"pool":False,"balcony":False,"pet_friendly":True,"credit":True,"freshness":"Actualizada hace 1 día","origin_published_at":"Publicado hace 1 día","source":"Urbania","source_url":"#","image":"https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1000&q=85"],"description":"Patio y ambientes amplios para familia.","agency_id":"a3","contact_phone_raw":"11 5555-0303"},
 ]
 
 
@@ -510,6 +573,11 @@ class OTPVerify(BaseModel):
 
 class AgencyUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=180)
+    # Instagram es obligatorio para poder pasar de PENDING a VERIFIED (doc
+    # 06.2.8), pero acá solo se captura el dato — el pasaje a VERIFIED lo hace
+    # la revisión manual (panel interno, Etapa 4), no este endpoint.
+    instagram: str | None = Field(default=None, max_length=160)
+    website_link: str | None = Field(default=None, max_length=300)
 
 
 class PhoneIn(BaseModel):
@@ -523,9 +591,9 @@ def ensure_seed(db: Session) -> None:
             row["contact_phone_normalized"] = normalize_phone(row["contact_phone_raw"])
             db.add(Property(**row))
         db.add_all([
-            Agency(id="a1", name="Inmobiliaria Norte", city="Buenos Aires", verified=True, claimed=True, phone=normalize_phone("11 5555-0101")),
-            Agency(id="a2", name="Red Urbana", city="Buenos Aires", verified=True, claimed=False, phone=normalize_phone("+54 9 11 5555-0202")),
-            Agency(id="a3", name="Urbania", city="Buenos Aires", verified=False, claimed=False, phone=normalize_phone("11 5555-0303")),
+            Agency(id="a1", name="Inmobiliaria Norte", city="Buenos Aires", verified=True, claimed=True, phone=normalize_phone("11 5555-0101"), verification_status="VERIFIED", instagram="@inmobiliarianorte", free_leads_remaining=FREE_LEADS_ON_VERIFICATION),
+            Agency(id="a2", name="Red Urbana", city="Buenos Aires", verified=True, claimed=False, phone=normalize_phone("+54 9 11 5555-0202"), verification_status="VERIFIED", instagram="@redurbana", free_leads_remaining=FREE_LEADS_ON_VERIFICATION),
+            Agency(id="a3", name="Urbania", city="Buenos Aires", verified=False, claimed=False, phone=normalize_phone("11 5555-0303"), verification_status="PENDING"),
         ])
         db.commit()
     else:
@@ -541,7 +609,7 @@ def ensure_seed(db: Session) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "propomi-api", "version": "1.1.0"}
+    return {"status": "ok", "service": "propomi-api", "version": "1.2.0"}
 
 
 @app.post("/auth/guest")
@@ -657,7 +725,9 @@ def prop_dict(p: Property) -> dict[str, Any]:
         "id": p.id, "title": p.title, "type": p.type, "operation": p.operation, "price": p.price, "currency": p.currency,
         "zone": p.zone, "city": p.city, "country": p.country, "surface": p.surface, "rooms": p.rooms, "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms, "parking": p.parking, "pool": p.pool, "balcony": p.balcony, "petFriendly": p.pet_friendly,
-        "credit": p.credit, "freshness": p.freshness, "source": p.source, "sourceUrl": p.source_url, "image": p.image,
+        "credit": p.credit, "freshness": p.freshness, "source": p.source, "sourceUrl": p.source_url,
+        "image": p.image, "images": p.images or ([p.image] if p.image else []),
+        "originPublishedAt": p.origin_published_at,
         "description": p.description, "agencyId": p.agency_id, "detectedAt": p.detected_at.isoformat(), "lastSeenAt": p.last_seen_at.isoformat(),
     }
 
@@ -827,7 +897,32 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
         if not agency:
             raise HTTPException(status_code=404, detail="Agencia no encontrada")
 
+        # doc 06.2.2: un agente NO verificado puede ver que tiene leads
+        # esperando (endpoint /agencies/{id}/opportunities ya lo permite),
+        # pero no puede revelar contacto ni pagar hasta estar VERIFIED.
+        if agency.verification_status != "VERIFIED":
+            raise HTTPException(
+                status_code=403,
+                detail="Tu agencia todavía no está verificada. Completá Instagram/link de tu perfil y esperá la revisión para poder revelar contactos.",
+            )
+
         now = datetime.now(timezone.utc)
+
+        # doc 06.2.3 / 08: los primeros 10 reveals gratis al verificarse se
+        # consumen de un contador propio, separado del cupo de suscripción,
+        # para que no se pisen ni se dupliquen entre sí.
+        if agency.free_leads_remaining > 0:
+            agency.free_leads_remaining -= 1
+            offer.contact_revealed = True
+            offer.contact_revealed_at = now
+            db.add(RevealTransaction(
+                id=f"rt-{uuid.uuid4().hex[:12]}", offer_id=offer.id, agency_id=agency.id,
+                method="FREE_CREDIT", amount_usd=0.0, status="COMPLETED", completed_at=now,
+            ))
+            db.add(Event(name="contact_revealed", property_id=prop.id, user_id=offer.user_id, agency_id=agency.id, context={"method": "free_credit"}))
+            db.commit()
+            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": "free_credit"}
+
         has_quota = (
             agency.subscription_tier is not None
             and (agency.plan_lead_quota is None or agency.leads_used_current_period < agency.plan_lead_quota)
@@ -901,6 +996,9 @@ if ENV != "production":
                 offer.contact_revealed_at = txn.completed_at
             db.commit()
             return {"status": "COMPLETED", "buyer_name": offer.buyer_name if offer else None, "buyer_phone": offer.buyer_phone_raw if offer else None, "buyer_email": offer.buyer_email if offer else None}
+
+
+@app.post("/offers/{offer_id}/{action}")
 def offer_action(offer_id: str, action: str, session: dict[str, Any] = Depends(require_agent)):
     if action not in {"accept", "reject", "negotiate"}: raise HTTPException(status_code=400, detail="Acción inválida")
     with Session(engine) as db:
@@ -999,7 +1097,11 @@ def agency(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
     with Session(engine) as db:
         a = db.get(Agency, agency_id)
         if not a: raise HTTPException(status_code=404, detail="Agencia no encontrada")
-        return {"id":a.id,"name":a.name,"city":a.city,"verified":a.verified,"claimed":a.claimed,"phone":a.phone}
+        return {
+            "id": a.id, "name": a.name, "city": a.city, "verified": a.verified, "claimed": a.claimed, "phone": a.phone,
+            "verificationStatus": a.verification_status, "instagram": a.instagram, "websiteLink": a.website_link,
+            "freeLeadsRemaining": a.free_leads_remaining,
+        }
 
 
 @app.patch("/agencies/{agency_id}")
@@ -1009,8 +1111,12 @@ def update_agency(agency_id: str, payload: AgencyUpdate, session: dict[str, Any]
         a = db.get(Agency, agency_id)
         if not a: raise HTTPException(status_code=404, detail="Agencia no encontrada")
         a.name = payload.name.strip()
+        if payload.instagram is not None:
+            a.instagram = payload.instagram.strip() or None
+        if payload.website_link is not None:
+            a.website_link = payload.website_link.strip() or None
         db.commit()
-        return {"id":a.id,"name":a.name,"verified":a.verified}
+        return {"id": a.id, "name": a.name, "verified": a.verified, "verificationStatus": a.verification_status, "instagram": a.instagram, "websiteLink": a.website_link}
 
 
 @app.post("/agencies/{agency_id}/relink-by-phone")

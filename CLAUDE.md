@@ -47,6 +47,38 @@ real es:
 - Canal B2B agente↔agente es siempre gratis y no puede usarse para reenviar
   un contacto de comprador ya capturado por el canal B2C pago.
 
+## Cómo entregar cada etapa (reglas fijas, no volver a preguntar)
+
+Rutas fijas de este usuario, ya confirmadas — usar siempre estas, sin
+preguntar de nuevo:
+- Repo local: `$env:USERPROFILE\Documents\PROPOMI`
+- Todo archivo que Claude entregue para descargar cae en:
+  `$env:USERPROFILE\Downloads`
+
+Reglas de entrega, todas obligatorias:
+
+1. **Windows + PowerShell siempre.** El usuario copia y pega, no adapta
+   nada. Nunca dar comandos de bash/mac ni pedirle que "reemplace la ruta"
+   — usar `$env:USERPROFILE\...` para que se resuelva solo.
+2. **Versionado creciente por archivo.** Cada archivo que se reemplaza
+   lleva un sufijo de versión que sube respecto de la entrega anterior de
+   ESE archivo puntual (no un número global del proyecto): `main_v2.py`,
+   `main_v3.py`, `OfferModal_v2.tsx`, etc. `PROGRESS_LOG.md` es la fuente
+   de verdad de qué versión de cada archivo está pusheada.
+3. **Si la entrega incluye más de un archivo, empaquetar en un .zip** y
+   los pasos de PowerShell tienen que incluir la extracción
+   (`Expand-Archive`) antes de copiar cada archivo a su carpeta real dentro
+   del repo — nunca asumir que el usuario sabe descomprimir y ubicar cada
+   uno a mano.
+4. **Los pasos de push van siempre completos y listos para pegar:** entrar
+   a la carpeta del repo, copiar/mover cada archivo a su ruta real dentro
+   de `apps/...`, `git add` de esos paths puntuales, `git commit` con un
+   mensaje que incluya la etapa y la versión (ej. `"Etapa 1 v2: modelo de
+   datos ampliado"`), `git push origin main`.
+5. **Después de cada push confirmado, sumar una entrada nueva en
+   `PROGRESS_LOG.md`** (nunca reemplazar entradas viejas) con lo que se
+   hizo, qué versión de qué archivo quedó pusheada, y qué sigue.
+
 ## Si algo es ambiguo
 
 No asumas en silencio, en especial en todo lo que toca privacidad de
