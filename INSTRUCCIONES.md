@@ -90,13 +90,13 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V22 |
+| INSTRUCCIONES.md | V23 |
 | apps/api/app/main.py | V9 |
 | apps/web/lib/types.ts | V3 |
-| apps/web/lib/api.ts | V4 |
+| apps/web/lib/api.ts | V5 |
 | apps/web/app/admin/page.tsx | V1 |
 | apps/api/app/main.py | V9 |
-| apps/web/components/AgentDashboard.tsx | V2 |
+| apps/web/components/AgentDashboard.tsx | V3 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/app/globals.css | V1 |
 | apps/web/middleware.ts | V1 (nuevo) |
@@ -177,6 +177,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 020 | **Auditoría real por fetch (no historial)**, pedida por el usuario después de que la sesión anterior se cortó sin dejar el push confirmado. Se fetcheó directo desde GitHub `main.py`, `types.ts`, `api.ts`, `AgentDashboard.tsx`, `AgentOfferActions.tsx`. Resultado: el registro de "017-019 completas y pusheadas" del cierre de la sexta sesión es **falso** — ninguna de las 3 (Lemon Squeezy real, `checkout_url`/`paymentStatus` en frontend, `listing_group_id`/`GET /properties/{id}/group`) está en el repo real. Backend real hoy: verificación en 2 niveles, slugs, free leads, cupos, cola de admin, dedup, analytics de demanda — pero solo `MockPaymentGateway` (sin Lemon Squeezy), sin `listing_group_id`, sin `GET /properties/{id}/group`, sin `GET /payments/{id}/status`. `api.ts` y `AgentOfferActions.tsx` SÍ están adelantados (ya llaman a `paymentStatus()` y esperan `checkout_url`, que no existen del lado del backend). `AgentDashboard.tsx` estaba atrasado y roto: `updateAgency(id, nameDraft.trim(), session)` pasaba un string donde la función real espera `{name, instagram, website_link}` — se corrigió (mismo fix que ya describía la etapa 004, que tampoco había llegado a pushearse de verdad), sumando badge de verificación, Instagram, sitio web, `freeLeadsRemaining` y link de storefront por slug. Pendiente de confirmar por el usuario: si `globals.css` ya tiene `.pill-ok`/`.pill-error`/`.pill-pending` (se usaron esas clases nuevas para el badge; si no existen, hereda el estilo base de `.pill` sin color). | apps/web/components/AgentDashboard.tsx | etapa-020_auditoria-real-y-fix-agentdashboard | Pendiente de push |
 | 021 | Lemon Squeezy en verificación (usuario). Código 017–020 confirmado en GitHub por fetch real (commits etapa-017…020). No se puede probar e2e de pagos hasta que Lemon apruebe la cuenta. Se anota preferencia: partes muy pequeñas, un archivo por entrega, usuario pushea. Próximo código independiente de Lemon: pendiente de confirmación (multi-agente lead distribution o UI suscripción tocan dinero). Mientras tanto, checklist operativo Lemon (env vars + product/variant + webhook) queda listo para cuando aprueben. | INSTRUCCIONES.md | etapa-021_lemon-en-verificacion-y-estado-real | Pendiente de push |
 | 022 | T7.1/T7.2 backend: `POST /properties` alta manual de propiedad solo para agencias `VERIFIED`. `agency_id` forzado desde la sesión. Descripción con `sanitize_free_text`. Dedup multi-agencia → `listing_group_id`; misma agencia → `needs_review`. Sin frontend todavía (formulario = etapa siguiente). Lemon S sigue en verificación — no se tocó pagos. | apps/api/app/main.py | etapa-022_post-properties-alta-manual-agente | Pendiente de push |
+| 023 | T7.2 frontend: pestaña Propiedades en AgentDashboard + createProperty() en api.ts. Formulario de alta manual (título/zona/ciudad/precio/superficie/ambientes/foto/descripción) llama POST /properties. Bloqueado si agencia no VERIFIED. Descripción tipada → backend sanitize_free_text. | apps/web/lib/api.ts, apps/web/components/AgentDashboard.tsx | etapa-023_formulario-alta-manual-propiedades | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -213,8 +214,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 023)
+## Próximo paso lógico (candidato para etapa 024)
 
-- **Frontend de T7.2**: formulario de alta manual en el dashboard de agencia (`AgentDashboard`) que llame a `POST /properties` (backend ya en 022). Un solo componente/archivo.
-- **Lemon Squeezy**: sigue en verificación — checklist operativo (producto/variant + 4 env vars + webhook) cuando aprueben.
+- Listar propiedades propias de la agencia en la pestaña Propiedades (GET /properties?agency_id=…) para ver lo publicado tras el alta.
+- Lemon Squeezy: sigue en verificación — checklist operativo cuando aprueben.
 - No arrancar multi-agente lead distribution ni UI de planes sin confirmación (tocan dinero).

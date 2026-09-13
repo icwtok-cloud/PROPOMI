@@ -1,8 +1,8 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Building2,Check,ExternalLink,Inbox,Instagram,LogOut,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
+import {Building2,Check,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
 import {Agency,Offer,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -80,7 +80,8 @@ export default function AgentDashboard(){
   const [offers,setOffers]=useState<Offer[]>([]);
   const [opps,setOpps]=useState<OppData|null>(null);
   const [analytics,setAnalytics]=useState<{properties:number;events:number;offers:number}|null>(null);
-  const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'cuenta'>('ofertas');
+  const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'propiedades'|'cuenta'>('ofertas');
+  const [propForm,setPropForm]=useState({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrl:''});
   const [toast,setToast]=useState('');
   const [nameDraft,setNameDraft]=useState('');
   const [instagramDraft,setInstagramDraft]=useState('');
@@ -132,6 +133,42 @@ export default function AgentDashboard(){
     finally{setBusy(false)}
   }
 
+  async function submitProperty(){
+    if(!session)return;
+    if(agency?.verificationStatus!=='VERIFIED'){
+      notify('Solo agencias verificadas pueden cargar propiedades.');
+      return;
+    }
+    const title=propForm.title.trim();
+    const zone=propForm.zone.trim();
+    const city=propForm.city.trim()||'Buenos Aires';
+    const price=Number(propForm.price);
+    const surface=Number(propForm.surface);
+    const rooms=Number(propForm.rooms)||2;
+    if(!title||!zone||!(price>0)||!(surface>0)){
+      notify('Completá título, zona, precio y superficie.');
+      return;
+    }
+    setBusy(true);
+    try{
+      const images=propForm.imageUrl.trim()?[propForm.imageUrl.trim()]:[];
+      await createProperty({
+        title,zone,city,price,surface,rooms,
+        type:'Departamento',operation:'Venta',currency:'USD',
+        description:propForm.description.trim()||undefined,
+        images,
+      },session);
+      setPropForm({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrl:''});
+      notify('Propiedad publicada.');
+      // refrescar contador de analytics
+      try{const an=await getAnalytics(session);setAnalytics(an as any)}catch{}
+    }catch(e:any){
+      notify(e?.message||'No pudimos publicar la propiedad.');
+    }finally{
+      setBusy(false);
+    }
+  }
+
   function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers([]);setOpps(null)}
 
   if(!ready) return null;
@@ -165,6 +202,7 @@ export default function AgentDashboard(){
       <button className={section==='ofertas'?'tab active':'tab'} onClick={()=>setSection('ofertas')}><Inbox size={15}/> Ofertas</button>
       <button className={section==='oportunidades'?'tab active':'tab'} onClick={()=>setSection('oportunidades')}><Sparkles size={15}/> Oportunidades</button>
       <button className={section==='demanda'?'tab active':'tab'} onClick={()=>setSection('demanda')}><TrendingUp size={15}/> Demanda</button>
+      <button className={`tab${section==='propiedades'?' active':''}`} onClick={()=>setSection('propiedades')}><Plus size={14}/> Propiedades</button>
       <button className={section==='cuenta'?'tab active':'tab'} onClick={()=>setSection('cuenta')}><User size={15}/> Mi cuenta</button>
     </div>
 
@@ -188,6 +226,26 @@ export default function AgentDashboard(){
 
     {section==='demanda' && <div className="agentdashpane">
       <DemandPanel session={session}/>
+    </div>}
+
+    {section==='propiedades' && <div className="agentdashpane">
+      {agency?.verificationStatus!=='VERIFIED' && (
+        <div className="notice">
+          Tu agencia tiene que estar <strong>Verificada</strong> para publicar propiedades. Completá Instagram en Mi cuenta y esperá la revisión.
+        </div>
+      )}
+      <label>Título<input value={propForm.title} onChange={e=>setPropForm(f=>({...f,title:e.target.value}))} placeholder="2 ambientes luminoso en Palermo"/></label>
+      <label>Zona<input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo"/></label>
+      <label>Ciudad<input value={propForm.city} onChange={e=>setPropForm(f=>({...f,city:e.target.value}))} placeholder="Buenos Aires"/></label>
+      <label>Precio (USD)<input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/></label>
+      <label>Superficie (m²)<input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/></label>
+      <label>Ambientes<input type="number" min={0} value={propForm.rooms} onChange={e=>setPropForm(f=>({...f,rooms:e.target.value}))}/></label>
+      <label>URL de foto (opcional)<input value={propForm.imageUrl} onChange={e=>setPropForm(f=>({...f,imageUrl:e.target.value}))} placeholder="https://..."/></label>
+      <label>Descripción (sin teléfonos ni links)<textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/></label>
+      <div className="modalactions" style={{justifyContent:'flex-start'}}>
+        <button className="primary" disabled={busy||agency?.verificationStatus!=='VERIFIED'} onClick={submitProperty}><Plus size={15}/> Publicar propiedad</button>
+      </div>
+      <p className="muted small">La descripción no puede incluir teléfonos, emails ni links — Propomi protege el contacto de ambas partes.</p>
     </div>}
 
     {section==='cuenta' && <div className="agentdashpane">

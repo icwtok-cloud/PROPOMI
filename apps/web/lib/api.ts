@@ -41,6 +41,33 @@ export async function getAgency(id:string,session?:Session|null){if(!base)return
 // salvo name que el backend exige siempre.
 export async function updateAgency(id:string,data:{name:string;instagram?:string;website_link?:string},session:Session){if(!base)return {id,name:data.name,verified:true,claimed:true,verificationStatus:'VERIFIED',instagram:data.instagram??null,websiteLink:data.website_link??null} as Agency;return req<Agency>(`/agencies/${id}`,{method:'PATCH',body:JSON.stringify(data)},session.token)}
 export async function relinkAgency(id:string,session:Session){if(!base)return {count:0,properties:PROPERTIES.filter(p=>p.agencyId===id),message:'Modo demo: publicaciones ya vinculadas.'};return req<{count:number;properties:Property[];message:string}>(`/agencies/${id}/relink-by-phone`,{method:'POST'},session.token)}
+
+export type PropertyCreatePayload={
+  title:string;type?:string;operation?:string;price:number;currency?:string;
+  zone:string;city:string;country?:string;surface:number;rooms:number;
+  bedrooms?:number;bathrooms?:number;parking?:boolean;pool?:boolean;
+  balcony?:boolean;pet_friendly?:boolean;credit?:boolean;images?:string[];
+  description?:string;
+};
+// T7.2: alta manual de propiedad (POST /properties). Solo funciona con
+// agencia VERIFIED; el backend fuerza agency_id desde la sesión.
+export async function createProperty(payload:PropertyCreatePayload,session:Session):Promise<Property>{
+  if(!base){
+    return {
+      id:`demo-p-${Date.now()}`,title:payload.title,type:payload.type||'Departamento',
+      operation:(payload.operation as 'Venta')||'Venta',price:payload.price,currency:payload.currency||'USD',
+      zone:payload.zone,city:payload.city,surface:payload.surface,rooms:payload.rooms,
+      bedrooms:payload.bedrooms??1,bathrooms:payload.bathrooms??1,
+      parking:!!payload.parking,pool:!!payload.pool,balcony:!!payload.balcony,
+      petFriendly:!!payload.pet_friendly,credit:!!payload.credit,
+      freshness:'Publicada por la agencia',originPublishedAt:'Publicada en Propomi',
+      source:'Demo',sourceUrl:'#',image:(payload.images&&payload.images[0])||'',
+      images:payload.images||[],description:payload.description||'',agencyId:session.user.agency_id,
+    };
+  }
+  return req<Property>('/properties',{method:'POST',body:JSON.stringify(payload)},session.token);
+}
+
 export async function requestOtp(phone:string){if(!base)return {ok:true,message:'Código demo generado.',dev_code:'123456'};return req<{ok:boolean;message:string;dev_code?:string}>('/auth/otp/request',{method:'POST',body:JSON.stringify({phone})})}
 export async function verifyOtp(phone:string,code:string){if(!base)return {token:'demo-token',user:{id:'demo-agent',phone,role:'AGENTE' as const,agency_id:'a1'},relinked_count:2};return req<{token:string;user:Session['user'];relinked_count:number}>('/auth/otp/verify',{method:'POST',body:JSON.stringify({phone,code})})}
 
