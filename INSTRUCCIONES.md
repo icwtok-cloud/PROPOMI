@@ -90,12 +90,12 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V31 |
-| apps/api/app/main.py | V14 |
+| INSTRUCCIONES.md | V32 |
+| apps/api/app/main.py | V15 |
 | apps/web/lib/types.ts | V4 |
 | apps/web/lib/api.ts | V10 |
 | apps/web/app/admin/page.tsx | V2 |
-| apps/api/app/main.py | V14 |
+| apps/api/app/main.py | V15 |
 | apps/web/components/AgentDashboard.tsx | V7 |
 | apps/web/components/DemandPanel.tsx | V3 |
 | apps/web/components/PropertyCard.tsx | V1 |
@@ -189,6 +189,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 029 | Botón «Copiar link» en pestaña Propiedades: genera URL con `?property=` + `?o=` (slug de agencia) vía buildShareUrl. | apps/web/components/AgentDashboard.tsx | etapa-029_copiar-link-tracking-propiedades | Pendiente de push |
 | 030 | T4.5: GET /offers para agente no VERIFIED devuelve solo `{verificationRequired,count}` sin detalle. Counter/accept/reject/negotiate también 403. Reveal ya bloqueado. Dashboard: mensaje de cantidad, sin lista ni AgentOfferActions. Sin cambio de modelo de datos (solo comportamiento). | main.py, api.ts, AgentDashboard.tsx | etapa-030_t45-ofertas-solo-conteo-si-pending | Pendiente de push |
 | 031 | T5.7: GET `/agencies/{id}/market-opportunities` (solo VERIFIED) cruza search_performed con zonas del catálogo de la agencia. DemandPanel muestra tabla zona/props/búsquedas/presupuesto. Sin schema nuevo. | main.py, api.ts, DemandPanel.tsx | etapa-031_t57-market-opportunities | Pendiente de push |
+| 032 | T8.7 carrera multi-agente: helpers listing_group; reveal permitido a todo el grupo; prioridad suscripción más antigua 24h (con sub) / 6h (sin); 409 si otro ya reveló; notify offer_created a todas las agencias del grupo; GET /offers incluye ofertas del group. **También re-aplica T4.5 list_offers** (se había perdido al pushear 031 sobre base stale). Sin schema nuevo. | apps/api/app/main.py | etapa-032_t87-carrera-multi-agente-reveal | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -225,7 +226,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 032)
+## Próximo paso lógico (candidato para etapa 033)
 
-- T8.7 carrera multi-agente por listing_group (tocan dinero/reparto de lead → **no inventar**; confirmar ventanas 24h/6h y prioridad por antigüedad de suscripción si hay duda).
-- Lemon Squeezy: checklist cuando aprueben.
+- Tests automatizados para T8.7 (prioridad / ventana / 409) cuando haya pytest local.
+- Lemon Squeezy: checklist operativo cuando aprueben.
+- Fusión visual en frontend de ficha con priceMin/priceMax (GET /properties/{id}/group) — no estaba en el ticket T8.7 (solo main.py).

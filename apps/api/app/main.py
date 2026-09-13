@@ -110,6 +110,9 @@ OTP_RATE_WINDOW = 10 * 60
 OTP_MAX_REQUESTS = 3
 MAX_PROPERTY_IMAGES = 5  # doc 06.1: hasta 5 fotos por propiedad, decisión ya tomada
 FREE_LEADS_ON_VERIFICATION = 10
+# T8.7: ventana de prioridad en carrera multi-agente (ticket).
+LISTING_GROUP_REVEAL_WINDOW_WITH_SUB_HOURS = 24
+LISTING_GROUP_REVEAL_WINDOW_NO_SUB_HOURS = 6
 ONBOARDING_TOKEN_DAYS = 14  # T6.2: token de onboarding expira a los 14 días  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
 PROPERTY_FRESHNESS_DAYS = 60  # doc 05 (Etapa 2): filtro de cold-start — una propiedad
 # que el crawler no vuelve a ver hace más de 60 días se considera potencialmente
@@ -1566,9 +1569,18 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
         )
         db.add(offer)
         event_ctx: dict[str, Any] = {"amount": payload.amount}
-        if payload.origin:
+        if getattr(payload, "origin", None):
             event_ctx["origin"] = payload.origin
-        db.add(Event(name="offer_created", property_id=p.id, user_id=session["user_id"], agency_id=p.agency_id, context=event_ctx))
+        # T8.7: notificar a todas las agencias del listing_group a la vez.
+        notify_ids = listing_group_member_agency_ids(db, p) or ({p.agency_id} if p.agency_id else set())
+        for aid in notify_ids:
+            db.add(Event(
+                name="offer_created",
+                property_id=p.id,
+                user_id=session["user_id"],
+                agency_id=aid,
+                context={**event_ctx, "listing_group_id": p.listing_group_id},
+            ))
 
         # T6.1 cold start: oferta real sobre agencia no reclamada (o sin
         # agency pero con teléfono scrapeado) → tarea de notificación manual.
@@ -1604,20 +1616,53 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
 
 @app.get("/offers")
 def list_offers(status: str | None = None, session: dict[str, Any] = Depends(current_session)):
+    """T4.5: un agente con verification_status != VERIFIED solo recibe la
+    cantidad de ofertas esperando — nunca monto, propiedad ni ningún detalle.
+    Compradores y agentes VERIFIED siguen recibiendo la lista completa
+    (el contacto del comprador solo si contact_revealed)."""
     with Session(engine) as db:
         stmt = select(Offer)
         if session.get("role") == Role.AGENTE.value:
-            stmt = stmt.where(Offer.property_id.in_(select(Property.id).where(Property.agency_id == session["agency_id"])))
+            own_props = list(db.scalars(select(Property).where(Property.agency_id == session["agency_id"])).all())
+            own_ids = [p.id for p in own_props]
+            group_ids = list({p.listing_group_id for p in own_props if p.listing_group_id})
+            group_prop_ids: list[str] = []
+            if group_ids:
+                group_prop_ids = [
+                    p.id for p in db.scalars(
+                        select(Property).where(Property.listing_group_id.in_(group_ids))
+                    ).all()
+                ]
+            visible_ids = list(set(own_ids + group_prop_ids)) or ["__none__"]
+            stmt = stmt.where(Offer.property_id.in_(visible_ids))
+            agency = db.get(Agency, session["agency_id"]) if session.get("agency_id") else None
+            if status:
+                stmt = stmt.where(Offer.status == status)
+            offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
+            if not agency or agency.verification_status != "VERIFIED":
+                # Solo conteo — sin ids, montos ni property_id (anti-fuga de detalle comercial
+                # hasta verificación; el reveal ya estaba bloqueado en POST /offers/{id}/reveal).
+                return {
+                    "verificationRequired": True,
+                    "verificationStatus": (agency.verification_status if agency else "PENDING"),
+                    "count": len(offers),
+                    "offers": [],
+                }
         else:
             stmt = stmt.where(Offer.user_id == session["user_id"])
-        if status: stmt = stmt.where(Offer.status == status)
-        offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
+            if status:
+                stmt = stmt.where(Offer.status == status)
+            offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
+
         result = []
         for o in offers:
-            row = {"id":o.id,"user_id":o.user_id,"property_id":o.property_id,"amount":o.amount,"currency":o.currency,"payment_form":o.payment_form,"capital":o.capital,"timeframe":o.timeframe,"comment":o.comment,"status":o.status,"created_at":o.created_at.isoformat(),"contact_revealed":o.contact_revealed,"origin":getattr(o,"origin",None)}
-            # El contacto del comprador SOLO viaja en la respuesta si ya fue
-            # revelado formalmente — nunca antes, aunque sea el propio agente
-            # dueño de la propiedad quien esté consultando.
+            row = {
+                "id": o.id, "user_id": o.user_id, "property_id": o.property_id,
+                "amount": o.amount, "currency": o.currency, "payment_form": o.payment_form,
+                "capital": o.capital, "timeframe": o.timeframe, "comment": o.comment,
+                "status": o.status, "created_at": o.created_at.isoformat(),
+                "contact_revealed": o.contact_revealed, "origin": getattr(o, "origin", None),
+            }
             if o.contact_revealed:
                 row["buyer_name"] = o.buyer_name
                 row["buyer_phone"] = o.buyer_phone_raw
@@ -1629,6 +1674,9 @@ def list_offers(status: str | None = None, session: dict[str, Any] = Depends(cur
 @app.post("/offers/{offer_id}/counter", status_code=201)
 def counter_offer(offer_id: str, payload: CounterIn, session: dict[str, Any] = Depends(require_agent)):
     with Session(engine) as db:
+        agency = db.get(Agency, session["agency_id"])
+        if not agency or agency.verification_status != "VERIFIED":
+            raise HTTPException(status_code=403, detail="Tu agencia todavía no está verificada. No podés responder ofertas hasta estar Verificada.")
         offer = db.get(Offer, offer_id)
         if not offer: raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
@@ -1639,6 +1687,65 @@ def counter_offer(offer_id: str, payload: CounterIn, session: dict[str, Any] = D
         db.add(Event(name="counter_offer_created", property_id=offer.property_id, user_id=offer.user_id, agency_id=prop.agency_id, context={"amount": payload.amount}))
         db.commit()
         return {"id": counter.id, "status": counter.status}
+
+
+
+def _aware(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def listing_group_member_agency_ids(db: Session, prop: Property) -> set[str]:
+    if not prop.listing_group_id:
+        return {prop.agency_id} if prop.agency_id else set()
+    members = db.scalars(
+        select(Property).where(Property.listing_group_id == prop.listing_group_id)
+    ).all()
+    return {m.agency_id for m in members if m.agency_id}
+
+
+def agent_in_listing_group(db: Session, prop: Property, agency_id: str) -> bool:
+    if prop.agency_id == agency_id:
+        return True
+    return agency_id in listing_group_member_agency_ids(db, prop)
+
+
+def enforce_listing_group_reveal_priority(
+    db: Session, prop: Property, agency: Agency, offer: Offer, now: datetime
+) -> None:
+    """T8.7: dentro de la ventana, solo la agencia con suscripción más antigua
+    del grupo puede revelar. Pasada la ventana, cualquiera del grupo."""
+    if not prop.listing_group_id:
+        return
+    agency_ids = listing_group_member_agency_ids(db, prop)
+    if len(agency_ids) <= 1:
+        return
+    agencies = [a for a in (db.get(Agency, aid) for aid in agency_ids) if a]
+    subscribers = [a for a in agencies if a.subscription_tier and a.subscription_started_at]
+    window_h = (
+        LISTING_GROUP_REVEAL_WINDOW_WITH_SUB_HOURS
+        if subscribers
+        else LISTING_GROUP_REVEAL_WINDOW_NO_SUB_HOURS
+    )
+    created = _aware(offer.created_at) or now
+    age = now - created
+    if age >= timedelta(hours=window_h):
+        return
+    if not subscribers:
+        return
+    oldest = min(subscribers, key=lambda a: _aware(a.subscription_started_at) or now)
+    if agency.id != oldest.id:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Esta oferta está en una ficha multi-agente. Durante las primeras "
+                f"{window_h}h tiene prioridad la agencia con la suscripción más antigua. "
+                f"Podés reintentar cuando expire la ventana si el lead sigue disponible."
+            ),
+        )
 
 
 @app.post("/offers/{offer_id}/reveal")
@@ -1662,19 +1769,35 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
         if not offer:
             raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
-        if not prop or prop.agency_id != session["agency_id"]:
+        if not prop:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        # T8.7: cualquier agencia del listing_group puede competir por el reveal.
+        if not agent_in_listing_group(db, prop, session["agency_id"]):
             raise HTTPException(status_code=403, detail="Oferta fuera de tu agencia")
-
-        if offer.contact_revealed:
-            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "already_revealed": True}
 
         agency = db.get(Agency, session["agency_id"])
         if not agency:
             raise HTTPException(status_code=404, detail="Agencia no encontrada")
 
-        # doc 06.2.2: un agente NO verificado puede ver que tiene leads
-        # esperando (endpoint /agencies/{id}/opportunities ya lo permite),
-        # pero no puede revelar contacto ni pagar hasta estar VERIFIED.
+        if offer.contact_revealed:
+            winner = db.scalar(
+                select(RevealTransaction).where(
+                    RevealTransaction.offer_id == offer.id,
+                    RevealTransaction.status == "COMPLETED",
+                )
+            )
+            if winner and winner.agency_id == agency.id:
+                return {
+                    "buyer_name": offer.buyer_name,
+                    "buyer_phone": offer.buyer_phone_raw,
+                    "buyer_email": offer.buyer_email,
+                    "already_revealed": True,
+                }
+            raise HTTPException(
+                status_code=409,
+                detail="Otro agente del grupo ya reveló el contacto de esta oferta.",
+            )
+
         if agency.verification_status != "VERIFIED":
             raise HTTPException(
                 status_code=403,
@@ -1682,6 +1805,7 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
             )
 
         now = datetime.now(timezone.utc)
+        enforce_listing_group_reveal_priority(db, prop, agency, offer, now)
 
         # doc 06.2.3 / 08: los primeros 10 reveals gratis al verificarse se
         # consumen de un contador propio, separado del cupo de suscripción,
@@ -1850,6 +1974,9 @@ async def lemonsqueezy_webhook(request: Request, x_signature: str | None = Heade
 def offer_action(offer_id: str, action: str, session: dict[str, Any] = Depends(require_agent)):
     if action not in {"accept", "reject", "negotiate"}: raise HTTPException(status_code=400, detail="Acción inválida")
     with Session(engine) as db:
+        agency = db.get(Agency, session["agency_id"])
+        if not agency or agency.verification_status != "VERIFIED":
+            raise HTTPException(status_code=403, detail="Tu agencia todavía no está verificada. No podés gestionar ofertas hasta estar Verificada.")
         offer = db.get(Offer, offer_id)
         if not offer: raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
