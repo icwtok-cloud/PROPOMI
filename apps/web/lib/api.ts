@@ -1,4 +1,4 @@
-import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Offer,Opportunity,Property,Role,Session} from './types';
+import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Offer,Opportunity,PendingAgency,Property,ReviewQueueItem,Role,Session} from './types';
 
 import {PROPERTIES} from './data';
 const base=process.env.NEXT_PUBLIC_API_URL;
@@ -62,3 +62,17 @@ export async function getAnalytics(session?:Session|null){if(!base)return {prope
 // demo (sin NEXT_PUBLIC_API_URL) devuelve un shape vacío pero válido para
 // no romper el panel mientras no hay backend real conectado.
 export async function getAnalyticsDemand(session?:Session|null){if(!base)return {sampleSize:0,topZones:[],topTypes:[],topOperations:[],avgResultCount:null} as DemandSummary;if(!session)throw new Error('Sesión de agente requerida');return req<DemandSummary>('/analytics/demand',undefined,session.token)}
+
+// Etapa 013: panel de administración interno. Usa X-Admin-Key en vez del
+// Bearer token de sesión (agente/comprador) — es un mecanismo separado a
+// propósito, ver require_admin() en main.py. La clave nunca viaja en la URL.
+async function adminReq<T>(path:string,adminKey:string,init?:RequestInit):Promise<T>{
+  const r=await fetch(`${base}${path}`,{...init,headers:{'Content-Type':'application/json','X-Admin-Key':adminKey,...(init?.headers||{})},cache:'no-store'});
+  if(!r.ok){let message=`Error ${r.status}`;try{const body=await r.json();message=typeof body?.detail==='string'?body.detail:message}catch{}const err:any=new Error(message);err.status=r.status;throw err}
+  return r.json();
+}
+export async function getPendingAgencies(adminKey:string):Promise<PendingAgency[]>{if(!base)return [];return adminReq('/admin/agencies/pending',adminKey)}
+export async function approveAgency(id:string,adminKey:string,notes?:string):Promise<PendingAgency>{if(!base)return {} as PendingAgency;return adminReq(`/admin/agencies/${id}/approve`,adminKey,{method:'POST',body:notes?JSON.stringify({notes}):undefined})}
+export async function rejectAgency(id:string,adminKey:string,notes?:string):Promise<PendingAgency>{if(!base)return {} as PendingAgency;return adminReq(`/admin/agencies/${id}/reject`,adminKey,{method:'POST',body:notes?JSON.stringify({notes}):undefined})}
+export async function getReviewQueue(adminKey:string):Promise<{count:number;items:ReviewQueueItem[]}>{if(!base)return {count:0,items:[]};return adminReq('/properties/review-queue',adminKey)}
+export async function resolveReviewItem(id:string,action:'confirm_duplicate'|'not_duplicate',adminKey:string){if(!base)return {id,status:action,needsReview:false};return adminReq(`/properties/${id}/review`,adminKey,{method:'POST',body:JSON.stringify({action})})}

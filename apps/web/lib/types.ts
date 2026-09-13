@@ -1,6 +1,6 @@
 export type Role='COMPRADOR'|'AGENTE';
 export type Session={token:string;user:{id:string;phone:string;role:Role;agency_id:string}};
-export type Property={id:string;title:string;type:string;operation:'Venta';price:number;currency:string;zone:string;city:string;country?:string;surface:number;rooms:number;bedrooms:number;bathrooms:number;parking:boolean;pool:boolean;balcony:boolean;petFriendly:boolean;credit:boolean;freshness:string;originPublishedAt?:string;source:string;sourceUrl:string;image:string;images?:string[];description:string;agencyId?:string;detectedAt?:string;lastSeenAt?:string};
+export type Property={id:string;title:string;type:string;operation:'Venta';price:number;currency:string;zone:string;city:string;country?:string;surface:number;rooms:number;bedrooms:number;bathrooms:number;parking:boolean;pool:boolean;balcony:boolean;petFriendly:boolean;credit:boolean;freshness:string;originPublishedAt?:string;source:string;sourceUrl:string;image:string;images?:string[];description:string;agencyId?:string;detectedAt?:string;lastSeenAt?:string;needsReview?:boolean;possibleDuplicateOf?:string|null};
 export type Intent={visit?:boolean;offer?:boolean;budget?:number;capital?:number;financing?:string;timeframe?:string;decisionMaker?:string;alternatives?:boolean;comment?:string};
 export type EventName='property_view'|'property_save'|'property_compare'|'property_question'|'visit_request'|'offer_created'|'contact_requested'|'contact_shared'|'counter_offer_created'|'negotiation_started'|'operation_advanced'|'search_performed';
 export type Offer={id:string;user_id:string;property_id:string;amount:number;currency:string;payment_form:string;capital?:number;timeframe?:string;comment?:string;status:string;created_at:string;contact_revealed:boolean;buyer_name?:string;buyer_phone?:string;buyer_email?:string};
@@ -15,3 +15,8 @@ export type BuyerProfile={name:string;phone:string;email?:string;phoneVerified?:
 // Etapa 3 v2: espejo del shape que devuelve GET /analytics/demand
 // (backend main.py v5) — rankings agregados y anónimos de búsquedas.
 export type DemandSummary={sampleSize:number;topZones:{zone:string;count:number}[];topTypes:{type:string;count:number}[];topOperations:{operation:string;count:number}[];avgResultCount:number|null};
+// Etapa 013: panel de administración interno (X-Admin-Key, no Clerk/OTP —
+// nunca de cara al comprador/agente). Espejo de agency_admin_dict() y del
+// shape de GET /properties/review-queue en main.py.
+export type PendingAgency={id:string;name:string;city:string;phone?:string|null;claimed:boolean;instagram?:string|null;websiteLink?:string|null;verificationStatus:string;verificationPriority:number;verificationNotes?:string|null;verificationReviewedAt?:string|null};
+export type ReviewQueueItem={property:Property;candidate:Property|null};
