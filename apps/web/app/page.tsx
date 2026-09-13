@@ -6,7 +6,7 @@ import PropertyCard from '../components/PropertyCard';
 import OfferModal from '../components/OfferModal';
 import ComparePanel from '../components/ComparePanel';
 import BuyerIdentityModal from '../components/BuyerIdentityModal';
-import {getProperties,getPropertiesDeduped,trackEvent,saveIntent,listOffers,getOrCreateBuyerSession,getBuyerProfile,captureOfferOriginFromUrl} from '../lib/api';
+import {getProperties,getPropertiesDeduped,trackEvent,saveIntent,listOffers,isOffersRestricted,getOrCreateBuyerSession,getBuyerProfile,captureOfferOriginFromUrl} from '../lib/api';
 import {BuyerProfile,Property,Offer} from '../lib/types';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
@@ -36,7 +36,7 @@ export default function Home(){
       const s=await getOrCreateBuyerSession();
       const [items,offersList]=await Promise.all([getPropertiesDeduped(),listOffers(s)]);
       setItems(items);
-      setOffers(Array.isArray(offersList)?offersList:[]);
+      setOffers(isOffersRestricted(offersList)?[]:(Array.isArray(offersList)?offersList:[]));
       // Deep link de tracking: /?property=<id>&o=<origen> abre el detalle.
       if(typeof window==='undefined')return;
       const pid=new URLSearchParams(window.location.search).get('property');
@@ -66,7 +66,11 @@ export default function Home(){
   function toggleSave(p:Property){const next=saved.includes(p.id)?saved.filter(x=>x!==p.id):[...saved,p.id];setSaved(next);ev('property_save',p.id)}
   function toggleCompare(p:Property){if(compared.includes(p.id))setCompared(compared.filter(x=>x!==p.id));else if(compared.length<4)setCompared([...compared,p.id]);ev('property_compare',p.id)}
   function openDetail(p:Property){setDetail(p);setPhotoIdx(0);ev('property_view',p.id)}
-  async function refreshOffers(){setOffers(await listOffers())}
+  async function refreshOffers(){
+    const r=await listOffers();
+    if(isOffersRestricted(r))setOffers([]);
+    else setOffers(r);
+  }
 
   async function askVisit(p:Property){const s=await getOrCreateBuyerSession();await saveIntent(p.id,'VISIT',6,{visit:true,budget:Number(budget),timeframe:'30-60 días'},s);await trackEvent('visit_request',p.id,{availability:'A coordinar'},s);setToast('Solicitud de visita creada. La agencia puede aceptar o proponer otro horario.')}
   async function askQuestion(p:Property){const s=await getOrCreateBuyerSession();await saveIntent(p.id,'QUESTION',4,{budget:Number(budget)},s);await trackEvent('property_question',p.id,undefined,s);setToast('Consulta registrada como parte de tu intención. Tus datos siguen ocultos.')}

@@ -4,7 +4,7 @@ export type Property={id:string;title:string;type:string;operation:'Venta';price
 export type Intent={visit?:boolean;offer?:boolean;budget?:number;capital?:number;financing?:string;timeframe?:string;decisionMaker?:string;alternatives?:boolean;comment?:string};
 export type EventName='property_view'|'property_save'|'property_compare'|'property_question'|'visit_request'|'offer_created'|'contact_requested'|'contact_shared'|'counter_offer_created'|'negotiation_started'|'operation_advanced'|'search_performed';
 export type Offer={id:string;user_id:string;property_id:string;amount:number;currency:string;payment_form:string;capital?:number;timeframe?:string;comment?:string;status:string;created_at:string;contact_revealed:boolean;origin?:string|null;property_title?:string|null;property_zone?:string|null;listing_group_id?:string|null;buyer_name?:string;buyer_phone?:string;buyer_email?:string};
-export type Agency={id:string;name:string;city:string;verified:boolean;claimed:boolean;phone?:string|null;verificationStatus?:string;instagram?:string|null;websiteLink?:string|null;freeLeadsRemaining?:number;slug?:string|null};
+export type Agency={id:string;name:string;city:string;verified:boolean;claimed:boolean;phone?:string|null;verificationStatus?:string;instagram?:string|null;websiteLink?:string|null;freeLeadsRemaining?:number;slug?:string|null;subscriptionTier?:string|null;planLeadQuota?:number|null;leadsUsedCurrentPeriod?:number;subscriptionStartedAt?:string|null};
 export type Opportunity={id:number;property_id?:string;user_id?:string;event:string;created_at:string;context:Record<string,unknown>};
 // phoneVerified / googleVerified son un espejo LOCAL (para no repetir el
 // paso de verificación en cada oferta dentro del mismo dispositivo) de lo

@@ -90,14 +90,14 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V47 |
-| apps/api/app/main.py | V19 |
-| apps/web/lib/types.ts | V7 |
+| INSTRUCCIONES.md | V48 |
+| apps/api/app/main.py | V20 |
+| apps/web/lib/types.ts | V8 |
 | apps/web/lib/api.ts | V14 |
-| apps/web/app/admin/page.tsx | V5 |
-| apps/api/app/main.py | V19 |
+| apps/web/app/admin/page.tsx | V6 |
+| apps/api/app/main.py | V20 |
 | apps/web/components/AgentDashboard.tsx | V11 |
-| apps/web/components/DemandPanel.tsx | V3 |
+| apps/web/components/DemandPanel.tsx | V4 |
 | apps/web/components/PropertyCard.tsx | V3 |
 | apps/web/components/OfferModal.tsx | V2 |
 | apps/web/app/globals.css | V1 |
@@ -205,6 +205,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 045 | Admin UX: métricas de colas, badges en tabs, notas en approve/reject/mark-sent, botón Recargar. Reasegura helpers cold-start en api.ts. | admin/page.tsx, api.ts | etapa-045_admin-metricas-notas-reload | Pendiente de push |
 | 046 | Admin directorio: GET `/admin/agencies?status=&q=` + pestaña Directorio con filtro y búsqueda. | main.py, api.ts, admin/page.tsx | etapa-046_admin-directorio-agencias | Pendiente de push |
 | 047 | Admin: POST `/admin/agencies/{id}/reopen` (→ PENDING) + botón Reabrir en Directorio. | main.py, api.ts, admin/page.tsx | etapa-047_admin-reabrir-agencia | Pendiente de push |
+| 048 | Hotfix audit: `'use client'` admin+DemandPanel; page refreshOffers+load con isOffersRestricted; GET agency plan fields + types; test_security seed T4.5/Etapa2 + teléfono válido; health 1.4.0. | admin, DemandPanel, page, types, main, test_security | etapa-048_hotfix-build-use-client-y-tipos | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -241,8 +242,7 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 048)
+## Próximo paso lógico (candidato para etapa 049)
 
-- Admin está cubierto para operación diaria (colas + directorio + reopen).
-- Bloqueadores externos: Lemon store, crawler reformateado, T5.1 precios.
-- Sin esos, el producto ya se puede usar en flujo manual (OTP, ofertas, reveal gratis/cupo).
+- Tras push: `npm run build` + `pytest -q` en local/CI.
+- Lemon / crawler / POST subscription siguen en pausa.

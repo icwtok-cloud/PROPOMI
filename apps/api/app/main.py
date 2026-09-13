@@ -6,7 +6,6 @@ import json
 import os
 import re
 import secrets
-import time
 import unicodedata
 import urllib.error
 import urllib.request
@@ -20,7 +19,7 @@ import phonenumbers
 from google.auth import exceptions as google_auth_exceptions
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, create_engine, select, text, inspect, or_
@@ -518,7 +517,7 @@ def migrate_legacy_property_images() -> None:
 ensure_schema_columns()
 migrate_legacy_property_images()
 
-app = FastAPI(title="Propomi API", version="1.3.0")
+app = FastAPI(title="Propomi API", version="1.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -1054,7 +1053,7 @@ def ensure_seed(db: Session) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "propomi-api", "version": "1.3.0"}
+    return {"status": "ok", "service": "propomi-api", "version": "1.4.0"}
 
 
 @app.post("/auth/guest")
@@ -2100,6 +2099,11 @@ def agency(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
             "id": a.id, "name": a.name, "city": a.city, "verified": a.verified, "claimed": a.claimed, "phone": a.phone,
             "verificationStatus": a.verification_status, "instagram": a.instagram, "websiteLink": a.website_link,
             "freeLeadsRemaining": a.free_leads_remaining, "slug": a.slug,
+            # T5.1 lectura (sin checkout Lemon todavía).
+            "subscriptionTier": a.subscription_tier,
+            "planLeadQuota": a.plan_lead_quota,
+            "leadsUsedCurrentPeriod": a.leads_used_current_period,
+            "subscriptionStartedAt": a.subscription_started_at.isoformat() if a.subscription_started_at else None,
         }
 
 

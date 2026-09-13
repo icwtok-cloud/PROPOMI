@@ -1,4 +1,4 @@
-use client';
+'use client';
 import {useEffect,useState} from 'react';
 import {getAnalyticsDemand,getMarketOpportunities,MarketOpportunities} from '../lib/api';
 import {DemandSummary,Session} from '../lib/types';

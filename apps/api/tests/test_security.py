@@ -8,6 +8,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("ENV", "test")
 
 from fastapi.testclient import TestClient
+from datetime import datetime, timezone
 from app.main import app, engine, Base, Session, User, Agency, AgencyPhone, Role, create_token
 
 Base.metadata.drop_all(engine)
@@ -20,12 +21,25 @@ def seed_users():
     with Session(engine) as db:
         agency = db.get(Agency, "a1")
         if not agency:
-            agency = Agency(id="a1", name="Agencia 1", city="BA", phone="+5491155550101", claimed=True)
+            agency = Agency(
+                id="a1", name="Agencia 1", city="BA", phone="+5491155550101", claimed=True,
+                verification_status="VERIFIED", verified=True,
+            )
             db.add(agency)
+        else:
+            agency.verification_status = "VERIFIED"
+            agency.verified = True
         buyer = db.get(User, "u1")
+        now = datetime.now(timezone.utc)
         if not buyer:
-            buyer = User(id="u1", phone="guest-buyer", role=Role.COMPRADOR.value)
+            buyer = User(
+                id="u1", phone="guest-buyer", role=Role.COMPRADOR.value,
+                phone_verified_at=now, google_verified_at=now,
+            )
             db.add(buyer)
+        else:
+            buyer.phone_verified_at = buyer.phone_verified_at or now
+            buyer.google_verified_at = buyer.google_verified_at or now
         agent = db.get(User, "u2")
         if not agent:
             agent = User(id="u2", phone="+5491155550101", role=Role.AGENTE.value, agency_id="a1")
@@ -163,10 +177,10 @@ def test_cannot_add_phone_already_used_by_another_agency():
     _, agent_token = seed_users()
     with Session(engine) as db:
         if not db.get(Agency, "a2"):
-            db.add(Agency(id="a2", name="Agencia 2", city="BA", phone="+5491100001111", claimed=True))
+            db.add(Agency(id="a2", name="Agencia 2", city="BA", phone="+5491155559999", claimed=True))
             db.commit()
     agent_headers = {"Authorization": f"Bearer {agent_token}"}
-    r = client.post("/agencies/a1/phones", json={"phone": "+5491100001111"}, headers=agent_headers)
+    r = client.post("/agencies/a1/phones", json={"phone": "+5491155559999"}, headers=agent_headers)
     assert r.status_code == 409
 
 
