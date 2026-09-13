@@ -84,7 +84,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V8 |
+| INSTRUCCIONES.md | V9 |
 | apps/web/lib/types.ts | V1 |
 | apps/web/lib/api.ts | V1 |
 | apps/web/components/AgentDashboard.tsx | V1 |
@@ -149,6 +149,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 005 | `PropertyCard.tsx` solo mostraba `p.image` (singular, campo DEPRECATED) e ignoraba `p.images[]`, `p.originPublishedAt`, `p.pool` y `p.petFriendly` que el backend ya devuelve y el tipo `Property` ya soporta desde la etapa 001. Se corrigió: la portada ahora usa `images[0]` con fallback a `image`, se muestra un contador "+N fotos" si hay más de una, se agrega `originPublishedAt` debajo de la superficie/ambientes, y se suman los tags "Pileta" y "Acepta mascotas". Se evitó a propósito usar clases CSS nuevas (se reutilizaron `fresh`, `muted`, `tags`, etc. ya existentes) para no depender de `globals.css`, que todavía no fue leído. | apps/web/components/PropertyCard.tsx | etapa-005_fix-galeria-y-campos-faltantes-property-card | Pendiente de push |
 | 006 | Se confirmó que `globals.css` NO tenía las clases `.notice-ok` / `.notice-warn` usadas por `AgentDashboard.tsx` desde la etapa 004 (el aviso de verificación se veía sin color). Se agregaron reutilizando la paleta ya existente de `.reveal-box--done` / `.reveal-box--pending` (verde/ámbar) para mantener consistencia visual. | apps/web/app/globals.css | etapa-006_fix-clases-css-faltantes-notice-ok-warn | Pendiente de push |
 | 007 | Reglas de sesión agregadas: sin narración (Claude entrega resultado + comandos, sin relatar el proceso), sin comandos de rollback salvo pedido explícito, y formato fijo en bloque de código para pedir links faltantes. | INSTRUCCIONES.md | etapa-007_reglas-sin-narracion-sin-rollback-automatico | Pendiente de push |
+| 008 | Confirmado (clonando el repo directo, sin necesitar raw links): `OfferModal.tsx` YA bloquea "Enviar oferta" (`disabled={busy||!phoneVerified||!googleVerified}`) hasta que celular+Google estén verificados, espejando la exigencia real del backend en `POST /offers`. `BuyerIdentityModal.tsx` (nombre+celular, sin OTP) solo se usa para las acciones de menor intención (pregunta/visita), lo cual es correcto por diseño — no requieren la verificación fuerte que sí exige ofertar. No hizo falta ningún cambio de código. | — (solo verificación) | — | Confirmado, sin push necesario |
 
 ## Cierre de sesión (2026-09-13) — arrancar la próxima sesión directo desde acá
 
@@ -173,7 +174,9 @@ https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/
    PowerShell (sin narrar el proceso, sin comandos de rollback salvo que se pidan),
    y seguir encadenando etapas chicas sin volver a preguntar "qué sigue".
 
-## Próximo paso lógico (candidato para etapa 008)
+## Próximo paso lógico (candidato para etapa 009)
 
-- Ver "Cierre de sesión" arriba — es el mismo paso, ya con los links listos para
-  pegar.
+- Backend (`main.py`) no tiene bugs pendientes detectados. Candidatos para etapa
+  009: revisar `AgentOfferActions.tsx` y `DemandPanel.tsx` (aún no auditados
+  línea por línea), o continuar con Etapa 2 del roadmap general (60 días
+  freshness, dedup, cap de 5 fotos ya cumplido).
