@@ -90,11 +90,11 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V19 |
+| INSTRUCCIONES.md | V20 |
 | apps/web/lib/types.ts | V3 |
 | apps/web/lib/api.ts | V4 |
 | apps/web/app/admin/page.tsx | V1 |
-| apps/api/app/main.py | V7 |
+| apps/api/app/main.py | V8 |
 | apps/web/components/AgentDashboard.tsx | V2 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/app/globals.css | V1 |
@@ -171,6 +171,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 016 | Cierra el paquete de subdominios por agencia (no depende del DNS, a diferencia del resto): la pestaña "Mi cuenta" de `AgentDashboard.tsx` ahora muestra "Tu página pública" con un input readonly con la URL del storefront (`https://{slug}.{NEXT_PUBLIC_ROOT_DOMAIN}` si ese env está seteado, o `/tienda/{slug}` relativo si no — mismo fallback que ya usa `middleware.ts`, así funciona incluso antes de que el DNS wildcard esté armado) y un botón "Copiar link" (`navigator.clipboard.writeText`, con aviso de fallback si el navegador lo bloquea). No se muestra nada si `agency.slug` todavía no llegó (agencia recién creada antes del backfill de la etapa 014) — evita mostrar un link roto en vez de fallar en silencio. Verificado en sandbox: `npx tsc --noEmit` sin errores, `npx next build` completo y exitoso (mismas 5 rutas de la etapa 015, sin cambios de tamaño relevantes). Con esto el roadmap de "subdominios por agencia" (Etapa 4 del roadmap general) queda funcionalmente completo del lado de Propomi — lo único pendiente es la infraestructura de DNS/Vercel que arma el usuario (ver "Próximo paso lógico"). | apps/web/components/AgentDashboard.tsx | etapa-016_url-storefront-en-mi-cuenta | Pendiente de push |
 | 017 | Gateway de pago real para pay-per-lead (reveal de contacto), con Lemon Squeezy (decisión del usuario, reemplaza al Mercado Pago/Stripe anotado en la etapa 016). `PaymentGateway` (Protocol) gana un método nuevo `create_checkout(agency_id, amount_usd, reference) -> str | None`, sin tocar `charge()`, porque Lemon Squeezy es un checkout hosteado + confirmación asíncrona por webhook, no un cobro síncrono con tarjeta como el Protocol original asumía. `MockPaymentGateway.create_checkout()` devuelve `None` (sin cambio de comportamiento fuera de producción). `LemonSqueezyPaymentGateway` (nueva): `charge()` siempre `False` (nunca hay confirmación en el mismo request); `create_checkout()` llama a `POST https://api.lemonsqueezy.com/v1/checkouts` (con `urllib` de la stdlib, sin agregar dependencia nueva) mandando `transaction_id`+`agency_id` en `custom_data` del checkout, para poder identificarlo cuando llegue el webhook. 4 variables de entorno nuevas: `LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`, `LEMON_SQUEEZY_VARIANT_ID`, `LEMON_SQUEEZY_WEBHOOK_SECRET`. `payment_gateway` se elige en el arranque (`_select_payment_gateway()`): Lemon Squeezy si las 3 primeras variables están, si no el mock (incluso en producción, con warning en logs, para no romper el arranque si todavía no se cargaron). El 402 de `POST /offers/{id}/reveal` ahora incluye `checkout_url` en el `detail` cuando el gateway pudo crear el checkout. Endpoint nuevo `POST /payments/webhooks/lemonsqueezy`: valida la firma `X-Signature` (HMAC-SHA256 del body crudo con `LEMON_SQUEEZY_WEBHOOK_SECRET`, `hmac.compare_digest` para evitar timing attacks; sin secreto configurado o sin firma, rechaza con 503/401), ignora cualquier evento que no sea `order_created` con `status=paid` y `custom_data.transaction_id` conocido (devuelve 200 igual, para que Lemon Squeezy no reintente de más), y si matchea una `RevealTransaction` `PENDING` la marca `COMPLETED` + revela el contacto de la oferta asociada — nunca crea una transacción nueva desde el webhook (si el id no existe en la base, se ignora). Tests automáticos: mismos 9/11 de siempre (los 2 preexistentes sin relación, confirmados de nuevo corriendo `pytest` real). No se pudo probar el checkout/webhook contra Lemon Squeezy real en este sandbox (sin credenciales ni acceso de red a `api.lemonsqueezy.com`) — verificado con lectura de código + `ast.parse` + suite de tests existente pasando igual que antes; falta probar end-to-end contra Lemon Squeezy de verdad (ver "Próximo paso lógico"). | apps/api/app/main.py | etapa-017_lemon-squeezy-payment-gateway | Pendiente de push |
 | 018 | Cierra el hueco que quedó anotado al final de la 017: ningún frontend mostraba el `checkout_url` del 402 de `/offers/{id}/reveal`. `AgentOfferActions.tsx`: cuando el 402 trae `checkout_url`, se guarda en estado y se muestra un link "Pagar con Lemon Squeezy" (`target="_blank"`) junto al box de "pago pendiente" ya existente. Al volver de pagar, el agente no aterriza de nuevo en este modal (el `redirect_url` del checkout es fijo, a `/mi-cuenta`), así que se agregó un botón "Ya pagué, verificar" que NO reintenta `revealContact` directo (eso generaría un checkout nuevo si Lemon Squeezy todavía no confirmó, duplicando transacciones) — primero consulta el estado real con el endpoint nuevo `GET /payments/{transaction_id}/status` (solo devuelve `PENDING`/`COMPLETED`, nunca el contacto) y, únicamente si ya está `COMPLETED`, recién ahí llama a `revealContact` (que ya sabe devolver el contacto sin volver a cobrar gracias a la idempotencia de la 017). Se mantiene el botón "Confirmar pago (dev)" tal cual (sigue pegándole al mock-complete, que sigue bloqueado en producción). Nuevas funciones en `api.ts`: `paymentStatus()`. Verificado en sandbox: `pytest` 9/11 (mismos 2 preexistentes), `npx tsc --noEmit` sin errores, `npx next build` completo y exitoso (mismas 5 rutas, sin cambios de tamaño relevantes, mismo warning de autoprefixer preexistente). Pendiente real (no de código, ver "Próximo paso lógico"): probar el flujo de punta a punta contra Lemon Squeezy de verdad, cosa que este sandbox no puede hacer sin credenciales ni acceso de red a `api.lemonsqueezy.com`. | apps/api/app/main.py, apps/web/lib/api.ts, apps/web/components/AgentOfferActions.tsx | etapa-018_checkout-url-y-verificacion-pago-frontend | Pendiente de push |
+| 019 | Primer recorte (backend, deliberadamente chico) de "múltiples agentes por propiedad con fusión de rango de precio", ya decidido en el plan maestro (sección 6.1) — no confundir con la revisión manual de duplicados de la etapa 011/012, que sigue intacta para el caso que resolvía (misma agencia cargando datos sucios/repetidos). Columna nueva `Property.listing_group_id` (nullable, indexada), migrada en `ensure_schema_columns`. En `POST /properties/ingest`: cuando `find_possible_duplicate()` (misma función de la 011, sin tocar) encuentra un candidato y ESE candidato es de una agencia DISTINTA a la de la propiedad que se está ingresando, ya no se marca `needs_review` (no es un error a revisar: es la misma propiedad real publicada por otro agente) — en cambio se le asigna un `listing_group_id` compartido (reusa el del candidato si ya tenía uno de una fusión previa, si no crea uno nuevo y se lo backfillea también al candidato). Si el duplicado es de la MISMA agencia (o ninguna de las dos tiene agencia), se mantiene exactamente el comportamiento viejo (`needs_review`+`possible_duplicate_of`, cola de revisión manual de la 012). `prop_dict()` expone `listingGroupId`. Endpoint público nuevo `GET /properties/{id}/group`: si la propiedad no está agrupada devuelve `grouped: false` con ella misma como único miembro (no es un error, es el caso normal); si está agrupada, devuelve todos los miembros del grupo + `priceMin`/`priceMax` calculados sobre esa lista — esto es el "precio en rango" que pide el plan maestro, calculado al leer, sin desnormalizar nada. Deliberadamente NO incluido en esta etapa (queda para una etapa aparte, con confirmación previa porque decide cómo se reparte un lead entre agencias — toca el negocio, no solo el dato): la notificación a todas las agencias del grupo a la vez, "gana el que revela primero" y la cola de prioridad por antigüedad de suscripción con timeout 24h/6h que también describe el plan maestro 6.1. Verificado en sandbox: `pytest` 9/11 (mismos 2 preexistentes de siempre) y prueba manual end-to-end con `TestClient` (ingest agencia A -> ingest agencia B con precio/zona/superficie similar -> segunda queda con `listing_group_id` y sin `needs_review` -> `GET /properties/{id}/group` devuelve ambos miembros con `priceMin=100000`/`priceMax=102000` sobre un caso de prueba real). No hay frontend todavia consumiendo `GET /properties/{id}/group` (panel interno puro, como el resto de la 011/012, hasta que se decida como mostrarlo). | apps/api/app/main.py | etapa-019_listing-group-multi-agente-rango-precio | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -188,41 +189,41 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
     wildcard resuelve, hay que pedirle al usuario que abra el link él mismo
     y comparta qué ve, o pegar el resultado de un `curl`/navegador.
 
-## Cierre de sesión (2026-09-13, quinta sesión) — arrancar la próxima sesión directo desde acá
+## Cierre de sesión (2026-09-13, sexta sesión) — arrancar la próxima sesión directo desde acá
 
-Etapas 017 y 018 completas y pusheadas: integración real de Lemon Squeezy
-como `PaymentGateway` para pay-per-lead (checkout hosteado + webhook de
-confirmación) y su consumo en `AgentOfferActions.tsx` (link de pago +
-verificación de estado sin duplicar checkouts). Con esto, el flujo de
-código de "cobrar por revelar contacto" queda funcionalmente completo. Ver
-detalle en las filas 017/018 de "Historial de etapas", incluidas las 4
-variables de entorno nuevas que el usuario tiene que cargar en Render
-(`LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`,
-`LEMON_SQUEEZY_VARIANT_ID`, `LEMON_SQUEEZY_WEBHOOK_SECRET`) para que deje de
-usarse el mock en producción. Sin esas 4 variables cargadas,
-`/offers/{id}/reveal` sigue devolviendo 402 sin `checkout_url` (mismo
-comportamiento seguro que antes: nunca revela gratis).
+Etapas 017-019 completas y pusheadas: Lemon Squeezy real como
+`PaymentGateway` (checkout + webhook), su consumo en `AgentOfferActions.tsx`,
+y el primer recorte de datos de "múltiples agentes por propiedad" (
+`listing_group_id` + `GET /properties/{id}/group` con precio en rango).
+Ver detalle en las filas 017/018/019 de "Historial de etapas".
 
-## Próximo paso lógico (candidato para etapa 019)
+## Próximo paso lógico (candidato para etapa 020)
 
 - **Pendiente 100% del usuario, fuera de este chat**: cargar las 4 variables
-  de entorno de Lemon Squeezy en Render (ver arriba) y, del lado de Lemon
-  Squeezy, registrar la URL del webhook
-  (`https://<host-de-render>/payments/webhooks/lemonsqueezy`) con el mismo
-  secreto que `LEMON_SQUEEZY_WEBHOOK_SECRET`. Sin esto, la integración de
-  017/018 queda escrita pero inactiva (sigue cayendo al mock). Una vez
-  cargado, conviene un pago real de prueba end-to-end antes de confiar en el
-  flujo — este sandbox no puede probarlo (sin credenciales ni acceso de red
-  a `api.lemonsqueezy.com`).
+  de entorno de Lemon Squeezy en Render (`LEMON_SQUEEZY_API_KEY`,
+  `LEMON_SQUEEZY_STORE_ID`, `LEMON_SQUEEZY_VARIANT_ID`,
+  `LEMON_SQUEEZY_WEBHOOK_SECRET`) y, del lado de Lemon Squeezy, registrar la
+  URL del webhook (`https://<host-de-render>/payments/webhooks/lemonsqueezy`)
+  con el mismo secreto. Sin esto, la integración de 017/018 queda escrita
+  pero inactiva (sigue cayendo al mock). Una vez cargado, conviene un pago
+  real de prueba end-to-end antes de confiar en el flujo — este sandbox no
+  puede probarlo (sin credenciales ni acceso de red a
+  `api.lemonsqueezy.com`).
+- **A confirmar con el usuario antes de arrancar (toca el negocio, no solo
+  el dato)**: la segunda mitad de "múltiples agentes por propiedad" (plan
+  maestro 6.1) que la etapa 019 dejó afuera a propósito — notificar a todas
+  las agencias del grupo a la vez, "gana el que revela primero", con cola
+  de prioridad por antigüedad de suscripción y timeout 24h (con
+  suscriptores) / 6h (sin ninguno). Esto decide cómo se reparte un lead
+  pago entre agencias, así que no se asume en silencio.
 - De la lista de pendientes que quedó registrada en
   `/areas/proferta-realestate.md` (memoria de Claude, no de este repo),
-  siguen abiertos, en orden aproximado de impacto:
-  (a) esquema de múltiples agentes por propiedad con fusión de rango de
-  precio; (b) UI de planes de suscripción y facturación real (ahora que ya
-  existe una pasarela real, esto se vuelve más viable — probablemente
-  también vía Lemon Squeezy, a confirmar con el usuario); (c) feature "Busco
-  propiedad" (demanda particular) y su dashboard de métricas premium. Al
-  abrir la próxima sesión, si el usuario no da una dirección explícita,
-  proponer (a) o (b) según lo que priorice el negocio, confirmando antes de
-  arrancar si toca dinero (regla "Si algo es ambiguo", no se asume en
-  silencio).
+  siguen abiertos además de lo anterior, en orden aproximado de impacto:
+  (a) UI de planes de suscripción y facturación real (ahora que ya existe
+  una pasarela real, esto se vuelve más viable — probablemente también vía
+  Lemon Squeezy, a confirmar con el usuario); (b) feature "Busco propiedad"
+  (demanda particular) y su dashboard de métricas premium. Al abrir la
+  próxima sesión, si el usuario no da una dirección explícita, proponer la
+  cola de prioridad de arriba o (a), confirmando antes de arrancar
+  cualquiera de las dos porque ambas tocan dinero/reparto de negocio (regla
+  "Si algo es ambiguo", no se asume en silencio).

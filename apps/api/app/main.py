@@ -187,6 +187,15 @@ class Property(Base):
     # automatizar el merge/descarte todavía.
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     possible_duplicate_of: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Etapa 019 (plan maestro 6.1): cuando el dedup de la 011 encuentra que la
+    # publicación "duplicada" es de OTRA agencia (no un error de carga de la
+    # misma agencia), no es un dato sucio a revisar — es la misma propiedad
+    # real ofrecida por varios agentes, caso ya decidido en el plan maestro
+    # ("se fusionan en una ficha con precio en rango"). `listing_group_id`
+    # agrupa esas filas sin fusionarlas físicamente (cada agencia sigue
+    # dueña de su propia fila/oferta/reveal); el rango de precio se calcula
+    # al leer, ver `GET /properties/{id}/group`.
+    listing_group_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
 
 
 class Event(Base):
@@ -402,6 +411,7 @@ def ensure_schema_columns() -> None:
             "origin_published_at": "VARCHAR(100)",
             "needs_review": "BOOLEAN DEFAULT FALSE",
             "possible_duplicate_of": "VARCHAR(40)",
+            "listing_group_id": "VARCHAR(40)",
         },
         "agencies": {
             "phone": "VARCHAR(30)",
@@ -799,6 +809,22 @@ def ingest_property(payload: PropertyIngestIn, _: None = Depends(require_admin))
             return {"id": existing.id, "status": "updated", "needs_review": existing.needs_review, "possible_duplicate_of": existing.possible_duplicate_of}
 
         duplicate = find_possible_duplicate(db, payload.zone, payload.price, payload.surface)
+
+        # Etapa 019: si el "duplicado" es de otra agencia, es multi-agente
+        # sobre la misma propiedad real (plan maestro 6.1) — se agrupa por
+        # listing_group_id, sin marcar needs_review (no es un error a
+        # revisar). Si es de la MISMA agencia (o `duplicate` no tiene
+        # agencia), se mantiene el comportamiento viejo de la etapa 011:
+        # needs_review para que un admin lo confirme o descarte a mano.
+        is_multi_agent_dup = bool(
+            duplicate and duplicate.agency_id and payload.agency_id and duplicate.agency_id != payload.agency_id
+        )
+        group_id = None
+        if is_multi_agent_dup:
+            group_id = duplicate.listing_group_id or f"lg-{uuid.uuid4().hex[:12]}"
+            if not duplicate.listing_group_id:
+                duplicate.listing_group_id = group_id
+
         new_id = f"p-{uuid.uuid4().hex[:12]}"
         prop = Property(
             id=new_id, title=payload.title, type=payload.type, operation=payload.operation,
@@ -813,11 +839,16 @@ def ingest_property(payload: PropertyIngestIn, _: None = Depends(require_admin))
             contact_phone_raw=payload.contact_phone_raw,
             contact_phone_normalized=normalize_phone(payload.contact_phone_raw) if payload.contact_phone_raw else None,
             detected_at=now, last_seen_at=now,
-            needs_review=bool(duplicate), possible_duplicate_of=duplicate.id if duplicate else None,
+            needs_review=bool(duplicate) and not is_multi_agent_dup,
+            possible_duplicate_of=duplicate.id if (duplicate and not is_multi_agent_dup) else None,
+            listing_group_id=group_id,
         )
         db.add(prop)
         db.commit()
-        return {"id": prop.id, "status": "created", "needs_review": prop.needs_review, "possible_duplicate_of": prop.possible_duplicate_of}
+        return {
+            "id": prop.id, "status": "created", "needs_review": prop.needs_review,
+            "possible_duplicate_of": prop.possible_duplicate_of, "listing_group_id": prop.listing_group_id,
+        }
 
 
 DEMO = [
@@ -1158,7 +1189,37 @@ def prop_dict(p: Property) -> dict[str, Any]:
         "originPublishedAt": p.origin_published_at,
         "description": p.description, "agencyId": p.agency_id, "detectedAt": p.detected_at.isoformat(), "lastSeenAt": p.last_seen_at.isoformat(),
         "needsReview": p.needs_review, "possibleDuplicateOf": p.possible_duplicate_of,
+        "listingGroupId": p.listing_group_id,
     }
+
+
+@app.get("/properties/{property_id}/group")
+def get_listing_group(property_id: str):
+    """Etapa 019 (plan maestro 6.1): si esta propiedad está agrupada porque
+    varias agencias publican la misma propiedad real, devuelve el resto del
+    grupo + el rango de precio fusionado (min/max entre todas las filas del
+    grupo, incluida esta). Público (mismo criterio que GET /properties: no
+    expone contacto de agencia, solo lo que ya es público en otras
+    pantallas). Si la propiedad no pertenece a ningún grupo, devuelve
+    `grouped: false` en vez de 404 — no tener grupo es el caso normal, no un
+    error."""
+    with Session(engine) as db:
+        prop = db.get(Property, property_id)
+        if not prop:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        if not prop.listing_group_id:
+            return {"grouped": False, "members": [prop_dict(prop)], "priceMin": prop.price, "priceMax": prop.price}
+        members = db.scalars(
+            select(Property).where(Property.listing_group_id == prop.listing_group_id)
+        ).all()
+        prices = [m.price for m in members] or [prop.price]
+        return {
+            "grouped": True,
+            "listingGroupId": prop.listing_group_id,
+            "members": [prop_dict(m) for m in members],
+            "priceMin": min(prices),
+            "priceMax": max(prices),
+        }
 
 
 class ReviewResolutionIn(BaseModel):
