@@ -345,6 +345,33 @@ class RevealTransaction(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+
+
+class ColdStartTask(Base):
+    """T6.1: cuando llega una oferta real sobre una propiedad de una agencia
+    todavía no reclamada (o sin agency_id pero con teléfono scrapeado), se
+    genera una tarea de notificación manual. El envío es 100% humano al
+    principio. El teléfono scrapeado NUNCA viaja en endpoints públicos —
+    solo en GET /admin/cold-start/pending (X-Admin-Key)."""
+    __tablename__ = "cold_start_tasks"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    offer_id: Mapped[str] = mapped_column(String(40), index=True)
+    property_id: Mapped[str] = mapped_column(String(40), index=True)
+    agency_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # Teléfono scrapeado / de la agencia no reclamada — solo para el equipo
+    # interno que manda el mensaje a mano. Nunca en API pública.
+    target_phone: Mapped[str] = mapped_column(String(40))
+    amount: Mapped[float] = mapped_column(Float)
+    currency: Mapped[str] = mapped_column(String(8), default="USD")
+    property_title: Mapped[str] = mapped_column(String(200))
+    property_zone: Mapped[str] = mapped_column(String(100))
+    # Token de un solo uso para /onboarding/{token} (T6.2); se invalida al claim.
+    onboarding_token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")  # PENDING | SENT | CLAIMED | EXPIRED
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
 class AgentSuppressionList(Base):
     """Lista de baja permanente — un teléfono/email acá nunca vuelve a
     recibir contacto en frío ni ver sus datos reutilizados, aunque el
@@ -1521,6 +1548,35 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
         )
         db.add(offer)
         db.add(Event(name="offer_created", property_id=p.id, user_id=session["user_id"], agency_id=p.agency_id, context={"amount": payload.amount}))
+
+        # T6.1 cold start: oferta real sobre agencia no reclamada (o sin
+        # agency pero con teléfono scrapeado) → tarea de notificación manual.
+        # Nunca incluye buyer_name/phone/email. El teléfono target solo vive
+        # en esta tabla y se lee desde /admin/cold-start/pending.
+        target_phone = None
+        agency_id_for_task = p.agency_id
+        if p.agency_id:
+            agency_row = db.get(Agency, p.agency_id)
+            if agency_row and not agency_row.claimed:
+                target_phone = agency_row.phone or p.contact_phone_normalized or p.contact_phone_raw
+        elif p.contact_phone_normalized or p.contact_phone_raw:
+            target_phone = p.contact_phone_normalized or p.contact_phone_raw
+        if target_phone:
+            token = secrets.token_urlsafe(24)
+            db.add(ColdStartTask(
+                id=f"cs-{uuid.uuid4().hex[:12]}",
+                offer_id=offer.id,
+                property_id=p.id,
+                agency_id=agency_id_for_task,
+                target_phone=str(target_phone),
+                amount=payload.amount,
+                currency="USD",
+                property_title=p.title,
+                property_zone=p.zone,
+                onboarding_token=token,
+                status="PENDING",
+            ))
+
         db.commit()
         return {"id": offer.id, "status": offer.status}
 
@@ -2086,3 +2142,70 @@ def admin_reject_agency(agency_id: str, payload: AgencyReviewIn | None = None, _
             a.verification_notes = sanitize_free_text(payload.notes, "notas de revisión")
         db.commit()
         return agency_admin_dict(a)
+
+
+@app.get("/admin/cold-start/pending")
+def admin_cold_start_pending(_: None = Depends(require_admin)):
+    """Cola de notificaciones manuales T6.1. Único endpoint que expone el
+    teléfono scrapeado de la agencia no reclamada — protegido por X-Admin-Key.
+    El resumen de la oferta nunca incluye datos del comprador."""
+    with Session(engine) as db:
+        tasks = db.scalars(
+            select(ColdStartTask)
+            .where(ColdStartTask.status == "PENDING")
+            .order_by(ColdStartTask.created_at.asc())
+        ).all()
+        return [
+            {
+                "id": t.id,
+                "offerId": t.offer_id,
+                "propertyId": t.property_id,
+                "agencyId": t.agency_id,
+                "targetPhone": t.target_phone,
+                "amount": t.amount,
+                "currency": t.currency,
+                "propertyTitle": t.property_title,
+                "propertyZone": t.property_zone,
+                "onboardingToken": t.onboarding_token,
+                "onboardingPath": f"/onboarding/{t.onboarding_token}",
+                "status": t.status,
+                "createdAt": t.created_at.isoformat() if t.created_at else None,
+                "messageTemplate": (
+                    f"Hola — alguien ofreció {t.currency} {t.amount:,.0f} por "
+                    f"«{t.property_title}» ({t.property_zone}) en Propomi. "
+                    f"Reclamá tu perfil y ver el detalle: "
+                    f"https://propomi.lat/onboarding/{t.onboarding_token}"
+                ),
+            }
+            for t in tasks
+        ]
+
+
+class ColdStartMarkIn(BaseModel):
+    notes: str | None = Field(default=None, max_length=300)
+
+    @field_validator("notes")
+    @classmethod
+    def check_notes(cls, v: str | None) -> str | None:
+        return sanitize_free_text(v, campo="notes")
+
+
+@app.post("/admin/cold-start/{task_id}/mark-sent")
+def admin_cold_start_mark_sent(
+    task_id: str,
+    payload: ColdStartMarkIn | None = None,
+    _: None = Depends(require_admin),
+):
+    with Session(engine) as db:
+        task = db.get(ColdStartTask, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Tarea no encontrada")
+        if task.status not in {"PENDING", "SENT"}:
+            raise HTTPException(status_code=400, detail=f"Estado actual: {task.status}")
+        task.status = "SENT"
+        task.sent_at = datetime.now(timezone.utc)
+        if payload and payload.notes:
+            task.notes = payload.notes
+        db.commit()
+        return {"id": task.id, "status": task.status, "sentAt": task.sent_at.isoformat()}
+
