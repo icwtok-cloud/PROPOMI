@@ -90,12 +90,12 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V16 |
+| INSTRUCCIONES.md | V17 |
 | apps/web/lib/types.ts | V3 |
 | apps/web/lib/api.ts | V3 |
 | apps/web/app/admin/page.tsx | V1 |
 | apps/api/app/main.py | V5 |
-| apps/web/components/AgentDashboard.tsx | V1 |
+| apps/web/components/AgentDashboard.tsx | V2 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/app/globals.css | V1 |
 | apps/web/middleware.ts | V1 (nuevo) |
@@ -167,35 +167,42 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 013 | Pantalla mínima de panel interno: `apps/web/app/admin/page.tsx` (nueva), protegida con la clave `X-Admin-Key` pedida una sola vez y guardada en `localStorage` (`propomi-admin-key`) — NUNCA Clerk/OTP, porque este panel no es de cara al comprador/agente. Dos pestañas: "Agencias pendientes" (consume `GET /admin/agencies/pending`, `POST /admin/agencies/{id}/approve`, `POST /admin/agencies/{id}/reject`, endpoints que ya existían desde la etapa 4 pero sin frontend) y "Posibles duplicados" (consume los dos endpoints nuevos de la etapa 012, muestra la propiedad nueva junto a su candidata a duplicado lado a lado, con botones "No es duplicado"/"Confirmar duplicado"). Se agregaron `PendingAgency` y `ReviewQueueItem` a `types.ts`, y `getPendingAgencies`/`approveAgency`/`rejectAgency`/`getReviewQueue`/`resolveReviewItem` a `api.ts` (usan un `adminReq()` nuevo, separado del `req()` de sesión porque el header es `X-Admin-Key` y no `Authorization: Bearer`). Reutiliza clases CSS ya existentes (`.tablewrap`, `.summarycard`, `.tab`, `.notice`, `.toast`, etc.) sin tocar `globals.css`. Verificado con `tsc --noEmit` (sin errores) y `next build` completo (build exitoso, 4 rutas generadas incluyendo `/admin`; el único warning es de autoprefixer en `globals.css`, preexistente y no relacionado). | apps/web/lib/types.ts, apps/web/lib/api.ts, apps/web/app/admin/page.tsx | etapa-013_panel-admin-agencias-y-duplicados | Pendiente de push |
 | 014 | Arranque de subdominios por agencia (Etapa 4 del roadmap general de negocio — distinta de la numeración 000-014 de este archivo, ver aclaración de la etapa 009/013 anteriores). Parte backend únicamente (frontend queda para 015): columna nueva `Agency.slug` (única, nullable por compatibilidad), helper `slugify()` (minúsculas, sin acentos, solo `[a-z0-9-]`, fallback `"agencia"` si el nombre queda vacío) y `ensure_agency_slugs()` que rellena el slug de cualquier agencia que todavía no lo tenga (barato: no hace nada si no hay filas con `slug IS NULL`), resolviendo colisiones con sufijo `-2`, `-3`, etc. Se llama en los dos puntos donde se lee/expone una agencia por fuera del alta (`GET /agencies/{id}` autenticado y el endpoint nuevo). Las 3 agencias semilla ya tienen slug fijo (`inmobiliaria-norte`, `red-urbana`, `urbania`) para que las URLs no cambien entre reinicios. Nuevo endpoint público (sin auth) `GET /agencies/by-slug/{slug}` → `{id, name, city, slug, verificationStatus}` — solo datos ya públicos en otras pantallas, nunca teléfono/contacto — pensado para que un middleware de Next.js (etapa 015, todavía no escrito) resuelva `inmobiliaria-norte.propomi.lat` a un `agency_id` y de ahí pida `GET /properties?agency_id=<id>` (ese endpoint ya es público desde antes de esta etapa). `GET /agencies/{id}` autenticado ahora también devuelve `slug`, para que el propio agente pueda ver/copiar su URL de storefront desde "Mi cuenta" cuando esa parte del frontend se construya. Tests automáticos: 9/11 (los mismos 2 preexistentes, sin relación, confirmados de nuevo). Smoke test manual corrido en sandbox: `GET /agencies/by-slug/inmobiliaria-norte` → 200 con el slug correcto; slug inexistente → 404; `GET /properties?agency_id=a1` → 200 con las propiedades de esa agencia. | apps/api/app/main.py | etapa-014_slug-agencia-backend | Pendiente de push |
 | 015 | Parte frontend/infra de subdominios por agencia (sigue directo de la 014). `apps/web/middleware.ts` (nuevo): compara el `host` de cada request contra `NEXT_PUBLIC_ROOT_DOMAIN` (default `propomi.lat`); si es un host excluido (dominio raíz con/sin `www`, `propomi.vercel.app`, `localhost`) o no termina en `.{ROOT_DOMAIN}`, deja pasar sin tocar nada; si es un subdominio válido y el path pedido es exactamente `/`, hace `rewrite` (no redirect — la URL visible sigue siendo `{slug}.propomi.lat`) a `/tienda/{slug}`; cualquier OTRA ruta (`/agencia`, `/admin`, etc.) pedida contra un subdominio de agencia pasa sin reescribir, para no romperla por error. Página nueva `apps/web/app/tienda/[slug]/page.tsx`: storefront público mínimo de una sola agencia — pide `GET /agencies/by-slug/{slug}` y, si existe, `GET /properties?agency_id=<id>`, muestra nombre + badge de verificación + grilla de `PropertyCard` reutilizado (mismo componente de la home) con el flujo de "Proponer precio" ya existente (`OfferModal` + `BuyerIdentityModal`, misma gate de celular+Google verificados de la etapa 008); si el slug no resuelve (404), muestra una página explícita de "Agencia no encontrada" con link de vuelta a Propomi — se resolvió la ambigüedad de la etapa 013 (pasar a home normal vs. página propia) a favor de la página propia, porque silenciar el 404 mostrando la home completa hubiera sido más confuso para alguien que llegó por un link de agencia roto. Fix de paso en `api.ts`: `getProperties()` en modo demo (sin `NEXT_PUBLIC_API_URL`) ignoraba cualquier filtro — ahora si se le pasa `agency_id` sí filtra las fixtures de `data.ts` por ese campo, para poder probar el storefront sin backend real. Nueva función `getAgencyBySlug()` en `api.ts` (con fallback demo contra las 3 agencias semilla) y `slug` agregado a `Agency` en `types.ts`. Verificado en sandbox (no solo revisión manual, esta vez con Node real disponible): `npx tsc --noEmit` sin errores, `npx next build` completo y exitoso (5 rutas generadas incluyendo `/tienda/[slug]` como dinámica y el middleware compilado a 34.2kB; el único warning sigue siendo el de autoprefixer preexistente en `globals.css`, sin relación). | apps/web/middleware.ts (nuevo), apps/web/app/tienda/[slug]/page.tsx (nuevo), apps/web/lib/api.ts, apps/web/lib/types.ts | etapa-015_middleware-y-storefront-subdominio | Pendiente de push |
+| 016 | Cierra el paquete de subdominios por agencia (no depende del DNS, a diferencia del resto): la pestaña "Mi cuenta" de `AgentDashboard.tsx` ahora muestra "Tu página pública" con un input readonly con la URL del storefront (`https://{slug}.{NEXT_PUBLIC_ROOT_DOMAIN}` si ese env está seteado, o `/tienda/{slug}` relativo si no — mismo fallback que ya usa `middleware.ts`, así funciona incluso antes de que el DNS wildcard esté armado) y un botón "Copiar link" (`navigator.clipboard.writeText`, con aviso de fallback si el navegador lo bloquea). No se muestra nada si `agency.slug` todavía no llegó (agencia recién creada antes del backfill de la etapa 014) — evita mostrar un link roto en vez de fallar en silencio. Verificado en sandbox: `npx tsc --noEmit` sin errores, `npx next build` completo y exitoso (mismas 5 rutas de la etapa 015, sin cambios de tamaño relevantes). Con esto el roadmap de "subdominios por agencia" (Etapa 4 del roadmap general) queda funcionalmente completo del lado de Propomi — lo único pendiente es la infraestructura de DNS/Vercel que arma el usuario (ver "Próximo paso lógico"). | apps/web/components/AgentDashboard.tsx | etapa-016_url-storefront-en-mi-cuenta | Pendiente de push |
 
-## Cierre de sesión (2026-09-13, tercera sesión) — arrancar la próxima sesión directo desde acá
+## Cierre de sesión (2026-09-13, cuarta sesión) — arrancar la próxima sesión directo desde acá
 
-El usuario va a abrir la próxima sesión pasando SOLO el repo, sin repetir contexto.
-Claude debe, sin preguntar nada más, retomar directo en la etapa 016 (ver
-"Próximo paso lógico" abajo). El código de subdominios (backend + middleware +
-storefront) ya está completo y pusheado (etapas 014-015); lo que falta es
-infraestructura que el usuario arma él mismo y, opcionalmente, exponer la URL
-de storefront en el dashboard del agente.
+El código de subdominios por agencia (backend, middleware, storefront y el
+link en "Mi cuenta") está completo y pusheado (etapas 014-016). No hay ningún
+"próximo paso de código" colgado de esta feature — lo único que falta es la
+infraestructura de DNS/Vercel que arma el usuario fuera de este chat (ver
+abajo). Al abrir la próxima sesión, Claude debe:
 
-## Próximo paso lógico (candidato para etapa 016)
+1. Preguntar primero si el usuario ya configuró el wildcard DNS + Vercel (ver
+   "Próximo paso lógico"). Si dice que sí, ofrecer verificar con un fetch a
+   `https://inmobiliaria-norte.propomi.lat` (o el slug que corresponda) antes
+   de asumir que funciona.
+2. Si el usuario no menciona la infraestructura, no asumir que ya está lista
+   ni bloquearse esperando confirmación de eso: pasar directo al siguiente
+   candidato de código (ver "Próximo paso lógico"), ya que no depende del DNS.
 
-- **Lo que sigue dependiendo 100% del usuario, fuera de este chat**: configurar
-  el registro DNS wildcard `*.propomi.lat` (Namecheap/Cloudflare, apuntando al
-  mismo destino que ya usa `propomi.lat`) y agregar `*.propomi.lat` como
-  dominio wildcard en la configuración de dominios del proyecto en Vercel.
-  Sin esto, el middleware de la etapa 015 nunca recibe tráfico real de
-  subdominio — solo se puede probar hoy visitando `/tienda/{slug}` directo en
-  el dominio ya andando (`propomi.vercel.app/tienda/inmobiliaria-norte`, por
-  ejemplo). Avisarle esto al usuario apenas abra la próxima sesión, antes de
-  seguir con código nuevo, por si ya lo configuró y hay que verificar algo.
-- Candidato de código para etapa 016 (más chico, no depende del DNS): mostrar
-  la URL de storefront (`{slug}.propomi.lat`, con fallback a
-  `/tienda/{slug}` si `NEXT_PUBLIC_ROOT_DOMAIN` no está seteado) en la pestaña
-  "Mi cuenta" de `AgentDashboard.tsx`, con un botón de copiar — el backend ya
-  expone `slug` en `GET /agencies/{id}` desde la etapa 014, así que es un
-  cambio chico y autocontenido en un solo archivo.
-- Nota abierta (no bloqueante): la página `/tienda/[slug]` no tiene comparador
-  ni acciones de "pedir visita"/"hacer pregunta" (solo "Proponer precio", a
-  propósito para mantener la etapa 015 chica) — evaluar con el usuario si vale
-  la pena sumarlas ahí también, o si el storefront queda intencionalmente más
-  simple que la home general.
+## Próximo paso lógico (candidato para etapa 017)
+
+- **Sigue dependiendo 100% del usuario, fuera de este chat**: el wildcard DNS
+  `*.propomi.lat` + el dominio wildcard en Vercel (ver etapa 015/016). No hay
+  nada más de código que Claude pueda hacer para esto.
+- Con la feature de subdominios cerrada del lado de código, no queda ningún
+  pendiente colgado de una etapa anterior — el próximo candidato sale de
+  revisar qué le falta al roadmap general (`docs/PLAN_MAESTRO.md`, sección
+  10) que todavía no esté cubierto. De la lista de pendientes que quedó
+  registrada en `/areas/proferta-realestate.md` (memoria de Claude, no de
+  este repo) siguen abiertos, en orden aproximado de impacto: (a) gateway de
+  pago real (Mercado Pago/Stripe) — hoy `MockPaymentGateway` deniega todo por
+  default; (b) esquema de múltiples agentes por propiedad con fusión de
+  rango de precio; (c) UI de planes de suscripción y facturación real; (d)
+  feature "Busco propiedad" (demanda particular) y su dashboard de métricas
+  premium. Al abrir la próxima sesión, si el usuario no da una dirección
+  explícita, proponer (a) como candidato — es el que más bloquea el modelo
+  de negocio (`payment_gateway.charge()` siempre devuelve `False` fuera de
+  producción, así que ningún cobro real puede completarse todavía) — pero
+  confirmar antes de arrancar, porque toca dinero (regla "Si algo es
+  ambiguo" / sección 5-6-8 del plan maestro, no se asume en silencio).

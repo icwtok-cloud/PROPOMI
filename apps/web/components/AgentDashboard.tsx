@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Building2,Check,Inbox,LogOut,RefreshCw,ShieldCheck,ShieldAlert,Sparkles,TrendingUp,User} from 'lucide-react';
+import {Building2,Check,Globe,Inbox,LogOut,RefreshCw,ShieldCheck,ShieldAlert,Sparkles,TrendingUp,User} from 'lucide-react';
 import {Agency,Offer,Session} from '../lib/types';
 import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
@@ -122,6 +122,22 @@ export default function AgentDashboard(){
     finally{setBusy(false)}
   }
 
+  // Etapa 016: URL pública del storefront de la agencia (etapa 015). El
+  // backend expone `slug` desde la etapa 014 — si por lo que sea todavía no
+  // llegó (agencia recién creada, backfill de slugs no corrió aún), no se
+  // muestra nada en vez de armar un link roto. `NEXT_PUBLIC_ROOT_DOMAIN` es
+  // el mismo env que usa `middleware.ts`; si no está seteado (ej. corriendo
+  // solo en el deploy de Vercel sin dominio propio todavía) se cae a la ruta
+  // relativa `/tienda/{slug}`, que ya funciona sin DNS wildcard.
+  const rootDomain=process.env.NEXT_PUBLIC_ROOT_DOMAIN;
+  const storefrontUrl=agency?.slug?(rootDomain?`https://${agency.slug}.${rootDomain}`:`/tienda/${agency.slug}`):null;
+  async function copyStorefrontUrl(){
+    if(!storefrontUrl)return;
+    const full=storefrontUrl.startsWith('http')?storefrontUrl:`${window.location.origin}${storefrontUrl}`;
+    try{await navigator.clipboard.writeText(full);notify('Link copiado.')}
+    catch{notify('No pudimos copiar el link — copialo manualmente.')}
+  }
+
   function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers([]);setOpps(null)}
 
   if(!ready) return null;
@@ -189,6 +205,12 @@ export default function AgentDashboard(){
     </div>}
 
     {section==='cuenta' && <div className="agentdashpane">
+      {storefrontUrl && <label>Tu página pública<div className="agentloginrow">
+          <input readOnly value={storefrontUrl} onFocus={e=>e.target.select()}/>
+          <button type="button" className="secondary" onClick={copyStorefrontUrl}><Globe size={15}/> Copiar link</button>
+        </div>
+        <span className="muted small">Esta URL muestra solo tus propiedades, con tu nombre y logo de agencia.</span>
+      </label>}
       <label>Nombre de la agencia<input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}/></label>
       <label>Instagram<input value={instagramDraft} onChange={e=>setInstagramDraft(e.target.value)} placeholder="@tuagencia"/></label>
       <label>Sitio web<input value={websiteDraft} onChange={e=>setWebsiteDraft(e.target.value)} placeholder="https://tuagencia.com"/></label>
