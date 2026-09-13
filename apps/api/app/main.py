@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
 import os
 import re
 import secrets
 import time
 import unicodedata
+import urllib.error
+import urllib.request
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -16,7 +20,7 @@ import phonenumbers
 from google.auth import exceptions as google_auth_exceptions
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, create_engine, select, text, inspect, or_
@@ -495,20 +499,107 @@ OTP_MAX_VERIFY_ATTEMPTS = 5
 class PaymentGateway(Protocol):
     def charge(self, agency_id: str, amount_usd: float, reference: str) -> bool: ...
 
+    def create_checkout(self, agency_id: str, amount_usd: float, reference: str) -> str | None:
+        """Devuelve una URL de checkout hosteado para que el agente complete
+        el pago (etapa 017: Lemon Squeezy es redirect-based, no un cobro
+        síncrono con tarjeta guardada). None si el gateway no soporta esto
+        (ej. el mock) — en ese caso el 402 de /offers/{id}/reveal no incluye
+        checkout_url."""
+        ...
+
 
 class MockPaymentGateway:
-    """Seam para una pasarela real (Mercado Pago, Stripe, etc.). A propósito
-    NUNCA aprueba un cobro por sí sola — devuelve False siempre, para que
-    jamás se revele un contacto 'gratis' por accidente mientras no haya una
-    integración real. En desarrollo, el pago se completa manualmente vía
+    """Seam para una pasarela real. A propósito NUNCA aprueba un cobro por sí
+    sola — devuelve False siempre, para que jamás se revele un contacto
+    'gratis' por accidente mientras no haya una integración real. En
+    desarrollo, el pago se completa manualmente vía
     POST /payments/{transaction_id}/mock-complete (bloqueado en producción)."""
     def charge(self, agency_id: str, amount_usd: float, reference: str) -> bool:
         if ENV != "production":
             print(f"[PROPOMI PAYMENT MOCK] Cobro pendiente: agencia={agency_id} monto=USD{amount_usd} ref={reference}")
         return False
 
+    def create_checkout(self, agency_id: str, amount_usd: float, reference: str) -> str | None:
+        return None
 
-payment_gateway: PaymentGateway = MockPaymentGateway()
+
+# --- Etapa 017: Lemon Squeezy como pasarela de pago real para pay-per-lead ---
+# Se eligió Lemon Squeezy (decisión del usuario, no Mercado Pago/Stripe como
+# se había anotado en el "próximo paso lógico" de la etapa 016) porque actúa
+# como Merchant of Record — cobra la tarjeta él mismo con un checkout
+# hosteado y confirma el pago vía webhook, en vez de un `charge()` síncrono
+# como asumía el diseño original del Protocol (por eso se agregó
+# `create_checkout` arriba, sin romper `charge()` para el mock/tests).
+LEMON_SQUEEZY_API_KEY = os.getenv("LEMON_SQUEEZY_API_KEY")
+LEMON_SQUEEZY_STORE_ID = os.getenv("LEMON_SQUEEZY_STORE_ID")
+LEMON_SQUEEZY_VARIANT_ID = os.getenv("LEMON_SQUEEZY_VARIANT_ID")  # variant = "revelar 1 contacto"
+LEMON_SQUEEZY_WEBHOOK_SECRET = os.getenv("LEMON_SQUEEZY_WEBHOOK_SECRET")
+LEMON_SQUEEZY_API_BASE = "https://api.lemonsqueezy.com/v1"
+
+
+class LemonSqueezyPaymentGateway:
+    """Pasarela real vía Lemon Squeezy. `charge()` siempre devuelve False
+    (Lemon Squeezy es asíncrono: no hay forma de confirmar el cobro en el
+    mismo request) — la confirmación real llega por
+    POST /payments/webhooks/lemonsqueezy y de ahí se completa la
+    RevealTransaction. `create_checkout()` crea el checkout hosteado y
+    devuelve su URL para que el agente pague."""
+
+    def charge(self, agency_id: str, amount_usd: float, reference: str) -> bool:
+        return False
+
+    def create_checkout(self, agency_id: str, amount_usd: float, reference: str) -> str | None:
+        if not (LEMON_SQUEEZY_API_KEY and LEMON_SQUEEZY_STORE_ID and LEMON_SQUEEZY_VARIANT_ID):
+            print("[PROPOMI LEMON SQUEEZY] Faltan variables de entorno (API_KEY/STORE_ID/VARIANT_ID) — no se puede crear el checkout.")
+            return None
+        payload = {
+            "data": {
+                "type": "checkouts",
+                "attributes": {
+                    "checkout_data": {
+                        # transaction_id viaja en custom_data para poder
+                        # identificar la RevealTransaction cuando llegue el webhook.
+                        "custom": {"transaction_id": reference, "agency_id": agency_id},
+                    },
+                    "product_options": {"redirect_url": "https://propomi.lat/mi-cuenta?payment=ok"},
+                },
+                "relationships": {
+                    "store": {"data": {"type": "stores", "id": str(LEMON_SQUEEZY_STORE_ID)}},
+                    "variant": {"data": {"type": "variants", "id": str(LEMON_SQUEEZY_VARIANT_ID)}},
+                },
+            }
+        }
+        req = urllib.request.Request(
+            f"{LEMON_SQUEEZY_API_BASE}/checkouts",
+            data=json.dumps(payload).encode("utf-8"),
+            method="POST",
+            headers={
+                "Accept": "application/vnd.api+json",
+                "Content-Type": "application/vnd.api+json",
+                "Authorization": f"Bearer {LEMON_SQUEEZY_API_KEY}",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+                return body["data"]["attributes"]["url"]
+        except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError) as exc:
+            print(f"[PROPOMI LEMON SQUEEZY] Error creando checkout para ref={reference}: {exc}")
+            return None
+
+
+def _select_payment_gateway() -> PaymentGateway:
+    if LEMON_SQUEEZY_API_KEY and LEMON_SQUEEZY_STORE_ID and LEMON_SQUEEZY_VARIANT_ID:
+        return LemonSqueezyPaymentGateway()
+    if ENV == "production":
+        # Sin credenciales de Lemon Squeezy en producción, seguimos con el
+        # mock: sigue sin revelar nada gratis, solo que ningún pago real
+        # puede procesarse hasta que se configuren las 3 variables de arriba.
+        print("[PROPOMI LEMON SQUEEZY] ENV=production sin credenciales configuradas — usando MockPaymentGateway (todo pay-per-lead quedará 402 sin checkout_url).")
+    return MockPaymentGateway()
+
+
+payment_gateway: PaymentGateway = _select_payment_gateway()
 PAY_PER_LEAD_USD = 5.0
 
 
@@ -1404,13 +1495,14 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
         db.commit()
 
         if not charged:
-            raise HTTPException(
-                status_code=402,
-                detail={
-                    "message": f"Se requiere pago de USD {PAY_PER_LEAD_USD} para revelar este contacto.",
-                    "transaction_id": transaction_id,
-                },
-            )
+            checkout_url = payment_gateway.create_checkout(agency_id=agency.id, amount_usd=PAY_PER_LEAD_USD, reference=transaction_id)
+            detail: dict[str, Any] = {
+                "message": f"Se requiere pago de USD {PAY_PER_LEAD_USD} para revelar este contacto.",
+                "transaction_id": transaction_id,
+            }
+            if checkout_url:
+                detail["checkout_url"] = checkout_url
+            raise HTTPException(status_code=402, detail=detail)
         offer.contact_revealed = True
         offer.contact_revealed_at = now
         db.commit()
@@ -1435,6 +1527,61 @@ if ENV != "production":
                 offer.contact_revealed_at = txn.completed_at
             db.commit()
             return {"status": "COMPLETED", "buyer_name": offer.buyer_name if offer else None, "buyer_phone": offer.buyer_phone_raw if offer else None, "buyer_email": offer.buyer_email if offer else None}
+
+
+@app.post("/payments/webhooks/lemonsqueezy")
+async def lemonsqueezy_webhook(request: Request, x_signature: str | None = Header(default=None, alias="X-Signature")):
+    """Confirma un pago real de Lemon Squeezy (etapa 017). Lemon Squeezy manda
+    la firma HMAC-SHA256 del body crudo en `X-Signature`; sin
+    LEMON_SQUEEZY_WEBHOOK_SECRET configurado, se rechaza todo (nunca se
+    confía en un webhook sin poder verificar su firma). Solo se completa la
+    RevealTransaction cuyo `transaction_id` viaja en
+    `meta.custom_data.transaction_id` (el mismo que se mandó en
+    `create_checkout`); cualquier otro evento se ignora con 200 (Lemon
+    Squeezy reintenta si no responde 2xx, así que un evento no relevante para
+    Propomi no debe hacerlo reintentar)."""
+    raw_body = await request.body()
+    if not LEMON_SQUEEZY_WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Webhook no configurado (falta LEMON_SQUEEZY_WEBHOOK_SECRET)")
+    if not x_signature:
+        raise HTTPException(status_code=401, detail="Falta firma")
+    expected = hmac.new(LEMON_SQUEEZY_WEBHOOK_SECRET.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, x_signature):
+        raise HTTPException(status_code=401, detail="Firma inválida")
+
+    payload = json.loads(raw_body.decode("utf-8"))
+    event_name = payload.get("meta", {}).get("event_name")
+    custom_data = payload.get("meta", {}).get("custom_data", {}) or {}
+    transaction_id = custom_data.get("transaction_id")
+
+    # Solo nos importa la confirmación de la orden asociada al checkout de
+    # pay-per-lead; cualquier otro evento (ej. de suscripciones futuras) se
+    # ignora acá a propósito hasta que exista esa feature.
+    if event_name != "order_created" or not transaction_id:
+        return {"status": "ignored"}
+
+    order_status = payload.get("data", {}).get("attributes", {}).get("status")
+    with Session(engine) as db:
+        txn = db.get(RevealTransaction, transaction_id)
+        if not txn:
+            # Idempotencia/seguridad: nunca crear una transacción nueva desde
+            # un webhook — si el id no existe, no hay nada que completar.
+            return {"status": "ignored"}
+        if txn.status == "COMPLETED":
+            return {"status": "already_completed"}
+        if order_status != "paid":
+            return {"status": "ignored"}
+
+        now = datetime.now(timezone.utc)
+        txn.status = "COMPLETED"
+        txn.completed_at = now
+        offer = db.get(Offer, txn.offer_id)
+        if offer:
+            offer.contact_revealed = True
+            offer.contact_revealed_at = now
+            db.add(Event(name="contact_revealed", property_id=offer.property_id, user_id=offer.user_id, agency_id=txn.agency_id, context={"method": "pay_per_lead_lemonsqueezy"}))
+        db.commit()
+        return {"status": "COMPLETED"}
 
 
 @app.post("/offers/{offer_id}/{action}")
