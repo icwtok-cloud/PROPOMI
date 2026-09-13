@@ -1,3 +1,54 @@
+## 2026-09-13 — Etapa 3 v1: evento `search_performed`
+
+- **Objetivo (roadmap sección 10, fase Intelligence):** loguear cada
+  búsqueda/filtro del comprador de forma agregada y anónima, como insumo
+  futuro de matching, recomendaciones, demanda y pricing intelligence.
+- **Archivo pusheado:** `apps/api/app/main.py` → versión **v4**.
+- **`ALLOWED_EVENTS`:** se suma `"search_performed"` al set de eventos
+  válidos (permite además loguearlo manual vía `POST /events` si en el
+  futuro hiciera falta, aunque el uso principal es automático — ver abajo).
+- **`GET /properties`:** ahora loguea un `Event(name="search_performed")`
+  en cada llamada, con:
+  - `context.filters`: solo los filtros efectivamente usados en esa query
+    (zone, type, operation, rooms, max_price, parking, credit, agency_id) —
+    nunca texto libre, nunca datos de contacto.
+  - `context.result_count`: cantidad de resultados que devolvió esa búsqueda.
+  - `user_id` / `agency_id`: se completan solo si viene un header
+    `Authorization` con una sesión válida (opcional — la búsqueda funciona
+    igual sin login, típico caso de comprador anónimo navegando).
+  - Nuevo parámetro opcional `session_id` (mismo patrón que ya usa
+    `POST /events`) para poder agrupar búsquedas de una sesión anónima sin
+    necesitar cuenta.
+  - Si el `Authorization` viene vencido/inválido, la búsqueda **no falla**
+    — se ignora la sesión y se loguea igual sin `user_id` (una búsqueda
+    nunca debe romperse por un token viejo).
+- **No se tocó:** el filtrado de propiedades en sí (misma lógica de antes),
+  `prop_dict()`, ni ningún otro endpoint. Cambio acotado a `GET /properties`
+  y a la constante `ALLOWED_EVENTS`.
+- **Validado en este entorno (Claude), no en la máquina del usuario:**
+  `python3 -m py_compile` sobre el archivo completo → sin errores de
+  sintaxis. **No se pudo importar el módulo real ni correr `pytest`** (sin
+  acceso a red/pip en este entorno) — el usuario no tiene ambiente de test
+  local tampoco (ver `CLAUDE.md`), así que la primera corrida real es en
+  Render. Si el deploy falla o `pytest` local encuentra algo, pegar el
+  error acá.
+- **Pendiente / no se tocó en esta etapa:**
+  - No hay todavía ningún endpoint que LEA/agregue `search_performed` para
+    mostrar demanda (ej. "zonas más buscadas") — por ahora solo se graba el
+    evento. Eso queda para una parte chica futura de la fase Intelligence
+    (ej. sumarlo a `/analytics/summary` o un endpoint nuevo de demanda).
+  - No se agregó nada en el frontend (`apps/web`) — el evento se genera
+    solo del lado del backend en cada llamada real a `GET /properties`, sin
+    necesitar que el frontend mande nada nuevo.
+- **Próxima etapa a encarar (roadmap sección 10):** definir con el usuario
+  si conviene primero exponer esta demanda agregada (ej. endpoint de "zonas
+  más buscadas" para agencias) o seguir con otro punto de la fase
+  Intelligence — a confirmar antes de arrancar la siguiente parte chica.
+- Archivos tocados: `apps/api/app/main.py` (v4), `PROGRESS_LOG.md` (v8 —
+  este mismo archivo).
+
+---
+
 # Progress Log — Propomi
 
 Este archivo es el historial vivo del proyecto. Se agrega una entrada nueva

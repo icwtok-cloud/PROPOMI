@@ -528,6 +528,11 @@ ALLOWED_EVENTS = {
     "property_view", "property_save", "property_compare", "property_question",
     "visit_request", "offer_created", "contact_requested", "contact_shared",
     "counter_offer_created", "negotiation_started", "operation_advanced",
+    # Etapa 3 (sección 10 / fase Intelligence): búsquedas/filtros del
+    # comprador. Se loguea automáticamente desde GET /properties (ver más
+    # abajo) y también queda permitido acá por si el frontend alguna vez
+    # necesita loguearlo manual vía POST /events.
+    "search_performed",
 }
 
 
@@ -852,7 +857,26 @@ def prop_dict(p: Property) -> dict[str, Any]:
 
 
 @app.get("/properties")
-def properties(zone: str | None = None, type: str | None = None, operation: str | None = None, rooms: int | None = None, max_price: float | None = None, parking: bool | None = None, credit: bool | None = None, agency_id: str | None = None):
+def properties(
+    zone: str | None = None, type: str | None = None, operation: str | None = None,
+    rooms: int | None = None, max_price: float | None = None, parking: bool | None = None,
+    credit: bool | None = None, agency_id: str | None = None,
+    # Etapa 3 (sección 10 / fase Intelligence): session_id opcional del
+    # frontend para poder agrupar búsquedas de una misma sesión anónima sin
+    # necesitar login (mismo campo que ya usa POST /events). authorization
+    # es opcional a propósito: la búsqueda funciona sin sesión, pero si hay
+    # una sesión válida (agente o comprador) se guarda el user_id para
+    # análisis de demanda, igual que en cualquier otro evento del sistema.
+    session_id: str | None = None, authorization: str | None = Header(default=None),
+):
+    session = None
+    if authorization:
+        try:
+            session = current_session(authorization)
+        except HTTPException:
+            # Token vencido/ inválido en una búsqueda no debe romper la
+            # búsqueda en sí — solo se pierde la asociación a un user_id.
+            session = None
     with Session(engine) as db:
         ensure_seed(db)
         stmt = select(Property)
@@ -864,7 +888,29 @@ def properties(zone: str | None = None, type: str | None = None, operation: str 
         if parking is not None: stmt = stmt.where(Property.parking == parking)
         if credit is not None: stmt = stmt.where(Property.credit == credit)
         if agency_id: stmt = stmt.where(Property.agency_id == agency_id)
-        return [prop_dict(p) for p in db.scalars(stmt).all()]
+        results = db.scalars(stmt).all()
+
+        # Etapa 3: evento agregado y anónimo por cada búsqueda — insumo para
+        # matching/recomendaciones/demanda/pricing (doc, sección 10, fase
+        # Intelligence). No se guarda ningún dato nuevo de contacto ni texto
+        # libre; solo los filtros ya públicos de la query y el resultado.
+        filters_used = {
+            k: v for k, v in {
+                "zone": zone, "type": type, "operation": operation, "rooms": rooms,
+                "max_price": max_price, "parking": parking, "credit": credit,
+                "agency_id": agency_id,
+            }.items() if v is not None
+        }
+        db.add(Event(
+            name="search_performed",
+            user_id=session.get("user_id") if session else None,
+            agency_id=session.get("agency_id") if session else None,
+            session_id=session_id,
+            context={"filters": filters_used, "result_count": len(results)},
+        ))
+        db.commit()
+
+        return [prop_dict(p) for p in results]
 
 
 @app.get("/properties/{property_id}")
