@@ -56,6 +56,21 @@ def sanitize_free_text(texto: str | None, campo: str = "comentario") -> str | No
         )
     return texto
 
+def strip_contact_leaks(texto: str | None) -> str:
+    """Etapa 2 (doc 05): a diferencia de `sanitize_free_text` (que RECHAZA texto
+    tipeado por una persona con un error claro), el texto que trae el crawler
+    desde el portal de origen no tiene a quién devolverle un error — se limpia
+    en silencio, reemplazando cualquier coincidencia de teléfono/wsp/email/
+    usuario de redes por un marcador neutro, para no bloquear la ingesta
+    completa de una propiedad por un dato de contacto colado en la descripción
+    original del portal."""
+    if not texto:
+        return ""
+    limpio = texto
+    for pattern in _LEAK_PATTERNS:
+        limpio = pattern.sub("[dato de contacto oculto]", limpio)
+    return limpio
+
 _EMAIL_RE = re.compile(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$")
 
 
@@ -160,6 +175,13 @@ class Property(Base):
     contact_phone_normalized: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     detected_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Etapa 2 (doc 05): dedup simple sin IA. Si el crawler ingresa una
+    # propiedad que matchea la regla (mismo rango de precio + zona + surface
+    # similar) contra otra ya existente, se marca para revisión manual en vez
+    # de auto-fusionarse o auto-descartarse — decisión explícita de no
+    # automatizar el merge/descarte todavía.
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    possible_duplicate_of: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
 
 class Event(Base):
@@ -365,6 +387,8 @@ def ensure_schema_columns() -> None:
             # sin necesitar un tipo nativo json en la columna.
             "images": "TEXT DEFAULT '[]'",
             "origin_published_at": "VARCHAR(100)",
+            "needs_review": "BOOLEAN DEFAULT FALSE",
+            "possible_duplicate_of": "VARCHAR(40)",
         },
         "agencies": {
             "phone": "VARCHAR(30)",
@@ -535,6 +559,130 @@ def require_admin(x_admin_key: str | None = Header(default=None, alias="X-Admin-
     (para no quedar en logs de acceso ni en el historial del navegador)."""
     if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
         raise HTTPException(status_code=401, detail="Clave de administración inválida")
+
+
+# --------------------------------------------------------------------------
+# Etapa 2 (doc 05): ingesta del crawler. Un único endpoint recibe tanto altas
+# nuevas como "el crawler volvió a ver esta misma publicación" (upsert por
+# source+source_url, que es la identidad natural de una publicación en su
+# portal de origen). Protegido con la misma clave admin que el panel de
+# verificación — no es público, lo llama únicamente el proceso del crawler.
+# --------------------------------------------------------------------------
+DEDUP_PRICE_TOLERANCE = 0.05  # ±5% de precio
+DEDUP_SURFACE_TOLERANCE = 0.10  # ±10% de superficie
+
+
+class PropertyIngestIn(BaseModel):
+    source: str = Field(min_length=1, max_length=160)
+    source_url: str = Field(min_length=1, max_length=500)
+    title: str = Field(min_length=1, max_length=200)
+    type: str = "Departamento"
+    operation: str = "Venta"
+    price: float = Field(gt=0)
+    currency: str = "USD"
+    zone: str = Field(min_length=1, max_length=100)
+    city: str = Field(min_length=1, max_length=100)
+    country: str = "Argentina"
+    surface: float = Field(gt=0)
+    rooms: int = Field(ge=0)
+    bedrooms: int = 1
+    bathrooms: int = 1
+    parking: bool = False
+    pool: bool = False
+    balcony: bool = False
+    pet_friendly: bool = False
+    credit: bool = False
+    origin_published_at: str | None = None
+    images: list[str] = Field(default_factory=list)
+    description: str = ""
+    agency_id: str | None = None
+    contact_phone_raw: str | None = None
+
+    @field_validator("images")
+    @classmethod
+    def cap_images(cls, v: list[str]) -> list[str]:
+        return v[:MAX_PROPERTY_IMAGES]
+
+
+def find_possible_duplicate(db: Session, zone: str, price: float, surface: float, exclude_id: str | None = None) -> Property | None:
+    """Regla de dedup simple pedida (doc 05, sin IA todavía): misma zona +
+    precio dentro de ±5% + superficie dentro de ±10% de alguna propiedad ya
+    existente -> se marca para revisión manual, nunca se fusiona ni descarta
+    solo. Barrido en Python (no en SQL) a propósito: el volumen esperado por
+    zona en esta etapa es chico y así queda fácil de leer/ajustar tolerancias."""
+    lo, hi = price * (1 - DEDUP_PRICE_TOLERANCE), price * (1 + DEDUP_PRICE_TOLERANCE)
+    stmt = select(Property).where(Property.zone == zone, Property.price >= lo, Property.price <= hi)
+    for candidate in db.scalars(stmt).all():
+        if exclude_id and candidate.id == exclude_id:
+            continue
+        if not candidate.surface:
+            continue
+        if abs(candidate.surface - surface) / candidate.surface <= DEDUP_SURFACE_TOLERANCE:
+            return candidate
+    return None
+
+
+@app.post("/properties/ingest", status_code=201)
+def ingest_property(payload: PropertyIngestIn, _: None = Depends(require_admin)):
+    description = strip_contact_leaks(payload.description)
+    now = datetime.now(timezone.utc)
+    with Session(engine) as db:
+        existing = db.scalar(
+            select(Property).where(Property.source == payload.source, Property.source_url == payload.source_url)
+        )
+        if existing:
+            # Ya la conocíamos: es el mismo barrido volviendo a ver la misma
+            # publicación. Se actualizan los datos que pueden cambiar entre
+            # barridos y, sobre todo, `last_seen_at` (lo que alimenta el
+            # filtro de frescura de PROPERTY_FRESHNESS_DAYS) — `detected_at`
+            # NUNCA se toca acá, es la fecha de la primera vez que la vimos.
+            existing.title = payload.title
+            existing.type = payload.type
+            existing.operation = payload.operation
+            existing.price = payload.price
+            existing.currency = payload.currency
+            existing.city = payload.city
+            existing.country = payload.country
+            existing.surface = payload.surface
+            existing.rooms = payload.rooms
+            existing.bedrooms = payload.bedrooms
+            existing.bathrooms = payload.bathrooms
+            existing.parking = payload.parking
+            existing.pool = payload.pool
+            existing.balcony = payload.balcony
+            existing.pet_friendly = payload.pet_friendly
+            existing.credit = payload.credit
+            existing.origin_published_at = payload.origin_published_at
+            existing.images = payload.images
+            existing.image = payload.images[0] if payload.images else existing.image
+            existing.description = description
+            if payload.contact_phone_raw:
+                existing.contact_phone_raw = payload.contact_phone_raw
+                existing.contact_phone_normalized = normalize_phone(payload.contact_phone_raw)
+            existing.last_seen_at = now
+            db.commit()
+            return {"id": existing.id, "status": "updated", "needs_review": existing.needs_review, "possible_duplicate_of": existing.possible_duplicate_of}
+
+        duplicate = find_possible_duplicate(db, payload.zone, payload.price, payload.surface)
+        new_id = f"p-{uuid.uuid4().hex[:12]}"
+        prop = Property(
+            id=new_id, title=payload.title, type=payload.type, operation=payload.operation,
+            price=payload.price, currency=payload.currency, zone=payload.zone, city=payload.city,
+            country=payload.country, surface=payload.surface, rooms=payload.rooms,
+            bedrooms=payload.bedrooms, bathrooms=payload.bathrooms, parking=payload.parking,
+            pool=payload.pool, balcony=payload.balcony, pet_friendly=payload.pet_friendly,
+            credit=payload.credit, freshness="", origin_published_at=payload.origin_published_at,
+            source=payload.source, source_url=payload.source_url,
+            image=(payload.images[0] if payload.images else ""), images=payload.images,
+            description=description, agency_id=payload.agency_id,
+            contact_phone_raw=payload.contact_phone_raw,
+            contact_phone_normalized=normalize_phone(payload.contact_phone_raw) if payload.contact_phone_raw else None,
+            detected_at=now, last_seen_at=now,
+            needs_review=bool(duplicate), possible_duplicate_of=duplicate.id if duplicate else None,
+        )
+        db.add(prop)
+        db.commit()
+        return {"id": prop.id, "status": "created", "needs_review": prop.needs_review, "possible_duplicate_of": prop.possible_duplicate_of}
 
 
 DEMO = [
