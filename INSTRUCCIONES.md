@@ -61,8 +61,10 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V3 |
+| INSTRUCCIONES.md | V4 |
 | apps/web/lib/types.ts | V1 |
+| apps/web/lib/api.ts | V1 |
+| apps/web/components/AgentDashboard.tsx | V1 |
 
 ## Manifiesto de archivos del repo (raw links ya conocidos)
 
@@ -88,19 +90,19 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/.env.example
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/layout.tsx
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/page.tsx
-- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/globals.css
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/globals.css (pendiente de leer — necesario para etapa 005, ver nota de riesgo)
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/agencia/page.tsx
-- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/AgentDashboard.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/AgentDashboard.tsx ✅ (leído y corregido en etapa 004)
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/AgentOfferActions.tsx
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/BuyerIdentityModal.tsx
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/ComparePanel.tsx
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/DemandPanel.tsx
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/OfferModal.tsx
-- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/PropertyCard.tsx
-- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/api.ts ✅ (ya leído)
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/PropertyCard.tsx ✅ (leído; pendiente de fix — usa solo `image` singular, ver etapa 005)
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/api.ts ✅ (leído y corregido en etapa 004)
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/data.ts
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/google.ts
-- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/types.ts ✅ (ya leído, ya corregido en etapa 001)
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/types.ts ✅ (leído, corregido en etapa 001)
 
 > NOTA IMPORTANTE: estos links todavía no fueron probados uno por uno (salvo los
 > marcados ✅) porque hasta ahora Claude no podía adivinar URLs raw. A partir de que
@@ -118,11 +120,18 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 001 | Fix de contrato API↔Web: `types.ts` no tenía `images[]` ni `originPublishedAt` que el backend (`prop_dict` en main.py) ya devuelve hace etapas. Se completó también el tipo `Agency` (faltaban `verificationStatus`, `instagram`, `websiteLink`, `freeLeadsRemaining`) y se agregó `'search_performed'` a `EventName`. | apps/web/lib/types.ts | etapa-001_fix-contrato-property-agency-types | Pendiente de push |
 | 002 | Se agregan reglas de versionado de archivos de descarga (`_Vn`) y manifiesto completo de raw links del repo, para que Claude no vuelva a pedirle al usuario los mismos links en cada sesión. | INSTRUCCIONES.md | etapa-002_versionado-y-manifiesto-de-archivos | Pendiente de push |
 | 003 | Meta-regla de auto-documentación: Claude anota cualquier instrucción/corrección del usuario en el mismo turno en que se da, sin esperar a que se lo pidan explícitamente. | INSTRUCCIONES.md | etapa-003_meta-regla-autodocumentacion | Pendiente de push |
+| 004 | Fix funcional: la agencia no tenía forma de completar su verificación desde la web. `updateAgency()` en `api.ts` solo mandaba `{name}` (el backend acepta también `instagram`/`website_link`, requeridos para pasar de PENDING a VERIFIED). Se corrigió `updateAgency` para mandar los tres campos, y se amplió la pestaña "Mi cuenta" de `AgentDashboard.tsx` con: badge de estado de verificación (VERIFIED/PENDING/REJECTED), inputs de Instagram y sitio web, aviso cuando la agencia no está verificada, y contador de "reveals gratis restantes" (`freeLeadsRemaining`) en las métricas. | apps/web/lib/api.ts, apps/web/components/AgentDashboard.tsx | etapa-004_fix-verificacion-agencia-en-mi-cuenta | Pendiente de push |
 
-## Próximo paso lógico (candidato para etapa 003)
+## Próximo paso lógico (candidato para etapa 005)
 
-- Con el manifiesto ya cargado, Claude debe intentar abrir directamente
-  `components/PropertyCard.tsx` y `components/AgentDashboard.tsx` (sin pedírselos
-  al usuario) para confirmar si ya consumen `images`/`originPublishedAt`/los campos
-  nuevos de `Agency` corregidos en la etapa 001, o si quedaron mostrando solo
-  `image` (singular) y datos de agencia incompletos.
+- `PropertyCard.tsx` (ya leído) solo usa `p.image` (singular) y no muestra
+  `p.images[]` (galería) ni `p.originPublishedAt`, aunque el backend y el tipo
+  `Property` (corregido en etapa 001) ya los soportan. Además no muestra el tag
+  `petFriendly` ni `pool`, que sí existen en el tipo. Candidato natural para la
+  etapa 005: agregar mini-galería (o al menos `images[0]` con fallback a `image`)
+  y mostrar `originPublishedAt` junto a `freshness`.
+- Nota de riesgo a revisar en esa misma etapa: `AgentDashboard.tsx` (etapa 004)
+  usa clases CSS nuevas `notice-ok` y `notice-warn` que no fueron confirmadas
+  contra `app/globals.css` (no leído todavía). Si no existen, el aviso de
+  verificación se va a ver sin estilo pero sigue siendo funcional. Agregar
+  `apps/web/app/globals.css` al manifiesto y revisar/agregar esas clases si faltan.

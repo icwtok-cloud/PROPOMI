@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Building2,Check,Inbox,LogOut,RefreshCw,Sparkles,TrendingUp,User} from 'lucide-react';
+import {Building2,Check,Inbox,LogOut,RefreshCw,ShieldCheck,ShieldAlert,Sparkles,TrendingUp,User} from 'lucide-react';
 import {Agency,Offer,Session} from '../lib/types';
 import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
@@ -13,6 +13,14 @@ const EVENT_LABELS:Record<string,string>={
   property_question:'Hizo una consulta',visit_request:'Pidió una visita',offer_created:'Envió una oferta',
   contact_requested:'Solicitó contacto',contact_shared:'Contacto compartido',counter_offer_created:'Contraoferta',
   negotiation_started:'Inició negociación',operation_advanced:'Avanzó la operación',
+};
+
+// Etapa 004: etiquetas legibles para Agency.verificationStatus (PENDING |
+// VERIFIED | REJECTED), tal como lo devuelve el backend en GET /agencies/{id}.
+const VERIFICATION_LABELS:Record<string,string>={
+  VERIFIED:'Verificada',
+  PENDING:'Pendiente de revisión',
+  REJECTED:'Rechazada — revisá los datos y volvé a intentar',
 };
 
 function LoginForm({onLoggedIn}:{onLoggedIn:(s:Session)=>void}){
@@ -74,6 +82,11 @@ export default function AgentDashboard(){
   const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'cuenta'>('ofertas');
   const [toast,setToast]=useState('');
   const [nameDraft,setNameDraft]=useState('');
+  // Etapa 004: antes no existían estos campos en el formulario — sin ellos
+  // la agencia nunca podía enviar los datos que el panel admin (Etapa 4 del
+  // backend) necesita para aprobarla.
+  const [instagramDraft,setInstagramDraft]=useState('');
+  const [websiteDraft,setWebsiteDraft]=useState('');
   const [busy,setBusy]=useState(false);
 
   useEffect(()=>{const s=getAgentSession();setSession(s);setReady(true)},[]);
@@ -84,17 +97,21 @@ export default function AgentDashboard(){
       getAgencyOpportunities(session.user.agency_id,session),
       getAnalytics(session),
     ]);
-    setAgency(a);setNameDraft(a.name);setOffers(o);setOpps(opp as OppData);setAnalytics(an as any);
+    setAgency(a);setNameDraft(a.name);setInstagramDraft(a.instagram||'');setWebsiteDraft(a.websiteLink||'');setOffers(o);setOpps(opp as OppData);setAnalytics(an as any);
   })().catch(()=>{})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
 
   async function refreshOffers(){if(!session)return;setOffers(await listOffers(session))}
 
-  async function saveName(){
+  async function saveAccount(){
     if(!session||!agency)return;
     setBusy(true);
-    try{await updateAgency(session.user.agency_id,nameDraft.trim(),session);notify('Nombre de agencia actualizado.')}
+    try{
+      const updated=await updateAgency(session.user.agency_id,{name:nameDraft.trim(),instagram:instagramDraft.trim()||undefined,website_link:websiteDraft.trim()||undefined},session);
+      setAgency(prev=>prev?{...prev,...updated}:updated);
+      notify('Datos de la agencia actualizados.');
+    }catch(e:any){notify(e?.message||'No pudimos guardar los cambios.')}
     finally{setBusy(false)}
   }
 
@@ -111,9 +128,21 @@ export default function AgentDashboard(){
 
   if(!session) return <div className="container"><div className="agentdash-card"><LoginForm onLoggedIn={setSession}/></div></div>;
 
+  const isVerified=agency?.verificationStatus==='VERIFIED';
+
   return <div className="container">
     <div className="agentdashhead">
-      <div><span className="eyebrow">Panel de agencia</span><h2>{agency?.name||'Tu agencia'}</h2><p className="muted small">{agency?.city}{agency?.verified?' · Verificada':''}</p></div>
+      <div>
+        <span className="eyebrow">Panel de agencia</span>
+        <h2>{agency?.name||'Tu agencia'}</h2>
+        <p className="muted small">{agency?.city}</p>
+        {agency?.verificationStatus && (
+          <p className={isVerified?'notice notice-ok small':'notice notice-warn small'}>
+            {isVerified?<ShieldCheck size={14}/>:<ShieldAlert size={14}/>} {VERIFICATION_LABELS[agency.verificationStatus]||agency.verificationStatus}
+            {!isVerified && ' — completá Instagram o tu web en "Mi cuenta" para acelerar la revisión.'}
+          </p>
+        )}
+      </div>
       <button className="secondary" onClick={logout}><LogOut size={15}/> Salir</button>
     </div>
 
@@ -121,8 +150,14 @@ export default function AgentDashboard(){
       <div><b>{offers.filter(o=>o.status==='SENT').length}</b><span>Ofertas nuevas</span></div>
       <div><b>{opps?.active??0}</b><span>Oportunidades activas</span></div>
       <div><b>{offers.filter(o=>o.contact_revealed).length}</b><span>Contactos revelados</span></div>
-      <div><b>{analytics?.properties??0}</b><span>Publicaciones</span></div>
+      <div><b>{agency?.freeLeadsRemaining??0}</b><span>Reveals gratis restantes</span></div>
     </div>
+
+    {!isVerified && (
+      <div className="notice notice-warn">
+        Tu agencia todavía no está verificada: podés ver tus ofertas y oportunidades, pero no vas a poder revelar el contacto de un comprador hasta que la revisión manual apruebe tu cuenta.
+      </div>
+    )}
 
     <div className="agentdashtabs">
       <button className={section==='ofertas'?'tab active':'tab'} onClick={()=>setSection('ofertas')}><Inbox size={15}/> Ofertas</button>
@@ -155,12 +190,15 @@ export default function AgentDashboard(){
 
     {section==='cuenta' && <div className="agentdashpane">
       <label>Nombre de la agencia<input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}/></label>
+      <label>Instagram<input value={instagramDraft} onChange={e=>setInstagramDraft(e.target.value)} placeholder="@tuagencia"/></label>
+      <label>Sitio web<input value={websiteDraft} onChange={e=>setWebsiteDraft(e.target.value)} placeholder="https://tuagencia.com"/></label>
       <div className="modalactions" style={{justifyContent:'flex-start'}}>
-        <button className="primary" disabled={busy} onClick={saveName}><Check size={15}/> Guardar</button>
+        <button className="primary" disabled={busy} onClick={saveAccount}><Check size={15}/> Guardar</button>
         <button className="secondary" disabled={busy} onClick={relink}><Building2 size={15}/> Vincular publicaciones por teléfono</button>
         <button className="secondary" disabled={busy} onClick={()=>{}}><RefreshCw size={15}/> Actualizar</button>
       </div>
       <p className="muted small">Tu teléfono de acceso es el mismo que usan tus publicaciones para identificarte automáticamente como dueño.</p>
+      {!isVerified && <p className="muted small">Instagram o sitio web son necesarios para que el equipo de Propomi revise y verifique tu agencia (así podés revelar contactos de compradores).</p>}
     </div>}
 
     {toast && <div className="toast"><Check size={17}/>{toast}</div>}
