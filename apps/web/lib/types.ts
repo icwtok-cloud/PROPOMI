@@ -13,3 +13,4 @@ export type PendingAgency={id:string;name:string;city:string;phone?:string|null;
 export type ReviewQueueItem={property:Property;candidate:Property|null};
 
 export type Session={token:string;user:{id:string;phone:string;role:Role;agency_id:string}};
+export type Role='AGENTE'|'COMPRADOR';
