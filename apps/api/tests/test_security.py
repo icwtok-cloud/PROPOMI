@@ -8,7 +8,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("ENV", "test")
 
 from fastapi.testclient import TestClient
-from app.main import app, engine, Base, Session, User, Agency, Role, create_token
+from app.main import app, engine, Base, Session, User, Agency, AgencyPhone, Role, create_token
 
 Base.metadata.drop_all(engine)
 Base.metadata.create_all(engine)
@@ -133,3 +133,49 @@ def test_offers_list_never_exposes_buyer_contact_before_reveal():
         if not offer["contact_revealed"]:
             assert "buyer_phone" not in offer
             assert "buyer_name" not in offer
+
+
+def test_agent_can_add_secondary_phone_and_it_becomes_login_capable():
+    _, agent_token = seed_users()
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+
+    add = client.post("/agencies/a1/phones", json={"phone": "+54 9 11 4444-5566"}, headers=agent_headers)
+    assert add.status_code == 200
+    body = add.json()
+    assert body["phone"] == "+5491144445566"
+    assert body["verified"] is False
+
+    listed = client.get("/agencies/a1/phones", headers=agent_headers)
+    assert listed.status_code == 200
+    assert listed.json()["primary"] == "+5491155550101"
+    assert any(p["phone"] == "+5491144445566" for p in listed.json()["extras"])
+
+    # El nuevo teléfono ya sirve para pedir/verificar OTP y loguearse como esa agencia.
+    req = client.post("/auth/otp/request", json={"phone": "+5491144445566"})
+    assert req.status_code == 200
+    code = req.json()["dev_code"]
+    verify = client.post("/auth/otp/verify", json={"phone": "+5491144445566", "code": code})
+    assert verify.status_code == 200
+    assert verify.json()["user"]["agency_id"] == "a1"
+
+
+def test_cannot_add_phone_already_used_by_another_agency():
+    _, agent_token = seed_users()
+    with Session(engine) as db:
+        if not db.get(Agency, "a2"):
+            db.add(Agency(id="a2", name="Agencia 2", city="BA", phone="+5491100001111", claimed=True))
+            db.commit()
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+    r = client.post("/agencies/a1/phones", json={"phone": "+5491100001111"}, headers=agent_headers)
+    assert r.status_code == 409
+
+
+def test_cannot_add_phone_to_agency_that_is_not_yours():
+    _, agent_token = seed_users()
+    with Session(engine) as db:
+        if not db.get(Agency, "a3"):
+            db.add(Agency(id="a3", name="Agencia 3", city="BA", phone="+5491100002222", claimed=True))
+            db.commit()
+    agent_headers = {"Authorization": f"Bearer {agent_token}"}
+    r = client.post("/agencies/a3/phones", json={"phone": "+5491100003333"}, headers=agent_headers)
+    assert r.status_code == 403

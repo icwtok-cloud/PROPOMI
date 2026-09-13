@@ -152,6 +152,19 @@ class Agency(Base):
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class AgencyPhone(Base):
+    """Telefonos adicionales de una agencia (celular personal + linea de oficina, etc.).
+    Agency.phone sigue siendo el telefono principal/original; esta tabla permite sumar
+    mas sin romper la columna existente. relink-by-phone y el login por OTP buscan
+    contra el conjunto Agency.phone + AgencyPhone.phone."""
+    __tablename__ = "agency_phones"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    agency_id: Mapped[str] = mapped_column(String(40), index=True)
+    phone: Mapped[str] = mapped_column(String(30), unique=True, index=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -499,6 +512,10 @@ class AgencyUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=180)
 
 
+class PhoneIn(BaseModel):
+    phone: str = Field(min_length=6, max_length=40)
+
+
 def ensure_seed(db: Session) -> None:
     if db.scalar(select(Property.id).limit(1)) is None:
         for row in DEMO:
@@ -565,7 +582,8 @@ def verify_otp(payload: OTPVerify):
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     with Session(engine) as db:
         otp = db.scalar(select(OTPCode).where(OTPCode.phone == phone, OTPCode.consumed == False).order_by(OTPCode.created_at.desc()))
-        if not otp or otp.expires_at < datetime.now(timezone.utc):
+        otp_expires_at = otp.expires_at.replace(tzinfo=timezone.utc) if otp and otp.expires_at.tzinfo is None else (otp.expires_at if otp else None)
+        if not otp or otp_expires_at < datetime.now(timezone.utc):
             raise HTTPException(status_code=400, detail="Código incorrecto o vencido")
         if otp.verify_attempts >= OTP_MAX_VERIFY_ATTEMPTS:
             otp.consumed = True
@@ -579,7 +597,7 @@ def verify_otp(payload: OTPVerify):
             raise HTTPException(status_code=400, detail="Código incorrecto o vencido")
         otp.consumed = True
         user = db.scalar(select(User).where(User.phone == phone))
-        agency = db.scalar(select(Agency).where(Agency.phone == phone))
+        agency = find_agency_by_phone(db, phone)
         if user is None:
             if not agency:
                 raise HTTPException(status_code=403, detail="No encontramos una agencia asociada a este teléfono.")
@@ -603,6 +621,25 @@ def verify_otp(payload: OTPVerify):
         db.commit()
         token = create_token(user)
         return {"token": token, "user": {"id": user.id, "phone": user.phone, "role": user.role, "agency_id": user.agency_id}, "relinked_count": relinked}
+
+
+def find_agency_by_phone(db: Session, phone: str) -> Agency | None:
+    """Busca una agencia por telefono principal o por cualquiera de sus AgencyPhone."""
+    agency = db.scalar(select(Agency).where(Agency.phone == phone))
+    if agency:
+        return agency
+    ap = db.scalar(select(AgencyPhone).where(AgencyPhone.phone == phone))
+    if ap:
+        return db.get(Agency, ap.agency_id)
+    return None
+
+
+def all_agency_phones(db: Session, agency_id: str) -> list[str]:
+    """Telefono principal + todos los AgencyPhone de una agencia, sin duplicados."""
+    agency = db.get(Agency, agency_id)
+    phones = {agency.phone} if agency and agency.phone else set()
+    phones |= {ap.phone for ap in db.scalars(select(AgencyPhone).where(AgencyPhone.agency_id == agency_id))}
+    return [p for p in phones if p]
 
 
 def relink_properties(db: Session, agency_id: str, phone: str) -> int:
@@ -980,10 +1017,44 @@ def update_agency(agency_id: str, payload: AgencyUpdate, session: dict[str, Any]
 def relink_by_phone(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
     if session["agency_id"] != agency_id: raise HTTPException(status_code=403, detail="Agencia no autorizada")
     with Session(engine) as db:
-        count = relink_properties(db, agency_id, session["phone"])
+        count = sum(relink_properties(db, agency_id, phone) for phone in all_agency_phones(db, agency_id))
         db.commit()
         props = db.scalars(select(Property).where(Property.agency_id == agency_id)).all()
         return {"count": count, "properties": [prop_dict(p) for p in props], "message": f"Encontramos {count} publicaciones nuevas vinculadas por teléfono." if count else "No encontramos publicaciones nuevas con ese teléfono."}
+
+
+@app.get("/agencies/{agency_id}/phones")
+def list_agency_phones(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
+    if session["agency_id"] != agency_id: raise HTTPException(status_code=403, detail="Agencia no autorizada")
+    with Session(engine) as db:
+        agency = db.get(Agency, agency_id)
+        if not agency: raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        extras = db.scalars(select(AgencyPhone).where(AgencyPhone.agency_id == agency_id)).all()
+        return {
+            "primary": agency.phone,
+            "extras": [{"id": ap.id, "phone": ap.phone, "verified": ap.verified_at is not None, "created_at": ap.created_at.isoformat()} for ap in extras],
+        }
+
+
+@app.post("/agencies/{agency_id}/phones")
+def add_agency_phone(agency_id: str, payload: PhoneIn, session: dict[str, Any] = Depends(require_agent)):
+    """Suma un telefono adicional (celular personal, linea de oficina) a una agencia ya autenticada.
+    No requiere OTP propio en esta version: el telefono principal de la agencia ya paso por OTP
+    al loguearse, y agregar un numero mas queda auditado via created_at (verified_at se completa
+    cuando en una etapa futura se conecte una verificacion por OTP tambien sobre este numero)."""
+    if session["agency_id"] != agency_id: raise HTTPException(status_code=403, detail="Agencia no autorizada")
+    phone = normalize_phone(payload.phone)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Ingresá un teléfono válido")
+    with Session(engine) as db:
+        if not db.get(Agency, agency_id):
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        if find_agency_by_phone(db, phone):
+            raise HTTPException(status_code=409, detail="Ese teléfono ya está asociado a una agencia")
+        ap = AgencyPhone(id=f"aph-{uuid.uuid4().hex[:12]}", agency_id=agency_id, phone=phone)
+        db.add(ap)
+        db.commit()
+        return {"id": ap.id, "phone": ap.phone, "verified": False}
 
 
 @app.post("/agencies/{agency_id}/claim")
