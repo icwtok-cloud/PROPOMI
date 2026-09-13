@@ -75,6 +75,12 @@
     el usuario todavía no pasó, lo pide SIEMPRE dentro de un bloque de código
     (```), una URL por línea, sin texto extra alrededor más que lo imprescindible
     — así el usuario copia y pega directo, sin tener que editar nada.
+15. **El próximo paso lógico SIEMPRE queda escrito en este archivo**: al cierre
+    de cada etapa, la sección "Próximo paso lógico" de más abajo debe reflejar
+    el candidato real elegido por Claude (regla 7) — nunca se responde solo en
+    el chat sin dejarlo anotado acá. Si en algún momento esa sección no está
+    actualizada al final de una respuesta, se corrige en el mismo turno antes
+    de seguir con cualquier otra cosa.
 
 ## Convención de nombres de commit / reversión
 
@@ -84,7 +90,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V9 |
+| INSTRUCCIONES.md | V10 |
 | apps/web/lib/types.ts | V1 |
 | apps/web/lib/api.ts | V1 |
 | apps/web/components/AgentDashboard.tsx | V1 |
@@ -150,6 +156,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 006 | Se confirmó que `globals.css` NO tenía las clases `.notice-ok` / `.notice-warn` usadas por `AgentDashboard.tsx` desde la etapa 004 (el aviso de verificación se veía sin color). Se agregaron reutilizando la paleta ya existente de `.reveal-box--done` / `.reveal-box--pending` (verde/ámbar) para mantener consistencia visual. | apps/web/app/globals.css | etapa-006_fix-clases-css-faltantes-notice-ok-warn | Pendiente de push |
 | 007 | Reglas de sesión agregadas: sin narración (Claude entrega resultado + comandos, sin relatar el proceso), sin comandos de rollback salvo pedido explícito, y formato fijo en bloque de código para pedir links faltantes. | INSTRUCCIONES.md | etapa-007_reglas-sin-narracion-sin-rollback-automatico | Pendiente de push |
 | 008 | Confirmado (clonando el repo directo, sin necesitar raw links): `OfferModal.tsx` YA bloquea "Enviar oferta" (`disabled={busy||!phoneVerified||!googleVerified}`) hasta que celular+Google estén verificados, espejando la exigencia real del backend en `POST /offers`. `BuyerIdentityModal.tsx` (nombre+celular, sin OTP) solo se usa para las acciones de menor intención (pregunta/visita), lo cual es correcto por diseño — no requieren la verificación fuerte que sí exige ofertar. No hizo falta ningún cambio de código. | — (solo verificación) | — | Confirmado, sin push necesario |
+| 009 | Regla nueva (15): la sección "Próximo paso lógico" tiene que quedar siempre escrita en este archivo al cierre de cada etapa, no solo mencionada en el chat. Se auditó también `AgentOfferActions.tsx`, `DemandPanel.tsx` y el 402 de `reveal_contact` (sin bugs) y se dejó anotado el candidato real para la próxima etapa (filtro de 60 días + dedup del crawler, Etapa 2 del roadmap). | INSTRUCCIONES.md | etapa-009_regla-proximo-paso-siempre-en-instrucciones | Pendiente de push |
 
 ## Cierre de sesión (2026-09-13) — arrancar la próxima sesión directo desde acá
 
@@ -176,7 +183,12 @@ https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/
 
 ## Próximo paso lógico (candidato para etapa 009)
 
-- Backend (`main.py`) no tiene bugs pendientes detectados. Candidatos para etapa
-  009: revisar `AgentOfferActions.tsx` y `DemandPanel.tsx` (aún no auditados
-  línea por línea), o continuar con Etapa 2 del roadmap general (60 días
-  freshness, dedup, cap de 5 fotos ya cumplido).
+- `AgentOfferActions.tsx`, `DemandPanel.tsx` y el flujo `reveal_contact`/402 del
+  backend ya fueron auditados: sin bugs, todo consistente.
+- Candidato elegido para etapa 009: arrancar Etapa 2 del roadmap general
+  (crawler/cold-start) — filtro de frescura de 60 días (entrada + barrido
+  periódico de lo ya indexado) y regla simple de dedup (mismo rango de precio +
+  zona + superficie similar → marcar para revisión manual, sin IA todavía). El
+  cap de 5 fotos ya está cumplido (`images` list). Falta confirmar en `main.py`
+  si ya existe algún campo/lógica de fecha de detección vs. fecha de publicación
+  del portal de origen antes de escribir el filtro.
