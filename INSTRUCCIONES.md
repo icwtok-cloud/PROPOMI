@@ -42,6 +42,17 @@
     manifiesto, ahí sí debe pedir puntualmente ese raw link (y agregarlo al
     manifiesto en cuanto lo reciba).
 
+11. **Meta-regla de auto-documentación**: Claude no espera a que el usuario pida
+    "anotá esto" — en CADA respuesta donde el usuario dé una instrucción, corrija
+    a Claude, o establezca una preferencia nueva (por mínima que sea), Claude debe
+    incorporarla a este archivo en el mismo turno, antes de seguir con cualquier
+    otra cosa, y entregar el archivo actualizado + comandos de push. Si Claude no
+    está seguro de si algo dicho por el usuario es "una regla nueva" o solo un
+    comentario de una vez, debe tratarlo como regla nueva y anotarlo igual (el
+    costo de anotar de más es bajo; el costo de que el usuario tenga que repetirse
+    en la próxima sesión es alto y es precisamente lo que este archivo existe para
+    evitar).
+
 ## Convención de nombres de commit / reversión
 
 Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<descripcion-corta>`
@@ -50,7 +61,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V2 |
+| INSTRUCCIONES.md | V3 |
 | apps/web/lib/types.ts | V1 |
 
 ## Manifiesto de archivos del repo (raw links ya conocidos)
@@ -106,6 +117,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 000 | Creación de este archivo de instrucciones y reglas del proyecto | INSTRUCCIONES.md | etapa-000_instrucciones-iniciales | Pendiente de push |
 | 001 | Fix de contrato API↔Web: `types.ts` no tenía `images[]` ni `originPublishedAt` que el backend (`prop_dict` en main.py) ya devuelve hace etapas. Se completó también el tipo `Agency` (faltaban `verificationStatus`, `instagram`, `websiteLink`, `freeLeadsRemaining`) y se agregó `'search_performed'` a `EventName`. | apps/web/lib/types.ts | etapa-001_fix-contrato-property-agency-types | Pendiente de push |
 | 002 | Se agregan reglas de versionado de archivos de descarga (`_Vn`) y manifiesto completo de raw links del repo, para que Claude no vuelva a pedirle al usuario los mismos links en cada sesión. | INSTRUCCIONES.md | etapa-002_versionado-y-manifiesto-de-archivos | Pendiente de push |
+| 003 | Meta-regla de auto-documentación: Claude anota cualquier instrucción/corrección del usuario en el mismo turno en que se da, sin esperar a que se lo pidan explícitamente. | INSTRUCCIONES.md | etapa-003_meta-regla-autodocumentacion | Pendiente de push |
 
 ## Próximo paso lógico (candidato para etapa 003)
 
