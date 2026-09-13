@@ -6,7 +6,7 @@ import PropertyCard from '../components/PropertyCard';
 import OfferModal from '../components/OfferModal';
 import ComparePanel from '../components/ComparePanel';
 import BuyerIdentityModal from '../components/BuyerIdentityModal';
-import {getPropertiesDeduped,trackEvent,saveIntent,listOffers,getOrCreateBuyerSession,getBuyerProfile,captureOfferOriginFromUrl} from '../lib/api';
+import {getProperties,getPropertiesDeduped,trackEvent,saveIntent,listOffers,getOrCreateBuyerSession,getBuyerProfile,captureOfferOriginFromUrl} from '../lib/api';
 import {BuyerProfile,Property,Offer} from '../lib/types';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
@@ -30,7 +30,32 @@ export default function Home(){
   const [pendingAction,setPendingAction]=useState<null|(()=>void)>(null);
 
   useEffect(()=>{captureOfferOriginFromUrl()},[]);
-  useEffect(()=>{(async()=>{const s=await getOrCreateBuyerSession();const [items,offers]=await Promise.all([getPropertiesDeduped(),listOffers(s)]);setItems(items);setOffers(offers)})().catch(()=>{})},[]);
+  useEffect(()=>{(async()=>{
+    try{
+      const s=await getOrCreateBuyerSession();
+      const [items,offersList]=await Promise.all([getPropertiesDeduped(),listOffers(s)]);
+      setItems(items);
+      setOffers(Array.isArray(offersList)?offersList:[]);
+      // Deep link de tracking: /?property=<id>&o=<origen> abre el detalle.
+      if(typeof window==='undefined')return;
+      const pid=new URLSearchParams(window.location.search).get('property');
+      if(!pid)return;
+      let found=items.find(p=>p.id===pid)||null;
+      if(!found){
+        const all=await getProperties();
+        const raw=all.find(p=>p.id===pid);
+        if(raw){
+          found=raw.listingGroupId
+            ?(items.find(p=>p.listingGroupId===raw.listingGroupId)||raw)
+            :raw;
+        }
+      }
+      if(found){
+        setDetail(found);
+        trackEvent('property_view',found.id,{source:'share_link'});
+      }
+    }catch{}
+  })()},[]);
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
 
   const filtered=useMemo(()=>items.filter(p=>(!zone||p.zone===zone)&&(ptype==='Todos'||p.type===ptype)&&(!rooms||rooms==='Todos'||p.rooms===Number(rooms))&&p.price<=Number(budget||Infinity)&&(!parking||p.parking)&&(!credit||p.credit)),[items,zone,ptype,rooms,budget,parking,credit]);
