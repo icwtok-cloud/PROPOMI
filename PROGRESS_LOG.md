@@ -1,3 +1,43 @@
+## 2026-09-13 — Etapa 3 v4: pestaña "Demanda" integrada al dashboard de agencia
+
+- **Cierra la Etapa 3 de punta a punta:** search_performed se guarda (v1) →
+  se lee agregado en el backend (v2) → hay tipos + fetch en el frontend
+  (v3) → ahora se ve en pantalla, dentro del dashboard real de agencia (v4).
+- **`apps/web/components/DemandPanel.tsx` → v2** (reemplaza la v1 pusheada
+  antes, que nunca llegó a integrarse): reescrito con estilos inline en vez
+  de clases Tailwind — al ver `AgentDashboard.tsx` real se confirmó que el
+  proyecto usa clases CSS propias (`agentdashpane`, `tab`, `muted small`,
+  etc. de `globals.css`), no Tailwind. Los estilos inline evitan depender
+  de clases que no se pudieron verificar sin ver `globals.css`.
+- **`apps/web/components/AgentDashboard.tsx` → v2:**
+  - Nueva pestaña "Demanda" (ícono `TrendingUp` de lucide-react) entre
+    "Oportunidades" y "Mi cuenta".
+  - `section` ahora admite `'demanda'` además de los valores existentes.
+  - El pane nuevo simplemente renderiza `<DemandPanel session={session}/>`
+    — el fetch a `/analytics/demand` lo hace el propio componente, no
+    `AgentDashboard` (mismo patrón de autonomía que ya usan otros paneles).
+  - No se tocó ninguna otra pestaña, estado ni función existente.
+- **Validado en este entorno (Claude):** conteo de balance de `{}` y `()`
+  en ambos archivos → coincide. **No se pudo correr `npx tsc --noEmit` ni
+  `npm run build` real** (sin entorno de test disponible, ver `CLAUDE.md`)
+  — primera corrida real en el build de Vercel.
+- **Pendiente / no se tocó en esta etapa:**
+  - No se vio `globals.css` — si el look del panel nuevo desentona mucho
+    visualmente con el resto (colores, tipografía), es candidato a un
+    ajuste chico una vez visto en Vercel.
+  - El umbral fijo de `avgResultCount < 3` para mostrar el mensaje de "poca
+    oferta" es arbitrario (no viene del plan maestro) — ajustable si en la
+    práctica no resulta útil.
+- **Archivos tocados:** `apps/web/components/DemandPanel.tsx` (v2),
+  `apps/web/components/AgentDashboard.tsx` (v2), `PROGRESS_LOG.md` (v10 —
+  este mismo archivo).
+- **Próximo paso (decidido sin preguntar, según regla v7 de `CLAUDE.md`):**
+  revisar `docs/PLAN_MAESTRO.md` sección 10 para confirmar cuál es la
+  siguiente etapa numerada del roadmap que sigue sin cerrar, y arrancarla
+  directo en la próxima entrega.
+
+---
+
 ## 2026-09-13 — Etapa 3 v2: endpoint `GET /analytics/demand`
 
 - **Objetivo:** cerrar el ciclo de la v1 de esta etapa — ahora hay una forma

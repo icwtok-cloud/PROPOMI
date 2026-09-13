@@ -1,9 +1,10 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Building2,Check,Inbox,LogOut,RefreshCw,Sparkles,User} from 'lucide-react';
+import {Building2,Check,Inbox,LogOut,RefreshCw,Sparkles,TrendingUp,User} from 'lucide-react';
 import {Agency,Offer,Session} from '../lib/types';
 import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
+import DemandPanel from './DemandPanel';
 
 type OppData={active:number;opportunities:{id:number;property_id?:string;event:string;created_at:string}[];eventCount:number;propertyIds:string[]};
 
@@ -70,7 +71,7 @@ export default function AgentDashboard(){
   const [offers,setOffers]=useState<Offer[]>([]);
   const [opps,setOpps]=useState<OppData|null>(null);
   const [analytics,setAnalytics]=useState<{properties:number;events:number;offers:number}|null>(null);
-  const [section,setSection]=useState<'ofertas'|'oportunidades'|'cuenta'>('ofertas');
+  const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'cuenta'>('ofertas');
   const [toast,setToast]=useState('');
   const [nameDraft,setNameDraft]=useState('');
   const [busy,setBusy]=useState(false);
@@ -126,6 +127,7 @@ export default function AgentDashboard(){
     <div className="agentdashtabs">
       <button className={section==='ofertas'?'tab active':'tab'} onClick={()=>setSection('ofertas')}><Inbox size={15}/> Ofertas</button>
       <button className={section==='oportunidades'?'tab active':'tab'} onClick={()=>setSection('oportunidades')}><Sparkles size={15}/> Oportunidades</button>
+      <button className={section==='demanda'?'tab active':'tab'} onClick={()=>setSection('demanda')}><TrendingUp size={15}/> Demanda</button>
       <button className={section==='cuenta'?'tab active':'tab'} onClick={()=>setSection('cuenta')}><User size={15}/> Mi cuenta</button>
     </div>
 
@@ -145,6 +147,10 @@ export default function AgentDashboard(){
         <span>{EVENT_LABELS[e.event]||e.event}</span>
         <span className="muted small">{new Date(e.created_at).toLocaleString('es-AR')}</span>
       </div>)}
+    </div>}
+
+    {section==='demanda' && <div className="agentdashpane">
+      <DemandPanel session={session}/>
     </div>}
 
     {section==='cuenta' && <div className="agentdashpane">
