@@ -12,6 +12,9 @@ from typing import Any, Protocol
 
 import jwt
 import phonenumbers
+from google.auth import exceptions as google_auth_exceptions
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
@@ -79,6 +82,14 @@ OTP_RATE_WINDOW = 10 * 60
 OTP_MAX_REQUESTS = 3
 MAX_PROPERTY_IMAGES = 5  # doc 06.1: hasta 5 fotos por propiedad, decisión ya tomada
 FREE_LEADS_ON_VERIFICATION = 10  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
+# Etapa 2: Google Sign-In del comprador (sección 6.2.1). El Client ID no es un
+# secreto (viaja igual al frontend en cada request de Google Identity
+# Services), por eso es seguro tenerlo como default acá — pero en producción
+# conviene setearlo también como variable de entorno en Render por prolijidad.
+GOOGLE_CLIENT_ID = os.getenv(
+    "GOOGLE_CLIENT_ID",
+    "872860769498-kmja44702diqc74d733ite8etttvkqp8.apps.googleusercontent.com",
+)
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
@@ -205,6 +216,15 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default=Role.COMPRADOR.value)
     agency_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    # Etapa 2 (sección 6.2.1): el celular se verifica reutilizando el sistema
+    # de OTP existente (ver /auth/otp/verify-buyer); Google Sign-In se pide
+    # después, como segunda prueba de identidad, recién antes de "Enviar
+    # oferta". Ninguno de los dos reemplaza al otro — el teléfono sigue
+    # siendo la identidad canónica del sistema (regla no negociable).
+    phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    google_sub: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    google_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class IntentProfile(Base):
@@ -354,6 +374,12 @@ def ensure_schema_columns() -> None:
             "shared_phone": "VARCHAR(30)",
         },
         "otp_codes": {"verify_attempts": "INTEGER DEFAULT 0"},
+        "users": {
+            "phone_verified_at": "TIMESTAMP",
+            "email": "VARCHAR(160)",
+            "google_sub": "VARCHAR(120)",
+            "google_verified_at": "TIMESTAMP",
+        },
         "offers": {
             "buyer_name": "VARCHAR(120) DEFAULT ''",
             "buyer_phone_raw": "VARCHAR(40) DEFAULT ''",
@@ -395,7 +421,7 @@ def migrate_legacy_property_images() -> None:
 ensure_schema_columns()
 migrate_legacy_property_images()
 
-app = FastAPI(title="Propomi API", version="1.2.0")
+app = FastAPI(title="Propomi API", version="1.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -609,7 +635,7 @@ def ensure_seed(db: Session) -> None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "propomi-api", "version": "1.2.0"}
+    return {"status": "ok", "service": "propomi-api", "version": "1.3.0"}
 
 
 @app.post("/auth/guest")
@@ -643,27 +669,37 @@ def request_otp(payload: OTPRequest):
     return response
 
 
+def consume_valid_otp(db: Session, phone: str, code: str) -> None:
+    """Valida y consume el último código OTP vigente para `phone`. Lanza
+    HTTPException si el código es inválido/vencido/excedido en intentos.
+    Compartido por /auth/otp/verify (agente) y /auth/otp/verify-buyer
+    (comprador, Etapa 2) para no duplicar la lógica de expiración, intentos y
+    rate limit — el `OTPRequest`/generación del código sigue siendo el mismo
+    para ambos roles, solo cambia qué se hace DESPUÉS de validar el código."""
+    otp = db.scalar(select(OTPCode).where(OTPCode.phone == phone, OTPCode.consumed == False).order_by(OTPCode.created_at.desc()))
+    otp_expires_at = otp.expires_at.replace(tzinfo=timezone.utc) if otp and otp.expires_at.tzinfo is None else (otp.expires_at if otp else None)
+    if not otp or otp_expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Código incorrecto o vencido")
+    if otp.verify_attempts >= OTP_MAX_VERIFY_ATTEMPTS:
+        otp.consumed = True
+        db.commit()
+        raise HTTPException(status_code=429, detail="Demasiados intentos. Solicitá un nuevo código más tarde.")
+    if not secrets.compare_digest(otp.code_hash, hash_otp(code)):
+        otp.verify_attempts += 1
+        if otp.verify_attempts >= OTP_MAX_VERIFY_ATTEMPTS:
+            otp.consumed = True
+        db.commit()
+        raise HTTPException(status_code=400, detail="Código incorrecto o vencido")
+    otp.consumed = True
+
+
 @app.post("/auth/otp/verify")
 def verify_otp(payload: OTPVerify):
     phone = normalize_phone(payload.phone)
     if not phone:
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     with Session(engine) as db:
-        otp = db.scalar(select(OTPCode).where(OTPCode.phone == phone, OTPCode.consumed == False).order_by(OTPCode.created_at.desc()))
-        otp_expires_at = otp.expires_at.replace(tzinfo=timezone.utc) if otp and otp.expires_at.tzinfo is None else (otp.expires_at if otp else None)
-        if not otp or otp_expires_at < datetime.now(timezone.utc):
-            raise HTTPException(status_code=400, detail="Código incorrecto o vencido")
-        if otp.verify_attempts >= OTP_MAX_VERIFY_ATTEMPTS:
-            otp.consumed = True
-            db.commit()
-            raise HTTPException(status_code=429, detail="Demasiados intentos. Solicitá un nuevo código más tarde.")
-        if not secrets.compare_digest(otp.code_hash, hash_otp(payload.code)):
-            otp.verify_attempts += 1
-            if otp.verify_attempts >= OTP_MAX_VERIFY_ATTEMPTS:
-                otp.consumed = True
-            db.commit()
-            raise HTTPException(status_code=400, detail="Código incorrecto o vencido")
-        otp.consumed = True
+        consume_valid_otp(db, phone, payload.code)
         user = db.scalar(select(User).where(User.phone == phone))
         agency = find_agency_by_phone(db, phone)
         if user is None:
@@ -689,6 +725,89 @@ def verify_otp(payload: OTPVerify):
         db.commit()
         token = create_token(user)
         return {"token": token, "user": {"id": user.id, "phone": user.phone, "role": user.role, "agency_id": user.agency_id}, "relinked_count": relinked}
+
+
+@app.post("/auth/otp/verify-buyer")
+def verify_otp_buyer(payload: OTPVerify):
+    """Etapa 2 / sección 6.2.1: verificación de celular del COMPRADOR,
+    reutilizando el mismo sistema de OTP que ya usa el agente (misma tabla,
+    mismo hash, mismo rate limit, mismo TTL — ver `consume_valid_otp`), pero
+    sin exigir que el teléfono esté asociado a una agencia (a diferencia de
+    /auth/otp/verify, que es exclusivo de agentes). El resultado reemplaza a
+    la sesión 'guest' anónima del comprador por una sesión atada a su celular
+    real verificado."""
+    phone = normalize_phone(payload.phone)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Teléfono inválido")
+    with Session(engine) as db:
+        consume_valid_otp(db, phone, payload.code)
+        user = db.scalar(select(User).where(User.phone == phone))
+        if user is None:
+            # Primera vez que este teléfono aparece en el sistema como
+            # comprador: se crea directo ya verificado (el OTP recién
+            # consumido ES la prueba de verificación).
+            user = User(id=f"u-{uuid.uuid4().hex[:12]}", phone=phone, role=Role.COMPRADOR.value)
+            db.add(user)
+            db.flush()
+        # Si el teléfono ya existe como AGENTE, se reutiliza esa misma fila
+        # (el teléfono es la identidad canónica, sección 5) — no se lo
+        # "degrada" a comprador ni se le cambia el rol, esta verificación
+        # solo confirma que el celular es suyo.
+        user.phone_verified_at = datetime.now(timezone.utc)
+        db.commit()
+        token = create_token(user)
+        return {
+            "token": token,
+            "user": {"id": user.id, "phone": user.phone, "role": user.role, "agency_id": user.agency_id},
+            "phone_verified": True,
+        }
+
+
+class GoogleAuthIn(BaseModel):
+    id_token: str
+
+
+@app.post("/auth/google")
+def link_google_identity(payload: GoogleAuthIn, session: dict[str, Any] = Depends(current_session)):
+    """Etapa 2 / sección 6.2.1: segunda prueba de identidad del comprador,
+    pedida recién en el último paso del wizard de oferta, ADEMÁS del celular
+    verificado por OTP (nunca en su lugar). Requiere una sesión ya vigente
+    (guest o comprador con celular verificado) — este endpoint solo VINCULA
+    la cuenta de Google a esa sesión, no crea una identidad nueva por sí
+    solo, para que nadie pueda ofertar solo con Google sin haber verificado
+    un celular real."""
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            payload.id_token, google_requests.Request(), GOOGLE_CLIENT_ID
+        )
+    except ValueError as exc:
+        # Token mal formado, firma inválida, audience distinto o vencido —
+        # esto sí es responsabilidad del cliente, 401.
+        raise HTTPException(status_code=401, detail="Token de Google inválido o vencido") from exc
+    except google_auth_exceptions.TransportError as exc:
+        # No se pudo llegar a googleapis.com para bajar las claves públicas
+        # de verificación — es un problema de red transitorio, no un token
+        # inválido. 401 sería engañoso acá (el usuario reintentaría con el
+        # mismo botón y volvería a fallar por la misma razón de red).
+        raise HTTPException(status_code=503, detail="No pudimos verificar con Google en este momento. Probá de nuevo en unos segundos.") from exc
+    if not idinfo.get("email_verified"):
+        raise HTTPException(status_code=400, detail="Tu cuenta de Google no tiene el email verificado.")
+    google_sub = idinfo["sub"]
+    email = idinfo.get("email")
+    with Session(engine) as db:
+        user = db.get(User, session.get("user_id"))
+        if not user:
+            raise HTTPException(status_code=401, detail="Sesión inválida")
+        if not user.phone_verified_at:
+            raise HTTPException(status_code=403, detail="Verificá tu celular antes de vincular Google.")
+        other = db.scalar(select(User).where(User.google_sub == google_sub, User.id != user.id))
+        if other:
+            raise HTTPException(status_code=409, detail="Esta cuenta de Google ya está vinculada a otro usuario de Propomi.")
+        user.google_sub = google_sub
+        user.email = email
+        user.google_verified_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"email": email, "google_verified": True}
 
 
 def find_agency_by_phone(db: Session, phone: str) -> Agency | None:
@@ -811,6 +930,14 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
     if not buyer_phone_normalized:
         raise HTTPException(status_code=400, detail="Ingresá un teléfono de contacto válido")
     with Session(engine) as db:
+        # Etapa 2 / sección 6.2.1: enforcement real del lado del servidor —
+        # el paso de identidad del frontend (OTP + Google) es UX, esto es lo
+        # que de verdad impide que una oferta se cree sin las dos pruebas.
+        buyer_user = db.get(User, session["user_id"])
+        if not buyer_user or not buyer_user.phone_verified_at:
+            raise HTTPException(status_code=403, detail="Verificá tu celular antes de enviar una oferta.")
+        if not buyer_user.google_verified_at:
+            raise HTTPException(status_code=403, detail="Confirmá tu cuenta de Google antes de enviar una oferta.")
         p = db.get(Property, payload.property_id)
         if not p: raise HTTPException(status_code=404, detail="Propiedad no encontrada")
         offer_data = payload.model_dump(exclude={"buyer_phone"})

@@ -1,7 +1,8 @@
 'use client';
-import {useState} from 'react';
+import {useState,useRef,useEffect} from 'react';
 import {Property,Intent,Session} from '../lib/types';
-import {createOffer,saveIntent,trackEvent,getOrCreateBuyerSession,getBuyerProfile} from '../lib/api';
+import {createOffer,saveIntent,trackEvent,getOrCreateBuyerSession,getBuyerProfile,setBuyerProfile,requestOtp,verifyOtpBuyer,setBuyerSession,linkGoogleIdentity} from '../lib/api';
+import {renderGoogleButton} from '../lib/google';
 
 const CAPITAL_BUCKETS=[
   {label:'Menos de USD 50.000',value:30000},
@@ -22,7 +23,7 @@ const CONDITIONS=[
   'Evalúo otras propiedades',
   'Sin condicionantes particulares',
 ];
-const STEP_COUNT=4;
+const STEP_COUNT=5;
 const fmt=(n:number)=>Math.round(n).toLocaleString('en-US');
 
 // Todo este flujo es selección (slider + botones). El único texto libre que
@@ -41,7 +42,61 @@ export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>vo
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState<string|null>(null);
 
+  // Etapa 2 / sección 6.2.1: verificación de identidad, recién en este
+  // último paso — nunca antes, para no reintroducir la fricción que el
+  // wizard de pasos cortos está diseñado para evitar.
+  const initialProfile=getBuyerProfile();
+  const [phoneVerified,setPhoneVerified]=useState(!!initialProfile?.phoneVerified);
+  const [googleVerified,setGoogleVerified]=useState(!!initialProfile?.googleVerified);
+  const [otpSent,setOtpSent]=useState(false);
+  const [otpCode,setOtpCode]=useState('');
+  const [otpBusy,setOtpBusy]=useState(false);
+  const [otpError,setOtpError]=useState<string|null>(null);
+  const [googleError,setGoogleError]=useState<string|null>(null);
+  const googleBtnRef=useRef<HTMLDivElement|null>(null);
+
   function toggleCondition(c:string){setConditions(prev=>prev.includes(c)?prev.filter(x=>x!==c):[...prev,c])}
+
+  async function sendOtp(){
+    const profile=getBuyerProfile();
+    if(!profile)return;
+    setOtpBusy(true);setOtpError(null);
+    try{await requestOtp(profile.phone);setOtpSent(true)}
+    catch(e:any){setOtpError(e?.message||'No pudimos enviar el código. Intentá de nuevo.')}
+    finally{setOtpBusy(false)}
+  }
+
+  async function confirmOtp(){
+    const profile=getBuyerProfile();
+    if(!profile||otpCode.trim().length<4)return;
+    setOtpBusy(true);setOtpError(null);
+    try{
+      const r=await verifyOtpBuyer(profile.phone,otpCode.trim());
+      setBuyerSession({token:r.token,user:r.user});
+      setBuyerProfile({...profile,phoneVerified:true});
+      setPhoneVerified(true);
+    }catch(e:any){setOtpError(e?.message||'Código incorrecto o vencido.')}
+    finally{setOtpBusy(false)}
+  }
+
+  async function onGoogleToken(idToken:string){
+    setGoogleError(null);
+    try{
+      const session=await getOrCreateBuyerSession();
+      if(!session)throw new Error('Verificá tu celular primero.');
+      const r=await linkGoogleIdentity(idToken,session);
+      const profile=getBuyerProfile();
+      if(profile)setBuyerProfile({...profile,email:r.email,googleVerified:true});
+      setGoogleVerified(true);
+    }catch(e:any){setGoogleError(e?.message||'No pudimos confirmar tu cuenta de Google.')}
+  }
+
+  useEffect(()=>{
+    if(step!==5||!phoneVerified||googleVerified)return;
+    if(!googleBtnRef.current)return;
+    renderGoogleButton(googleBtnRef.current,onGoogleToken).catch(e=>setGoogleError(e?.message||'Google Sign-In no está disponible.'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[step,phoneVerified,googleVerified]);
 
   const amount=Math.round(p.price*(1-pct/100));
 
@@ -137,11 +192,48 @@ export default function OfferModal({p,onClose,onDone}:{p:Property;onClose:()=>vo
           <div className="summaryrow"><span>Plazo</span><b>{timeframe}</b></div>
           <div className="summaryrow"><span>Condicionantes</span><b>{conditions.length?conditions.join(', '):'Ninguno'}</b></div>
         </div>
-        {error && <div className="notice notice-error">{error}</div>}
         <div className="notice">🔒 Tu nombre y teléfono quedan ocultos para el agente hasta que decida revelar el contacto (pagando o con su suscripción).</div>
         <div className="wizactions modalactions">
           <button className="secondary" onClick={()=>setStep(3)}>Volver</button>
-          <button className="primary" disabled={busy} onClick={send}>{busy?'Enviando…':'Enviar oferta'}</button>
+          <button className="primary" onClick={()=>setStep(5)}>Continuar</button>
+        </div>
+      </div>}
+
+      {step===5&&<div className="wizstep">
+        <div className="qlabel">Confirmá que sos vos</div>
+        <div className="qhelp small">Último paso — esto nos permite avisarte cuando el agente responda y evitar propuestas falsas.</div>
+
+        <div className="summarycard" style={{marginTop:10}}>
+          <div className="summaryrow">
+            <span>Celular {initialProfile?.phone}</span>
+            <b>{phoneVerified?'✅ Verificado':''}</b>
+          </div>
+          {!phoneVerified&&<div style={{marginTop:10}}>
+            {!otpSent
+              ?<button className="secondary" disabled={otpBusy} onClick={sendOtp}>{otpBusy?'Enviando…':'Enviar código por SMS'}</button>
+              :<div className="formgrid" style={{gridTemplateColumns:'1fr auto',gap:8,alignItems:'center'}}>
+                <input value={otpCode} onChange={e=>setOtpCode(e.target.value)} placeholder="Código de 6 dígitos" inputMode="numeric" maxLength={6}/>
+                <button className="primary" disabled={otpBusy||otpCode.trim().length<4} onClick={confirmOtp}>{otpBusy?'Verificando…':'Verificar'}</button>
+              </div>}
+            {otpError&&<div className="notice notice-error" style={{marginTop:8}}>{otpError}</div>}
+          </div>}
+        </div>
+
+        {phoneVerified&&<div className="summarycard" style={{marginTop:12}}>
+          <div className="summaryrow">
+            <span>Cuenta de Google</span>
+            <b>{googleVerified?'✅ Confirmada':''}</b>
+          </div>
+          {!googleVerified&&<div style={{marginTop:10}}>
+            <div ref={googleBtnRef}/>
+            {googleError&&<div className="notice notice-error" style={{marginTop:8}}>{googleError}</div>}
+          </div>}
+        </div>}
+
+        {error && <div className="notice notice-error" style={{marginTop:12}}>{error}</div>}
+        <div className="wizactions modalactions">
+          <button className="secondary" onClick={()=>setStep(4)}>Volver</button>
+          <button className="primary" disabled={busy||!phoneVerified||!googleVerified} onClick={send}>{busy?'Enviando…':'Enviar oferta'}</button>
         </div>
       </div>}
     </div>

@@ -16,6 +16,116 @@ Formato de cada entrada:
 
 ---
 
+## 2026-09-13 — Etapa 2: Login de Google + verificación de celular del comprador
+
+- **Objetivo (roadmap sección 10, punto 2 / decisión 6.2.1):** agregar
+  Google Sign-In para el comprador, reutilizando el sistema de OTP existente
+  para verificar el celular, ambos pedidos recién en el ÚLTIMO paso del
+  wizard de oferta (antes de "Enviar oferta"), nunca al entrar al sitio.
+- **Backend (`apps/api/app/main.py` → v3):**
+  - Nuevas columnas en `User`: `phone_verified_at`, `email`, `google_sub`,
+    `google_verified_at`. Migradas vía `ensure_schema_columns` (no rompe
+    datos existentes — todo nullable/default NULL).
+  - Refactor: se extrajo `consume_valid_otp()` de adentro de
+    `/auth/otp/verify` para poder reusar la validación de código (rate
+    limit, expiración, intentos) sin duplicar lógica.
+  - Nuevo `POST /auth/otp/verify-buyer`: verifica el celular del comprador
+    con el mismo código OTP, pero SIN exigir que el teléfono esté asociado
+    a una agencia (a diferencia de `/auth/otp/verify`, que sigue siendo
+    exclusivo de agentes y no se tocó en su comportamiento). Reemplaza la
+    sesión guest anónima por una sesión atada al celular real.
+  - Nuevo `POST /auth/google`: valida el ID token de Google Identity
+    Services contra `GOOGLE_CLIENT_ID` (server-side, con la librería
+    `google-auth`). Exige que la sesión ya tenga `phone_verified_at` seteado
+    — no se puede vincular Google sin haber verificado el celular primero.
+  - **Gate real en `POST /offers`:** ahora rechaza con 403 si el usuario no
+    tiene `phone_verified_at` o `google_verified_at` — el chequeo del
+    frontend es solo UX, esto es lo que de verdad lo impide.
+  - **Bug encontrado y corregido en el momento (no llegó a pushearse roto):**
+    si fallaba la conexión a los certificados públicos de Google
+    (`googleapis.com`) al validar el token, la excepción
+    `google.auth.exceptions.TransportError` no estaba capturada y tiraba un
+    500 sin explicación. Ahora se distingue de un token inválido (401) y
+    devuelve 503 con mensaje claro de reintentar.
+  - `GOOGLE_CLIENT_ID` tiene como default el Client ID ya confirmado por el
+    dueño del producto (no es secreto, viaja igual al navegador con GSI),
+    pero se puede sobreescribir con la variable de entorno del mismo nombre
+    en Render.
+  - `requirements.txt` → v2: se sumó `google-auth==2.36.0`.
+- **Frontend:**
+  - `lib/google.ts` (nuevo, v1): helper para cargar el script de Google
+    Identity Services una sola vez y renderizar el botón de Sign-In.
+  - `lib/types.ts` → v2: `BuyerProfile` suma `phoneVerified`/`googleVerified`
+    (espejo local de lo que ya valida el backend, solo para UX — no es la
+    fuente de verdad).
+  - `lib/api.ts` → v2: se exportó `setBuyerSession` (antes privada) y se
+    sumaron `verifyOtpBuyer()` y `linkGoogleIdentity()`.
+  - `components/OfferModal.tsx` → v2: el wizard pasa de 4 a 5 pasos. El
+    paso 4 (resumen) ahora dice "Continuar" en vez de "Enviar oferta"; el
+    paso 5 nuevo pide verificar celular por SMS y confirmar cuenta de
+    Google, y recién ahí habilita "Enviar oferta".
+  - `.env.example` → v2: se documentó `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+    (opcional, ya tiene default en código).
+- **Validado en este entorno (Claude), no en la máquina del usuario:**
+  - `python3 -m py_compile` + import real del módulo con `google-auth`
+    instalado → sin errores.
+  - Flujo end-to-end contra una DB sqlite descartable: pedido de OTP,
+    verificación de comprador, bloqueo correcto de oferta sin Google (403),
+    manejo correcto de OTP incorrecto (400), y confirmación de que el login
+    de agente existente sigue funcionando exactamente igual (no se rompió
+    nada).
+  - `npx tsc --noEmit` sobre todo `apps/web` → 0 errores de tipos.
+  - **Esto NO reemplaza correr `pytest` (8 tests existentes en
+    `apps/api/tests/test_security.py`) ni `npm run build` real en el
+    entorno de despliegue** — el usuario no tiene ambiente de test local
+    (ver `CLAUDE.md` v4), así que la primera vez que esto corre "de verdad"
+    es en Render/Vercel. Si algo falla ahí, pegar el log acá.
+- **Pendiente / no se tocó en esta etapa:**
+  - No hay forma de "desvincular" Google ni cambiar el email vinculado
+    (no pedido, no bloqueante).
+  - Caso borde no resuelto explícitamente: si un mismo teléfono ya es
+    AGENTE y esa persona intenta ofertar como comprador, `verify-buyer`
+    reutiliza la misma fila de `User` sin cambiarle el rol — funciona, pero
+    no se probó ese camino específico end-to-end.
+  - Panel de revisión manual de agencias sigue siendo Etapa 4, no se tocó.
+- **Próxima etapa a encarar (roadmap sección 10):** Etapa 3 — evento
+  `search_performed` (loguear búsquedas/filtros del comprador de forma
+  agregada y anónima).
+- Archivos tocados: `apps/api/app/main.py` (v3), `apps/api/requirements.txt`
+  (v2), `apps/web/lib/google.ts` (nuevo, v1), `apps/web/lib/types.ts` (v2),
+  `apps/web/lib/api.ts` (v2), `apps/web/components/OfferModal.tsx` (v2),
+  `apps/web/.env.example` (v2).
+
+---
+
+## 2026-09-13 — CLAUDE.md v5: regla de trabajo en partes chicas
+
+- El usuario reportó que sesiones largas de código se cortan antes de
+  pushear nada, obligando a reempezar de cero. Se agregó una sección nueva
+  y explícita: nunca encarar una etapa completa en un solo tramo largo,
+  cortar en entregas chicas (idealmente pusheables una por una), y avisar
+  antes de arrancar si una etapa no se puede partir así sin dejar el repo
+  roto a medio camino.
+- Archivos tocados: `CLAUDE.md` (v5).
+
+---
+
+## 2026-09-13 — CLAUDE.md v4: frase de arranque explícita + sin ambiente de test
+
+- El usuario confirmó dos cosas nuevas que no estaban documentadas: (1) con
+  solo decir "acá está el repo, seguí las instrucciones" en cualquier sesión
+  nueva alcanza para arrancar a ejecutar directo, sin volver a preguntar
+  nada ya fijado; (2) no tiene ambiente de test instalado localmente (ni
+  `pytest` ni `npm run build` corren en su máquina).
+- **Corrección aplicada en `CLAUDE.md` (ahora v4):** sección nueva al
+  principio con la frase de arranque explícita, y sección ampliada sobre por
+  qué no hay Claude Code conectado, ahora incluyendo la limitación de no
+  poder correr tests localmente y sus consecuencias (checklist de calidad
+  por revisión manual, primer despliegue real = primera corrida real).
+- Archivos tocados: `CLAUDE.md` (v4).
+
+---
+
 ## 2026-09-13 — Corrección de proceso: nombres de descarga únicos
 
 - El usuario marcó que `CLAUDE.md` y `PROGRESS_LOG.md` se venían entregando

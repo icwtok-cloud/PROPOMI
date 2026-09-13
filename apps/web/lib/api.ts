@@ -8,7 +8,7 @@ export async function getProperty(id:string){if(!base)return PROPERTIES.find(p=>
 export async function trackEvent(name:EventName,property_id?:string,context?:Record<string,unknown>,session?:Session|null){if(!base)return;return req('/events',{method:'POST',body:JSON.stringify({name,property_id,session_id:'web-session',context})},session?.token)}
 const BUYER_KEY='propomi-buyer-session';
 function getBuyerSession():Session|null{try{const raw=localStorage.getItem(BUYER_KEY);return raw?JSON.parse(raw):null}catch{return null}}
-function setBuyerSession(session:Session){localStorage.setItem(BUYER_KEY,JSON.stringify(session))}
+export function setBuyerSession(session:Session){localStorage.setItem(BUYER_KEY,JSON.stringify(session))}
 export async function getOrCreateBuyerSession():Promise<Session|null>{if(!base)return getBuyerSession();const existing=getBuyerSession();if(existing)return existing;const r=await req<{token:string;user:Session['user']}>('/auth/guest',{method:'POST'});const session={token:r.token,user:r.user};setBuyerSession(session);return session}
 
 // Perfil de contacto del comprador: se pide UNA sola vez (nunca dentro del
@@ -37,4 +37,16 @@ export async function updateAgency(id:string,name:string,session:Session){if(!ba
 export async function relinkAgency(id:string,session:Session){if(!base)return {count:0,properties:PROPERTIES.filter(p=>p.agencyId===id),message:'Modo demo: publicaciones ya vinculadas.'};return req<{count:number;properties:Property[];message:string}>(`/agencies/${id}/relink-by-phone`,{method:'POST'},session.token)}
 export async function requestOtp(phone:string){if(!base)return {ok:true,message:'Código demo generado.',dev_code:'123456'};return req<{ok:boolean;message:string;dev_code?:string}>('/auth/otp/request',{method:'POST',body:JSON.stringify({phone})})}
 export async function verifyOtp(phone:string,code:string){if(!base)return {token:'demo-token',user:{id:'demo-agent',phone,role:'AGENTE' as const,agency_id:'a1'},relinked_count:2};return req<{token:string;user:Session['user'];relinked_count:number}>('/auth/otp/verify',{method:'POST',body:JSON.stringify({phone,code})})}
+
+// Etapa 2 (sección 6.2.1): verificación de celular del COMPRADOR — mismo
+// sistema de códigos que requestOtp ya usa para agentes, pero el endpoint de
+// verificación es distinto (/auth/otp/verify-buyer) porque no exige que el
+// teléfono esté asociado a una agencia. Reemplaza la sesión guest anónima
+// por una sesión atada al celular real ya verificado.
+export async function verifyOtpBuyer(phone:string,code:string){if(!base)return {token:'demo-buyer-token',user:{id:'demo-buyer',phone,role:'COMPRADOR' as const,agency_id:''},phone_verified:true};return req<{token:string;user:Session['user'];phone_verified:boolean}>('/auth/otp/verify-buyer',{method:'POST',body:JSON.stringify({phone,code})})}
+
+// Vincula la cuenta de Google (segunda prueba de identidad, además del
+// celular) a la sesión de comprador YA verificada por OTP. `session` tiene
+// que ser la sesión devuelta por verifyOtpBuyer, no la guest original.
+export async function linkGoogleIdentity(idToken:string,session:Session){if(!base)return {email:'demo@propomi.lat',google_verified:true};return req<{email:string;google_verified:boolean}>('/auth/google',{method:'POST',body:JSON.stringify({id_token:idToken})},session.token)}
 export async function getAnalytics(session?:Session|null){if(!base)return {properties:PROPERTIES.length,events:0,offers:0,funnel:{}};if(!session)throw new Error('Sesión de agente requerida');return req('/analytics/summary',undefined,session.token)}

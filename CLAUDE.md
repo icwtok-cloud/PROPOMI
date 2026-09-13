@@ -79,7 +79,31 @@ El flujo real, en orden, es siempre:
    decisiones quedaron tomadas) — esto es lo que le permite a una sesión
    futura, con cero contexto previo, retomar exactamente donde quedó.
 
-## Versión de este archivo: v4
+## Versión de este archivo: v5
+
+## Trabajar en partes CHICAS (regla nueva, crítica)
+
+El usuario reportó que sesiones largas de código se cortan antes de
+terminar, obligándolo a empezar de cero en una sesión nueva sin haber
+llegado a pushear nada. Para evitar esto:
+
+- **Nunca encarar una etapa completa del roadmap en un solo tramo largo de
+  código.** Cortar el trabajo en entregas chicas: un archivo (o 2-3 como
+  mucho si son chicos y muy relacionados) por vez, cada una con su propio
+  cierre — comandos de PowerShell listos y entrada de `PROGRESS_LOG.md` —
+  ANTES de pasar al siguiente archivo de esa misma etapa.
+- Si una etapa completa requiere tocar 5 archivos, eso son potencialmente
+  5 entregas chicas separadas (o menos si el usuario prefiere agruparlas),
+  no una entrega única al final. Preguntar o proponer el corte en partes
+  antes de arrancar si la etapa se ve grande.
+- Cada parte chica tiene que quedar **pusheable de forma independiente** —
+  nunca depender de "esto no sirve de nada hasta que llegue la parte 3".
+  Si una etapa no se puede partir así sin dejar el repo en un estado roto a
+  medio camino, avisar eso explícitamente y proponer el corte menos malo
+  (ej. back-end primero y funcionando solo, front-end después).
+- Esto tiene prioridad sobre entregar "el paquete completo" de una sola vez
+  — la sección 11 del plan maestro pide paquete completo por ETAPA, no que
+  toda la etapa se escriba y explique en una sola respuesta larga.
 
 ## Reglas que nunca se rompen (resumen — el detalle está en la sección 5 del plan maestro)
 
