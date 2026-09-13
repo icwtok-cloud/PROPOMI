@@ -288,12 +288,27 @@ export default function AgentDashboard(){
         <span className="muted small">{myProperties.length} propiedad{myProperties.length===1?'':'es'}</span>
       </div>
       {myProperties.length===0 && <div className="empty">Todavía no tenés propiedades publicadas en Propomi.</div>}
-      {myProperties.map(p=>(
+      {myProperties.map(p=>{
+        const cover=(p.images&&p.images.length>0)?p.images[0]:p.image;
+        const photoCount=(p.images&&p.images.length>0)?p.images.length:(p.image?1:0);
+        return (
         <div key={p.id} className="opprow" style={{alignItems:'flex-start',flexDirection:'column',gap:4}}>
           <div style={{display:'flex',justifyContent:'space-between',width:'100%',gap:12,alignItems:'flex-start'}}>
-            <div>
-              <strong>{p.title}</strong>
-              <div className="muted small">{p.zone} · {p.surface} m² · {p.rooms} amb.{p.needsReview?' · en revisión':''}</div>
+            <div style={{display:'flex',gap:12,alignItems:'flex-start',minWidth:0,flex:1}}>
+              {cover ? (
+                <div style={{width:56,height:56,borderRadius:8,overflow:'hidden',flexShrink:0,background:'#f0ebe6',position:'relative'}}>
+                  <img src={cover} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+                  {photoCount>1 && (
+                    <span style={{position:'absolute',right:4,bottom:4,background:'rgba(0,0,0,.55)',color:'#fff',fontSize:10,padding:'1px 5px',borderRadius:4}}>
+                      {photoCount}
+                    </span>
+                  )}
+                </div>
+              ) : null}
+              <div style={{minWidth:0}}>
+                <strong>{p.title}</strong>
+                <div className="muted small">{p.zone} · {p.surface} m² · {p.rooms} amb.{p.needsReview?' · en revisión':''}</div>
+              </div>
             </div>
             <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
               <span>{p.currency} {Number(p.price).toLocaleString('en-US')}</span>
@@ -303,7 +318,8 @@ export default function AgentDashboard(){
             </div>
           </div>
         </div>
-      ))}
+        );
+      })}
 
       <hr style={{border:'none',borderTop:'1px solid #e3e8ee',margin:'8px 0'}}/>
       <strong>Publicar nueva</strong>
