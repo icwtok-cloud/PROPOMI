@@ -50,6 +50,11 @@ export async function getAgency(id:string,session?:Session|null){if(!base)return
 // verificación desde la web. `data` acepta los tres campos, todos opcionales
 // salvo name que el backend exige siempre.
 export async function updateAgency(id:string,data:{name:string;instagram?:string;website_link?:string},session:Session){if(!base)return {id,name:data.name,verified:true,claimed:true,verificationStatus:'VERIFIED',instagram:data.instagram??null,websiteLink:data.website_link??null} as Agency;return req<Agency>(`/agencies/${id}`,{method:'PATCH',body:JSON.stringify(data)},session.token)}
+/** POST /agencies/{id}/subscription — registro/cambio de plan (sin cobro real). */
+export async function setAgencySubscription(id:string,plan:string,session:Session){
+  if(!base)return {id:'demo',agencyId:id,plan,cupoCiclo:plan==='PLAN_99'?null:plan==='PLAN_50'?60:30,consumidoCiclo:0};
+  return req<{id:string;agencyId:string;plan:string;cupoCiclo:number|null;consumidoCiclo:number;fechaRenovacion?:string|null;availableCredit?:number}>(`/agencies/${id}/subscription`,{method:'POST',body:JSON.stringify({plan})},session.token)
+}
 export async function relinkAgency(id:string,session:Session){if(!base)return {count:0,properties:PROPERTIES.filter(p=>p.agencyId===id),message:'Modo demo: publicaciones ya vinculadas.'};return req<{count:number;properties:Property[];message:string}>(`/agencies/${id}/relink-by-phone`,{method:'POST'},session.token)}
 
 export type PropertyCreatePayload={

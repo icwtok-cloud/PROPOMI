@@ -235,17 +235,15 @@ class Agency(Base):
     verification_priority: Mapped[int] = mapped_column(Integer, default=0)
     verification_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     verification_notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    # Suscripción — null significa pay-per-lead puro (sin plan activo).
-    # plan_lead_quota: None = ilimitado (plan USD 99); un número = tope mensual.
-    subscription_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    plan_lead_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    leads_used_current_period: Mapped[int] = mapped_column(Integer, default=0)
-    subscription_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    # Los primeros 10 reveals son gratis al verificarse (doc 06.2.3 / 08).
-    # Es un contador propio, separado del cupo de suscripción, para que no
-    # se pisen ni se dupliquen entre sí (reveal_contact consume de acá primero).
-    free_leads_remaining: Mapped[int] = mapped_column(Integer, default=0)
+    # DEPRECATED (tanda subscriptions/lead_credits): migradas a tablas propias.
+    # Se mantienen hasta confirmar que todo lee/escribe las tablas nuevas.
+    # Borrarlas es un paso posterior separado. Ver migrate_agency_monetization().
+    subscription_tier: Mapped[str | None] = mapped_column(String(20), nullable=True)  # DEPRECATED -> Subscription.plan
+    plan_lead_quota: Mapped[int | None] = mapped_column(Integer, nullable=True)  # DEPRECATED -> Subscription.cupo_ciclo
+    leads_used_current_period: Mapped[int] = mapped_column(Integer, default=0)  # DEPRECATED -> Subscription.consumido_ciclo
+    subscription_started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # DEPRECATED
+    current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # DEPRECATED
+    free_leads_remaining: Mapped[int] = mapped_column(Integer, default=0)  # DEPRECATED -> LeadCredit
     # Etapa 4 del roadmap general (subdominios por agencia): identificador
     # público y estable para la URL de la agencia (ej. inmobiliaria-norte
     # -> inmobiliaria-norte.propomi.lat vía middleware Next.js). Se genera
@@ -267,6 +265,49 @@ class AgencyPhone(Base):
     phone: Mapped[str] = mapped_column(String(30), unique=True, index=True)
     verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class SubscriptionPlan(str, Enum):
+    """Planes de suscripción (doc PLAN_MAESTRO / T5).
+    PAY_PER_LEAD = sin plan activo. PLAN_30/50/99 = packs mensuales.
+    cupo: 30 / 60 / None(ilimitado). Valores reversibles si cambia pricing.
+    """
+    PAY_PER_LEAD = "PAY_PER_LEAD"
+    PLAN_30 = "PLAN_30"
+    PLAN_50 = "PLAN_50"
+    PLAN_99 = "PLAN_99"
+
+
+PLAN_CUPO: dict[str, int | None] = {
+    SubscriptionPlan.PAY_PER_LEAD.value: 0,
+    SubscriptionPlan.PLAN_30.value: 30,
+    SubscriptionPlan.PLAN_50.value: 60,
+    SubscriptionPlan.PLAN_99.value: None,
+}
+
+
+class Subscription(Base):
+    """Plan activo por agencia — entidad propia (antes columnas en Agency)."""
+    __tablename__ = "subscriptions"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    agency_id: Mapped[str] = mapped_column(String(40), index=True)
+    plan: Mapped[str] = mapped_column(String(20))
+    cupo_ciclo: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    consumido_ciclo: Mapped[int] = mapped_column(Integer, default=0)
+    fecha_renovacion: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class LeadCredit(Base):
+    """Créditos gratis de reveal al verificarse (antes Agency.free_leads_remaining)."""
+    __tablename__ = "lead_credits"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    agency_id: Mapped[str] = mapped_column(String(40), index=True, unique=True)
+    cupo: Mapped[int] = mapped_column(Integer, default=0)
+    consumido: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class User(Base):
@@ -514,10 +555,110 @@ def migrate_legacy_property_images() -> None:
             db.commit()
 
 
+
+def migrate_agency_monetization() -> None:
+    """Migra columnas Agency -> subscriptions / lead_credits. Idempotente. NO borra columnas viejas."""
+    with Session(engine) as db:
+        agencies = db.scalars(select(Agency)).all()
+        changed = False
+        for a in agencies:
+            existing_lc = db.scalar(select(LeadCredit).where(LeadCredit.agency_id == a.id))
+            if existing_lc is None:
+                cupo = max(0, int(a.free_leads_remaining or 0))
+                db.add(LeadCredit(id=f"lc-{uuid.uuid4().hex[:12]}", agency_id=a.id, cupo=cupo, consumido=0))
+                changed = True
+            existing_sub = db.scalar(select(Subscription).where(Subscription.agency_id == a.id))
+            if existing_sub is None and a.subscription_tier:
+                tier = a.subscription_tier
+                plan_map = {
+                    "30": "PLAN_30", "50": "PLAN_50", "99": "PLAN_99",
+                    "PLAN_30": "PLAN_30", "PLAN_50": "PLAN_50", "PLAN_99": "PLAN_99",
+                    "pay_per_lead": "PAY_PER_LEAD", "PAY_PER_LEAD": "PAY_PER_LEAD",
+                    "STARTER": "PLAN_50",  # legacy test name
+                }
+                plan = plan_map.get(tier, tier if tier in PLAN_CUPO else "PAY_PER_LEAD")
+                cupo = a.plan_lead_quota if a.plan_lead_quota is not None else PLAN_CUPO.get(plan)
+                if plan == "PLAN_99":
+                    cupo = None
+                db.add(Subscription(
+                    id=f"sub-{uuid.uuid4().hex[:12]}", agency_id=a.id, plan=plan,
+                    cupo_ciclo=cupo, consumido_ciclo=max(0, int(a.leads_used_current_period or 0)),
+                    fecha_renovacion=(a.current_period_start + timedelta(days=30)) if a.current_period_start else None,
+                ))
+                changed = True
+        if changed:
+            db.commit()
+
+
+def get_lead_credit(db: Session, agency_id: str) -> LeadCredit | None:
+    return db.scalar(select(LeadCredit).where(LeadCredit.agency_id == agency_id))
+
+
+def get_subscription(db: Session, agency_id: str) -> Subscription | None:
+    return db.scalar(select(Subscription).where(Subscription.agency_id == agency_id))
+
+
+def get_available_credit(db: Session, agency_id: str) -> int:
+    """Único punto de verdad del cupo de reveal. Fallback a columnas DEPRECATED si no hay filas nuevas."""
+    total = 0
+    lc = get_lead_credit(db, agency_id)
+    sub = get_subscription(db, agency_id)
+    if lc is None and sub is None:
+        agency = db.get(Agency, agency_id)
+        if not agency:
+            return 0
+        total += max(0, int(agency.free_leads_remaining or 0))
+        if agency.subscription_tier:
+            if agency.plan_lead_quota is None:
+                return total + 10_000_000
+            total += max(0, int(agency.plan_lead_quota) - int(agency.leads_used_current_period or 0))
+        return total
+    if lc:
+        total += max(0, (lc.cupo or 0) - (lc.consumido or 0))
+    if sub and sub.plan != SubscriptionPlan.PAY_PER_LEAD.value:
+        if sub.cupo_ciclo is None:
+            return total + 10_000_000
+        total += max(0, (sub.cupo_ciclo or 0) - (sub.consumido_ciclo or 0))
+    return total
+
+
+def consume_reveal_credit(db: Session, agency: Agency) -> str | None:
+    """Consume 1 cupo: lead_credits primero, luego subscriptions. Fallback legacy. Sync deprecated cols."""
+    now = datetime.now(timezone.utc)
+    lc = get_lead_credit(db, agency.id)
+    sub = get_subscription(db, agency.id)
+    if lc is None and sub is None:
+        if (agency.free_leads_remaining or 0) > 0:
+            agency.free_leads_remaining -= 1
+            return "free_credit"
+        if agency.subscription_tier and (
+            agency.plan_lead_quota is None
+            or (agency.leads_used_current_period or 0) < agency.plan_lead_quota
+        ):
+            agency.leads_used_current_period = (agency.leads_used_current_period or 0) + 1
+            return "subscription_quota"
+        return None
+    if lc and (lc.cupo - lc.consumido) > 0:
+        lc.consumido += 1
+        lc.updated_at = now
+        agency.free_leads_remaining = max(0, lc.cupo - lc.consumido)
+        return "free_credit"
+    if sub and sub.plan != SubscriptionPlan.PAY_PER_LEAD.value:
+        if sub.cupo_ciclo is None or (sub.consumido_ciclo < (sub.cupo_ciclo or 0)):
+            sub.consumido_ciclo += 1
+            sub.updated_at = now
+            agency.leads_used_current_period = sub.consumido_ciclo
+            agency.subscription_tier = sub.plan
+            agency.plan_lead_quota = sub.cupo_ciclo
+            return "subscription_quota"
+    return None
+
+
 ensure_schema_columns()
 migrate_legacy_property_images()
+migrate_agency_monetization()
 
-app = FastAPI(title="Propomi API", version="1.4.0")
+app = FastAPI(title="Propomi API", version="1.5.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
@@ -1013,6 +1154,11 @@ class OTPRequest(BaseModel):
 class OTPVerify(BaseModel):
     phone: str
     code: str
+
+
+class SubscriptionIn(BaseModel):
+    """Registro/cambio de plan (sin cobro real — Lemon fuera de alcance)."""
+    plan: str
 
 
 class AgencyUpdate(BaseModel):
@@ -1811,37 +1957,19 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
         now = datetime.now(timezone.utc)
         enforce_listing_group_reveal_priority(db, prop, agency, offer, now)
 
-        # doc 06.2.3 / 08: los primeros 10 reveals gratis al verificarse se
-        # consumen de un contador propio, separado del cupo de suscripción,
-        # para que no se pisen ni se dupliquen entre sí.
-        if agency.free_leads_remaining > 0:
-            agency.free_leads_remaining -= 1
+        # Cupo único vía get_available_credit / consume_reveal_credit.
+        method = consume_reveal_credit(db, agency)
+        if method is not None:
             offer.contact_revealed = True
             offer.contact_revealed_at = now
+            txn_method = "FREE_CREDIT" if method == "free_credit" else RevealMethod.SUBSCRIPTION_QUOTA.value
             db.add(RevealTransaction(
                 id=f"rt-{uuid.uuid4().hex[:12]}", offer_id=offer.id, agency_id=agency.id,
-                method="FREE_CREDIT", amount_usd=0.0, status="COMPLETED", completed_at=now,
+                method=txn_method, amount_usd=0.0, status="COMPLETED", completed_at=now,
             ))
-            db.add(Event(name="contact_revealed", property_id=prop.id, user_id=offer.user_id, agency_id=agency.id, context={"method": "free_credit"}))
+            db.add(Event(name="contact_revealed", property_id=prop.id, user_id=offer.user_id, agency_id=agency.id, context={"method": method}))
             db.commit()
-            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": "free_credit"}
-
-        has_quota = (
-            agency.subscription_tier is not None
-            and (agency.plan_lead_quota is None or agency.leads_used_current_period < agency.plan_lead_quota)
-        )
-
-        if has_quota:
-            agency.leads_used_current_period += 1
-            offer.contact_revealed = True
-            offer.contact_revealed_at = now
-            db.add(RevealTransaction(
-                id=f"rt-{uuid.uuid4().hex[:12]}", offer_id=offer.id, agency_id=agency.id,
-                method=RevealMethod.SUBSCRIPTION_QUOTA.value, amount_usd=0.0, status="COMPLETED", completed_at=now,
-            ))
-            db.add(Event(name="contact_revealed", property_id=prop.id, user_id=offer.user_id, agency_id=agency.id, context={"method": "subscription_quota"}))
-            db.commit()
-            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": "subscription_quota"}
+            return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": method}
 
         # Sin cupo de suscripción: pay-per-lead. Buscar si ya hay una
         # transacción completada pendiente de aplicar (idempotencia básica).
@@ -2099,11 +2227,21 @@ def agency(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
             "id": a.id, "name": a.name, "city": a.city, "verified": a.verified, "claimed": a.claimed, "phone": a.phone,
             "verificationStatus": a.verification_status, "instagram": a.instagram, "websiteLink": a.website_link,
             "freeLeadsRemaining": a.free_leads_remaining, "slug": a.slug,
-            # T5.1 lectura (sin checkout Lemon todavía).
             "subscriptionTier": a.subscription_tier,
             "planLeadQuota": a.plan_lead_quota,
             "leadsUsedCurrentPeriod": a.leads_used_current_period,
             "subscriptionStartedAt": a.subscription_started_at.isoformat() if a.subscription_started_at else None,
+            "availableCredit": get_available_credit(db, a.id),
+            "subscription": (lambda s: None if not s else {
+                "id": s.id, "agencyId": s.agency_id, "plan": s.plan,
+                "cupoCiclo": s.cupo_ciclo, "consumidoCiclo": s.consumido_ciclo,
+                "fechaRenovacion": s.fecha_renovacion.isoformat() if s.fecha_renovacion else None,
+            })(get_subscription(db, a.id)),
+            "leadCredit": (lambda lc: None if not lc else {
+                "id": lc.id, "agencyId": lc.agency_id,
+                "cupo": lc.cupo, "consumido": lc.consumido,
+                "available": max(0, lc.cupo - lc.consumido),
+            })(get_lead_credit(db, a.id)),
         }
 
 
@@ -2120,6 +2258,50 @@ def update_agency(agency_id: str, payload: AgencyUpdate, session: dict[str, Any]
             a.website_link = payload.website_link.strip() or None
         db.commit()
         return {"id": a.id, "name": a.name, "verified": a.verified, "verificationStatus": a.verification_status, "instagram": a.instagram, "websiteLink": a.website_link}
+
+
+@app.post("/agencies/{agency_id}/subscription")
+def set_agency_subscription(agency_id: str, payload: SubscriptionIn, session: dict[str, Any] = Depends(require_agent)):
+    """Crea o cambia el plan activo. Sin pasarela real. Solo VERIFIED."""
+    if session["agency_id"] != agency_id:
+        raise HTTPException(status_code=403, detail="Agencia no autorizada")
+    plan = (payload.plan or "").strip().upper()
+    if plan not in PLAN_CUPO:
+        raise HTTPException(status_code=400, detail=f"Plan inválido. Valores: {', '.join(PLAN_CUPO.keys())}")
+    with Session(engine) as db:
+        a = db.get(Agency, agency_id)
+        if not a:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        if a.verification_status != "VERIFIED":
+            raise HTTPException(status_code=403, detail="Solo agencias verificadas pueden registrar o cambiar de plan.")
+        now = datetime.now(timezone.utc)
+        cupo = PLAN_CUPO[plan]
+        sub = get_subscription(db, agency_id)
+        if sub is None:
+            sub = Subscription(
+                id=f"sub-{uuid.uuid4().hex[:12]}", agency_id=agency_id, plan=plan,
+                cupo_ciclo=cupo, consumido_ciclo=0, fecha_renovacion=now + timedelta(days=30),
+                created_at=now, updated_at=now,
+            )
+            db.add(sub)
+        else:
+            sub.plan = plan
+            sub.cupo_ciclo = cupo
+            sub.consumido_ciclo = 0
+            sub.fecha_renovacion = now + timedelta(days=30)
+            sub.updated_at = now
+        a.subscription_tier = plan if plan != SubscriptionPlan.PAY_PER_LEAD.value else None
+        a.plan_lead_quota = cupo
+        a.leads_used_current_period = 0
+        a.subscription_started_at = now
+        a.current_period_start = now
+        db.commit()
+        return {
+            "id": sub.id, "agencyId": sub.agency_id, "plan": sub.plan,
+            "cupoCiclo": sub.cupo_ciclo, "consumidoCiclo": sub.consumido_ciclo,
+            "fechaRenovacion": sub.fecha_renovacion.isoformat() if sub.fecha_renovacion else None,
+            "availableCredit": get_available_credit(db, agency_id),
+        }
 
 
 @app.post("/agencies/{agency_id}/relink-by-phone")
@@ -2389,6 +2571,13 @@ def admin_approve_agency(agency_id: str, payload: AgencyReviewIn | None = None, 
         # debería pasar en el flujo normal), no se lo pisa ni se lo duplica.
         if a.free_leads_remaining == 0:
             a.free_leads_remaining = FREE_LEADS_ON_VERIFICATION
+        lc = get_lead_credit(db, a.id)
+        if lc is None:
+            db.add(LeadCredit(id=f"lc-{uuid.uuid4().hex[:12]}", agency_id=a.id, cupo=FREE_LEADS_ON_VERIFICATION, consumido=0))
+        elif (lc.cupo - lc.consumido) == 0 and a.free_leads_remaining > 0:
+            lc.cupo = a.free_leads_remaining
+            lc.consumido = 0
+            lc.updated_at = datetime.now(timezone.utc)
         db.commit()
         return agency_admin_dict(a)
 

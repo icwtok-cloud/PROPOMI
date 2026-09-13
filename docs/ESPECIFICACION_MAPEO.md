@@ -20,8 +20,8 @@ Leyenda: **DONE** | **PARTIAL** | **PENDING** | **OUT_OF_SCOPE** (esta tanda)
 | 1.2 Property.images[] | **DONE** | JSON list + `migrate_legacy_property_images()` |
 | 1.3 detected_at / origin_published_at | **DONE** | Campos en Property; UI usa freshness derivado en API |
 | 1.4 verification_status + IG + website + priority | **DONE** | Agency + admin approve/reject |
-| 1.5 Subscription **tabla** | **PARTIAL** | Lógica en columnas `Agency.subscription_*` / `plan_lead_quota` — **no** tabla `subscriptions` separada |
-| 1.6 LeadCredit **tabla** | **PARTIAL** | `Agency.free_leads_remaining` — **no** tabla `lead_credits` separada |
+| 1.5 Subscription **tabla** | **DONE** | Tabla `subscriptions` + migración. Columnas Agency **DEPRECATED**. |
+| 1.6 LeadCredit **tabla** | **DONE** | Tabla `lead_credits` + migración. Columnas Agency **DEPRECATED**. |
 | 1.7 search_performed | **DONE** | Event en GET `/properties` + analytics/demand + market-opportunities |
 
 ## Paso 2 — Backend
@@ -32,8 +32,8 @@ Leyenda: **DONE** | **PARTIAL** | **PENDING** | **OUT_OF_SCOPE** (esta tanda)
 | Admin pending/approve/reject | **DONE** (+ reopen, directory) |
 | T4.5 solo conteo si no VERIFIED | **DONE** |
 | Reveal: free → sub → pay mock | **DONE** |
-| GET subscription dedicado | **PENDING** (hoy embebido en GET agency) |
-| POST subscription (sin cobro) | **PENDING** |
+| GET subscription dedicado | **DONE** (embebido en GET agency: `subscription` + `availableCredit`) |
+| POST subscription (sin cobro) | **DONE** (`POST /agencies/{id}/subscription`) |
 | market-opportunities | **DONE** |
 | POST properties alta manual | **DONE** (`POST /properties`) |
 | POST properties/from-url placeholder | **PENDING** |
@@ -54,7 +54,7 @@ Leyenda: **DONE** | **PARTIAL** | **PENDING** | **OUT_OF_SCOPE** (esta tanda)
 | types + demo data images | **DONE** / revisar data.ts |
 | AgentDashboard PENDING vs VERIFIED | **DONE** |
 | IG/web en cuenta | **DONE** |
-| Plan/cupo lectura | **PARTIAL** (UI + agency GET; sin POST plan) |
+| Plan/cupo lectura | **DONE** (availableCredit / subscription / leadCredit; POST en api.ts) |
 | Admin panel | **DONE** |
 | Galería images | **DONE** |
 | Market opportunities UI | **DONE** (DemandPanel) |
@@ -72,8 +72,15 @@ Leyenda: **DONE** | **PARTIAL** | **PENDING** | **OUT_OF_SCOPE** (esta tanda)
 
 ## Deuda estructural (orden real)
 
-1. **Unificar monetización** a tablas `subscriptions` + `lead_credits` (1.5/1.6) con migración desde columnas Agency — un solo punto de “cupo disponible”.
-2. **Routers FastAPI** (`admin`, `agencies`, `offers`, `auth`) — `main.py` solo orquesta.
-3. **Contrato tipado** (OpenAPI → TS) para no desincronizar Agency/Offer.
-4. **POST subscription** + **from-url** placeholder (sin scrape).
+1. ~~Unificar monetización~~ **DONE** esta tanda. Columnas Agency.subscription_* / free_leads_remaining **DEPRECATED**; borrarlas = paso futuro.
+2. **POST properties/from-url** placeholder (sin scrape).
+3. **Routers FastAPI** (`admin`, `agencies`, `offers`, `auth`) — `main.py` solo orquesta.
+4. **Contrato tipado** (OpenAPI → TS).
 5. CI con `scripts/check.sh`.
+
+## Migración monetización (tanda subscriptions + lead_credits)
+
+- **Migrado:** `Agency.free_leads_remaining` → `lead_credits`; `Agency.subscription_tier` / `plan_lead_quota` / `leads_used_current_period` → `subscriptions`.
+- **DEPRECATED (no borrado):** columnas Agency listadas arriba. Sync en escritura vía `consume_reveal_credit` y `POST .../subscription`.
+- **Fuente de verdad:** `get_available_credit(agency_id)`. Reveal: lead_credits → subscriptions → pay-per-lead mock.
+- **Falta en tanda futura:** borrar columnas deprecated de Agency.

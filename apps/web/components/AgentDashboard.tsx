@@ -226,7 +226,7 @@ export default function AgentDashboard(){
       <div><b>{opps?.active??0}</b><span>Oportunidades activas</span></div>
       <div><b>{offers.filter(o=>o.contact_revealed).length}</b><span>Contactos revelados</span></div>
       <div><b>{analytics?.properties??0}</b><span>Publicaciones</span></div>
-      <div><b>{agency?.freeLeadsRemaining??0}</b><span>Reveals gratis restantes</span></div>
+      <div><b>{agency?.availableCredit??agency?.freeLeadsRemaining??0}</b><span>Cupo reveal disponible</span></div>
     </div>
 
     <div className="agentdashtabs">
@@ -374,19 +374,20 @@ export default function AgentDashboard(){
       <div className="summarycard" style={{marginTop:8}}>
         <strong>Tu plan (solo lectura)</strong>
         <p className="muted small" style={{margin:'6px 0'}}>
-          {agency?.subscriptionTier
-            ? <>Plan: <b>{agency.subscriptionTier}</b>
-                {agency.planLeadQuota==null
+          {(agency?.subscription?.plan || agency?.subscriptionTier)
+            ? <>Plan: <b>{agency?.subscription?.plan || agency?.subscriptionTier}</b>
+                {(agency?.subscription?.cupoCiclo ?? agency?.planLeadQuota) == null
                   ? ' · cupo ilimitado este período'
-                  : ` · ${agency.leadsUsedCurrentPeriod??0} / ${agency.planLeadQuota} reveals del plan`}
+                  : ` · ${agency?.subscription?.consumidoCiclo ?? agency?.leadsUsedCurrentPeriod ?? 0} / ${agency?.subscription?.cupoCiclo ?? agency?.planLeadQuota} reveals del plan`}
               </>
             : <>Sin suscripción activa — los reveals van por créditos gratis o pago por lead.</>}
         </p>
         <p className="muted small" style={{margin:0}}>
-          Créditos gratis restantes: <b>{agency?.freeLeadsRemaining??0}</b>
+          Créditos gratis restantes: <b>{agency?.leadCredit?.available ?? agency?.freeLeadsRemaining ?? 0}</b>
+          {' · Cupo total disponible: '}<b>{agency?.availableCredit ?? agency?.freeLeadsRemaining ?? 0}</b>
           {agency?.subscriptionStartedAt ? ` · desde ${new Date(agency.subscriptionStartedAt).toLocaleDateString('es-AR')}` : ''}
         </p>
-        <p className="muted small">La contratación/cambio de plan se habilita cuando Lemon y T5.1 estén confirmados.</p>
+        <p className="muted small">La contratación/cambio de plan se habilita cuando Lemon esté verificado (endpoint POST listo).</p>
       </div>
 
       <p className="muted small">Tu teléfono de acceso es el mismo que usan tus publicaciones para identificarte automáticamente como dueño.</p>
