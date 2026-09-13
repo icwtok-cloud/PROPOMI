@@ -31,16 +31,26 @@
    El nombre final dentro del repo (ej. `INSTRUCCIONES.md`, `types.ts`) NUNCA lleva
    el sufijo `_Vn` — el sufijo es solo para el archivo de descarga temporal; los
    comandos de PowerShell ya se encargan de renombrarlo al copiarlo al repo.
-10. **Manifiesto de archivos (raw links)**: Claude no puede construir ni adivinar
-    URLs raw de GitHub — su herramienta solo puede abrir URLs que ya aparecieron
-    antes en la conversación (mensaje del usuario, o texto dentro de un archivo ya
-    fetcheado). Por eso, todo raw link de un archivo del repo que el usuario haya
-    pasado alguna vez queda anotado permanentemente en la sección "Manifiesto de
-    archivos del repo" de este documento. Como ESTE archivo se fetchea al inicio de
-    cada sesión, los links quedan disponibles para Claude sin que el usuario tenga
-    que volver a pegarlos. Si Claude necesita un archivo que todavía no está en el
-    manifiesto, ahí sí debe pedir puntualmente ese raw link (y agregarlo al
-    manifiesto en cuanto lo reciba).
+10. **Manifiesto de archivos (raw links) — CON LIMITACIÓN CONFIRMADA**: Claude no
+    puede construir ni adivinar URLs raw de GitHub — su herramienta solo puede abrir
+    una URL que YA HAYA APARECIDO TEXTUALMENTE en un resultado real de búsqueda o
+    fetch anterior, o en un mensaje del usuario. Se probó (sesión del 2026-09-13)
+    que escribir los links dentro de un archivo que Claude genera (como este mismo)
+    NO alcanza para "desbloquearlos": Claude necesita fetchear ese archivo desde
+    GitHub de verdad (ya pusheado) para que las URLs que contiene queden
+    disponibles. Consecuencia práctica:
+    - El manifiesto de abajo sigue siendo útil como REFERENCIA para el usuario
+      (copiar y pegar rápido) y para que Claude sepa qué archivos existen y cuáles
+      ya se revisaron — pero el usuario va a tener que seguir pegando el raw link
+      puntual de cada archivo nuevo que Claude necesite abrir, salvo que:
+      (a) el usuario le pida a Claude que primero fetchee `INSTRUCCIONES.md` desde
+      GitHub (una vez confirmado el push), lo cual sí desbloquea todos los links
+      que ese archivo contiene como texto, o
+      (b) el archivo ya fue leído en una sesión anterior y su URL quedó registrada
+      en el historial de la conversación activa.
+    - Por eso, al abrir sesión, conviene que el usuario diga algo como: "leé
+      INSTRUCCIONES.md desde el repo" (pasando el raw link de ESE archivo), y recién
+      ahí Claude puede navegar solo el resto del manifiesto sin pedir cada link.
 
 11. **Meta-regla de auto-documentación**: Claude no espera a que el usuario pida
     "anotá esto" — en CADA respuesta donde el usuario dé una instrucción, corrija
@@ -61,10 +71,11 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V4 |
+| INSTRUCCIONES.md | V5 |
 | apps/web/lib/types.ts | V1 |
 | apps/web/lib/api.ts | V1 |
 | apps/web/components/AgentDashboard.tsx | V1 |
+| apps/web/components/PropertyCard.tsx | V1 |
 
 ## Manifiesto de archivos del repo (raw links ya conocidos)
 
@@ -98,7 +109,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/ComparePanel.tsx
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/DemandPanel.tsx
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/OfferModal.tsx
-- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/PropertyCard.tsx ✅ (leído; pendiente de fix — usa solo `image` singular, ver etapa 005)
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/PropertyCard.tsx ✅ (leído y corregido en etapa 005)
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/api.ts ✅ (leído y corregido en etapa 004)
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/data.ts
 - https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/google.ts
@@ -121,17 +132,19 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 002 | Se agregan reglas de versionado de archivos de descarga (`_Vn`) y manifiesto completo de raw links del repo, para que Claude no vuelva a pedirle al usuario los mismos links en cada sesión. | INSTRUCCIONES.md | etapa-002_versionado-y-manifiesto-de-archivos | Pendiente de push |
 | 003 | Meta-regla de auto-documentación: Claude anota cualquier instrucción/corrección del usuario en el mismo turno en que se da, sin esperar a que se lo pidan explícitamente. | INSTRUCCIONES.md | etapa-003_meta-regla-autodocumentacion | Pendiente de push |
 | 004 | Fix funcional: la agencia no tenía forma de completar su verificación desde la web. `updateAgency()` en `api.ts` solo mandaba `{name}` (el backend acepta también `instagram`/`website_link`, requeridos para pasar de PENDING a VERIFIED). Se corrigió `updateAgency` para mandar los tres campos, y se amplió la pestaña "Mi cuenta" de `AgentDashboard.tsx` con: badge de estado de verificación (VERIFIED/PENDING/REJECTED), inputs de Instagram y sitio web, aviso cuando la agencia no está verificada, y contador de "reveals gratis restantes" (`freeLeadsRemaining`) en las métricas. | apps/web/lib/api.ts, apps/web/components/AgentDashboard.tsx | etapa-004_fix-verificacion-agencia-en-mi-cuenta | Pendiente de push |
+| 005 | `PropertyCard.tsx` solo mostraba `p.image` (singular, campo DEPRECATED) e ignoraba `p.images[]`, `p.originPublishedAt`, `p.pool` y `p.petFriendly` que el backend ya devuelve y el tipo `Property` ya soporta desde la etapa 001. Se corrigió: la portada ahora usa `images[0]` con fallback a `image`, se muestra un contador "+N fotos" si hay más de una, se agrega `originPublishedAt` debajo de la superficie/ambientes, y se suman los tags "Pileta" y "Acepta mascotas". Se evitó a propósito usar clases CSS nuevas (se reutilizaron `fresh`, `muted`, `tags`, etc. ya existentes) para no depender de `globals.css`, que todavía no fue leído. | apps/web/components/PropertyCard.tsx | etapa-005_fix-galeria-y-campos-faltantes-property-card | Pendiente de push |
 
-## Próximo paso lógico (candidato para etapa 005)
+## Próximo paso lógico (candidato para etapa 006)
 
-- `PropertyCard.tsx` (ya leído) solo usa `p.image` (singular) y no muestra
-  `p.images[]` (galería) ni `p.originPublishedAt`, aunque el backend y el tipo
-  `Property` (corregido en etapa 001) ya los soportan. Además no muestra el tag
-  `petFriendly` ni `pool`, que sí existen en el tipo. Candidato natural para la
-  etapa 005: agregar mini-galería (o al menos `images[0]` con fallback a `image`)
-  y mostrar `originPublishedAt` junto a `freshness`.
-- Nota de riesgo a revisar en esa misma etapa: `AgentDashboard.tsx` (etapa 004)
-  usa clases CSS nuevas `notice-ok` y `notice-warn` que no fueron confirmadas
-  contra `app/globals.css` (no leído todavía). Si no existen, el aviso de
-  verificación se va a ver sin estilo pero sigue siendo funcional. Agregar
-  `apps/web/app/globals.css` al manifiesto y revisar/agregar esas clases si faltan.
+- Leer `apps/web/app/globals.css` (raw link en el manifiesto, pendiente) para:
+  (a) confirmar si existen las clases `notice-ok` / `notice-warn` usadas en
+  `AgentDashboard.tsx` (etapa 004) y agregarlas si faltan, y (b) evaluar si vale
+  la pena un estilo dedicado para el contador "+N fotos" de `PropertyCard.tsx`
+  (etapa 005), que hoy reutiliza la clase `fresh` con un override inline de
+  posición como solución rápida.
+- Después de eso, revisar `OfferModal.tsx` y `BuyerIdentityModal.tsx` (todavía no
+  leídos) para confirmar que el flujo de oferta realmente exige verificación de
+  celular + Google antes de habilitar "Enviar oferta", tal como lo fuerza el
+  backend en `POST /offers` (sección 6.2.1) — si el frontend no bloquea la UI
+  hasta tener ambas verificaciones, el usuario ve un error recién al confirmar,
+  que es peor UX aunque no sea un bug de seguridad (el backend igual lo protege).
