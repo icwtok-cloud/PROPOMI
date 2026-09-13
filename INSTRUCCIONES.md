@@ -90,7 +90,8 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V10 |
+| INSTRUCCIONES.md | V11 |
+| apps/api/app/main.py | V2 |
 | apps/web/lib/types.ts | V1 |
 | apps/web/lib/api.ts | V1 |
 | apps/web/components/AgentDashboard.tsx | V1 |
@@ -157,6 +158,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 007 | Reglas de sesión agregadas: sin narración (Claude entrega resultado + comandos, sin relatar el proceso), sin comandos de rollback salvo pedido explícito, y formato fijo en bloque de código para pedir links faltantes. | INSTRUCCIONES.md | etapa-007_reglas-sin-narracion-sin-rollback-automatico | Pendiente de push |
 | 008 | Confirmado (clonando el repo directo, sin necesitar raw links): `OfferModal.tsx` YA bloquea "Enviar oferta" (`disabled={busy||!phoneVerified||!googleVerified}`) hasta que celular+Google estén verificados, espejando la exigencia real del backend en `POST /offers`. `BuyerIdentityModal.tsx` (nombre+celular, sin OTP) solo se usa para las acciones de menor intención (pregunta/visita), lo cual es correcto por diseño — no requieren la verificación fuerte que sí exige ofertar. No hizo falta ningún cambio de código. | — (solo verificación) | — | Confirmado, sin push necesario |
 | 009 | Regla nueva (15): la sección "Próximo paso lógico" tiene que quedar siempre escrita en este archivo al cierre de cada etapa, no solo mencionada en el chat. Se auditó también `AgentOfferActions.tsx`, `DemandPanel.tsx` y el 402 de `reveal_contact` (sin bugs) y se dejó anotado el candidato real para la próxima etapa (filtro de 60 días + dedup del crawler, Etapa 2 del roadmap). | INSTRUCCIONES.md | etapa-009_regla-proximo-paso-siempre-en-instrucciones | Pendiente de push |
+| 010 | Arranque de Etapa 2 del roadmap general (cold-start): `GET /properties` no filtraba por antigüedad — una propiedad que el crawler dejó de ver seguía apareciendo en la búsqueda pública para siempre. Se agregó `PROPERTY_FRESHNESS_DAYS = 60` y el filtro `last_seen_at >= ahora - 60 días`, aplicado solo cuando NO se pide `agency_id` (una agencia sigue viendo sus propias publicaciones stale en "Mi cuenta" para poder notar y resolver el problema). Tests corridos: 9/11 pasan; los 2 que fallan (`test_reveal_blocked_without_subscription_or_payment`, `test_cannot_add_phone_already_used_by_another_agency`) son preexistentes y no están relacionados con este cambio (drift de tests vs. reglas de verificación de comprador y código de estado, de etapas anteriores). Dedup del crawler (mismo rango de precio + zona + superficie similar → revisión manual) queda como candidato de la próxima etapa — no hay endpoint de ingesta del crawler todavía en el backend, así que dedup se implementará junto con ese endpoint. | apps/api/app/main.py | etapa-010_filtro-frescura-60-dias | Pendiente de push |
 
 ## Cierre de sesión (2026-09-13) — arrancar la próxima sesión directo desde acá
 
@@ -181,14 +183,14 @@ https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/
    PowerShell (sin narrar el proceso, sin comandos de rollback salvo que se pidan),
    y seguir encadenando etapas chicas sin volver a preguntar "qué sigue".
 
-## Próximo paso lógico (candidato para etapa 009)
+## Próximo paso lógico (candidato para etapa 011)
 
-- `AgentOfferActions.tsx`, `DemandPanel.tsx` y el flujo `reveal_contact`/402 del
-  backend ya fueron auditados: sin bugs, todo consistente.
-- Candidato elegido para etapa 009: arrancar Etapa 2 del roadmap general
-  (crawler/cold-start) — filtro de frescura de 60 días (entrada + barrido
-  periódico de lo ya indexado) y regla simple de dedup (mismo rango de precio +
-  zona + superficie similar → marcar para revisión manual, sin IA todavía). El
-  cap de 5 fotos ya está cumplido (`images` list). Falta confirmar en `main.py`
-  si ya existe algún campo/lógica de fecha de detección vs. fecha de publicación
-  del portal de origen antes de escribir el filtro.
+- No existe todavía ningún endpoint de ingesta del crawler (`POST /properties`
+  o similar) — el modelo `Property` ya tiene `detected_at`/`last_seen_at` listos
+  para eso, pero nada los actualiza salvo el seed inicial.
+- Candidato elegido para etapa 011: diseñar y crear ese endpoint de ingesta
+  (upsert por `source` + `source_url` o similar, actualizando `last_seen_at` en
+  cada barrido) y, sobre ese mismo endpoint, la regla simple de dedup (mismo
+  rango de precio + zona + superficie similar → `verification_status`-style
+  flag para revisión manual, sin IA todavía) — ambas piezas del doc 05 dependen
+  una de la otra, así que van juntas en la próxima etapa.

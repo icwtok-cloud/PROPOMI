@@ -90,6 +90,11 @@ OTP_RATE_WINDOW = 10 * 60
 OTP_MAX_REQUESTS = 3
 MAX_PROPERTY_IMAGES = 5  # doc 06.1: hasta 5 fotos por propiedad, decisión ya tomada
 FREE_LEADS_ON_VERIFICATION = 10  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
+PROPERTY_FRESHNESS_DAYS = 60  # doc 05 (Etapa 2): filtro de cold-start — una propiedad
+# que el crawler no vuelve a ver hace más de 60 días se considera potencialmente
+# vendida/dada de baja en el portal de origen y se oculta de la búsqueda pública
+# (no se borra: sigue en la base por si el crawler la vuelve a detectar y
+# actualiza last_seen_at, momento en el que vuelve a aparecer sola).
 # Etapa 2: Google Sign-In del comprador (sección 6.2.1). El Client ID no es un
 # secreto (viaja igual al frontend en cada request de Google Identity
 # Services), por eso es seguro tenerlo como default acá — pero en producción
@@ -904,6 +909,13 @@ def properties(
         if parking is not None: stmt = stmt.where(Property.parking == parking)
         if credit is not None: stmt = stmt.where(Property.credit == credit)
         if agency_id: stmt = stmt.where(Property.agency_id == agency_id)
+        # Etapa 2 (doc 05): oculta de la búsqueda pública lo que el crawler
+        # no ve hace más de PROPERTY_FRESHNESS_DAYS — no afecta a agency_id
+        # (una agencia sigue viendo sus propias publicaciones en "Mi cuenta"
+        # aunque estén stale, para que pueda notar y resolver el problema).
+        if not agency_id:
+            freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
+            stmt = stmt.where(Property.last_seen_at >= freshness_cutoff)
         results = db.scalars(stmt).all()
 
         # Etapa 3: evento agregado y anónimo por cada búsqueda — insumo para
