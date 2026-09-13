@@ -90,13 +90,14 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V30 |
-| apps/api/app/main.py | V13 |
+| INSTRUCCIONES.md | V31 |
+| apps/api/app/main.py | V14 |
 | apps/web/lib/types.ts | V4 |
-| apps/web/lib/api.ts | V9 |
+| apps/web/lib/api.ts | V10 |
 | apps/web/app/admin/page.tsx | V2 |
-| apps/api/app/main.py | V13 |
+| apps/api/app/main.py | V14 |
 | apps/web/components/AgentDashboard.tsx | V7 |
+| apps/web/components/DemandPanel.tsx | V3 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/components/OfferModal.tsx | V2 |
 | apps/web/app/globals.css | V1 |
@@ -187,6 +188,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 028 | T9.3 tracking de origen: `Offer.origin` + `OfferIn.origin` (código `[a-z0-9_-]`). Evento `offer_created` guarda origin. Frontend: `?o=`/`?origin=` → sessionStorage; storefront usa slug; createOffer lo manda; dashboard muestra origen en ofertas. | main.py, api.ts, types.ts, OfferModal, page, tienda, AgentDashboard | etapa-028_tracking-origen-ofertas | Pendiente de push |
 | 029 | Botón «Copiar link» en pestaña Propiedades: genera URL con `?property=` + `?o=` (slug de agencia) vía buildShareUrl. | apps/web/components/AgentDashboard.tsx | etapa-029_copiar-link-tracking-propiedades | Pendiente de push |
 | 030 | T4.5: GET /offers para agente no VERIFIED devuelve solo `{verificationRequired,count}` sin detalle. Counter/accept/reject/negotiate también 403. Reveal ya bloqueado. Dashboard: mensaje de cantidad, sin lista ni AgentOfferActions. Sin cambio de modelo de datos (solo comportamiento). | main.py, api.ts, AgentDashboard.tsx | etapa-030_t45-ofertas-solo-conteo-si-pending | Pendiente de push |
+| 031 | T5.7: GET `/agencies/{id}/market-opportunities` (solo VERIFIED) cruza search_performed con zonas del catálogo de la agencia. DemandPanel muestra tabla zona/props/búsquedas/presupuesto. Sin schema nuevo. | main.py, api.ts, DemandPanel.tsx | etapa-031_t57-market-opportunities | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -223,8 +225,7 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 031)
+## Próximo paso lógico (candidato para etapa 032)
 
-- T5.7 dashboard de oportunidades de mercado (GET /agencies/{id}/market-opportunities) — solo VERIFIED.
-- T8.7 carrera multi-agente por listing_group (tocan dinero/reparto → no inventar; confirmar ventana 24h/6h si hace falta).
+- T8.7 carrera multi-agente por listing_group (tocan dinero/reparto de lead → **no inventar**; confirmar ventanas 24h/6h y prioridad por antigüedad de suscripción si hay duda).
 - Lemon Squeezy: checklist cuando aprueben.

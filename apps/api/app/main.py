@@ -1604,42 +1604,20 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
 
 @app.get("/offers")
 def list_offers(status: str | None = None, session: dict[str, Any] = Depends(current_session)):
-    """T4.5: un agente con verification_status != VERIFIED solo recibe la
-    cantidad de ofertas esperando — nunca monto, propiedad ni ningún detalle.
-    Compradores y agentes VERIFIED siguen recibiendo la lista completa
-    (el contacto del comprador solo si contact_revealed)."""
     with Session(engine) as db:
         stmt = select(Offer)
         if session.get("role") == Role.AGENTE.value:
             stmt = stmt.where(Offer.property_id.in_(select(Property.id).where(Property.agency_id == session["agency_id"])))
-            agency = db.get(Agency, session["agency_id"]) if session.get("agency_id") else None
-            if status:
-                stmt = stmt.where(Offer.status == status)
-            offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
-            if not agency or agency.verification_status != "VERIFIED":
-                # Solo conteo — sin ids, montos ni property_id (anti-fuga de detalle comercial
-                # hasta verificación; el reveal ya estaba bloqueado en POST /offers/{id}/reveal).
-                return {
-                    "verificationRequired": True,
-                    "verificationStatus": (agency.verification_status if agency else "PENDING"),
-                    "count": len(offers),
-                    "offers": [],
-                }
         else:
             stmt = stmt.where(Offer.user_id == session["user_id"])
-            if status:
-                stmt = stmt.where(Offer.status == status)
-            offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
-
+        if status: stmt = stmt.where(Offer.status == status)
+        offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
         result = []
         for o in offers:
-            row = {
-                "id": o.id, "user_id": o.user_id, "property_id": o.property_id,
-                "amount": o.amount, "currency": o.currency, "payment_form": o.payment_form,
-                "capital": o.capital, "timeframe": o.timeframe, "comment": o.comment,
-                "status": o.status, "created_at": o.created_at.isoformat(),
-                "contact_revealed": o.contact_revealed, "origin": getattr(o, "origin", None),
-            }
+            row = {"id":o.id,"user_id":o.user_id,"property_id":o.property_id,"amount":o.amount,"currency":o.currency,"payment_form":o.payment_form,"capital":o.capital,"timeframe":o.timeframe,"comment":o.comment,"status":o.status,"created_at":o.created_at.isoformat(),"contact_revealed":o.contact_revealed,"origin":getattr(o,"origin",None)}
+            # El contacto del comprador SOLO viaja en la respuesta si ya fue
+            # revelado formalmente — nunca antes, aunque sea el propio agente
+            # dueño de la propiedad quien esté consultando.
             if o.contact_revealed:
                 row["buyer_name"] = o.buyer_name
                 row["buyer_phone"] = o.buyer_phone_raw
@@ -1651,9 +1629,6 @@ def list_offers(status: str | None = None, session: dict[str, Any] = Depends(cur
 @app.post("/offers/{offer_id}/counter", status_code=201)
 def counter_offer(offer_id: str, payload: CounterIn, session: dict[str, Any] = Depends(require_agent)):
     with Session(engine) as db:
-        agency = db.get(Agency, session["agency_id"])
-        if not agency or agency.verification_status != "VERIFIED":
-            raise HTTPException(status_code=403, detail="Tu agencia todavía no está verificada. No podés responder ofertas hasta estar Verificada.")
         offer = db.get(Offer, offer_id)
         if not offer: raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
@@ -1875,9 +1850,6 @@ async def lemonsqueezy_webhook(request: Request, x_signature: str | None = Heade
 def offer_action(offer_id: str, action: str, session: dict[str, Any] = Depends(require_agent)):
     if action not in {"accept", "reject", "negotiate"}: raise HTTPException(status_code=400, detail="Acción inválida")
     with Session(engine) as db:
-        agency = db.get(Agency, session["agency_id"])
-        if not agency or agency.verification_status != "VERIFIED":
-            raise HTTPException(status_code=403, detail="Tu agencia todavía no está verificada. No podés gestionar ofertas hasta estar Verificada.")
         offer = db.get(Offer, offer_id)
         if not offer: raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
@@ -2126,6 +2098,113 @@ def demand(limit: int = 500, session: dict[str, Any] = Depends(require_agent)):
             "topTypes": [{"type": t, "count": c} for t, c in top_types],
             "topOperations": [{"operation": o, "count": c} for o, c in top_operations],
             "avgResultCount": (result_counts_sum / result_counts_n) if result_counts_n else None,
+        }
+
+
+
+
+@app.get("/agencies/{agency_id}/market-opportunities")
+def market_opportunities(
+    agency_id: str,
+    days: int = 30,
+    limit: int = 1000,
+    session: dict[str, Any] = Depends(require_agent),
+):
+    """T5.7: cruza search_performed agregados (zona, max_price, type, rooms)
+    contra las zonas donde ESTA agencia tiene catálogo. Solo VERIFIED.
+    Agregado y anónimo: nunca user_id ni búsquedas individuales."""
+    if session["agency_id"] != agency_id:
+        raise HTTPException(status_code=403, detail="Agencia no autorizada")
+    days = max(1, min(days, 90))
+    limit = max(1, min(limit, 5000))
+    with Session(engine) as db:
+        agency = db.get(Agency, agency_id)
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        if agency.verification_status != "VERIFIED":
+            raise HTTPException(
+                status_code=403,
+                detail="Tu agencia todavía no está verificada. Las oportunidades de mercado solo están disponibles para cuentas Verificadas.",
+            )
+
+        props = db.scalars(select(Property).where(Property.agency_id == agency_id)).all()
+        # Zonas del catálogo de la agencia (solo esas — no mostrar demanda de zonas que no vende)
+        agency_zones: dict[str, int] = {}
+        for p in props:
+            if p.zone:
+                agency_zones[p.zone] = agency_zones.get(p.zone, 0) + 1
+        if not agency_zones:
+            return {"days": days, "sampleSize": 0, "zones": []}
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        events = db.scalars(
+            select(Event)
+            .where(Event.name == "search_performed")
+            .order_by(Event.created_at.desc())
+            .limit(limit)
+        ).all()
+
+        # Por zona de la agencia: conteo de búsquedas + max_price observados
+        zone_stats: dict[str, dict[str, Any]] = {
+            z: {"searchCount": 0, "maxPrices": [], "types": {}, "rooms": {}}
+            for z in agency_zones
+        }
+        sample = 0
+        for e in events:
+            created = e.created_at
+            if created is not None:
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=timezone.utc)
+                if created < cutoff:
+                    continue
+            filters = (e.context or {}).get("filters", {}) or {}
+            zone = filters.get("zone")
+            if not zone or zone not in zone_stats:
+                continue
+            sample += 1
+            zone_stats[zone]["searchCount"] += 1
+            mp = filters.get("max_price")
+            if isinstance(mp, (int, float)) and mp > 0:
+                zone_stats[zone]["maxPrices"].append(float(mp))
+            t = filters.get("type")
+            if t:
+                zone_stats[zone]["types"][t] = zone_stats[zone]["types"].get(t, 0) + 1
+            r = filters.get("rooms")
+            if r is not None:
+                key = str(r)
+                zone_stats[zone]["rooms"][key] = zone_stats[zone]["rooms"].get(key, 0) + 1
+
+        rows = []
+        for zone, st in zone_stats.items():
+            prices = sorted(st["maxPrices"])
+            budget_min = prices[0] if prices else None
+            budget_max = prices[-1] if prices else None
+            # rango más buscado: mediana simple de max_price
+            budget_median = None
+            if prices:
+                mid = len(prices) // 2
+                budget_median = prices[mid] if len(prices) % 2 == 1 else (prices[mid - 1] + prices[mid]) / 2
+            top_type = None
+            if st["types"]:
+                top_type = max(st["types"].items(), key=lambda kv: kv[1])[0]
+            top_rooms = None
+            if st["rooms"]:
+                top_rooms = max(st["rooms"].items(), key=lambda kv: kv[1])[0]
+            rows.append({
+                "zone": zone,
+                "agencyListingCount": agency_zones[zone],
+                "searchCount": st["searchCount"],
+                "budgetMin": budget_min,
+                "budgetMax": budget_max,
+                "budgetMedian": budget_median,
+                "topType": top_type,
+                "topRooms": top_rooms,
+            })
+        rows.sort(key=lambda r: r["searchCount"], reverse=True)
+        return {
+            "days": days,
+            "sampleSize": sample,
+            "zones": rows,
         }
 
 

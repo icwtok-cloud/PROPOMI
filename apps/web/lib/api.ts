@@ -187,3 +187,23 @@ export function buildShareUrl(propertyId:string,origin:string):string{
   const o=origin.trim().toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,80);
   return `${baseUrl}/?property=${encodeURIComponent(propertyId)}&o=${encodeURIComponent(o)}`;
 }
+
+
+export type MarketOpportunityZone={
+  zone:string;
+  agencyListingCount:number;
+  searchCount:number;
+  budgetMin:number|null;
+  budgetMax:number|null;
+  budgetMedian:number|null;
+  topType:string|null;
+  topRooms:string|null;
+};
+export type MarketOpportunities={days:number;sampleSize:number;zones:MarketOpportunityZone[]};
+
+// T5.7: demanda solo en zonas donde la agencia tiene catálogo (agregado/anónimo).
+export async function getMarketOpportunities(agencyId:string,session:Session,days=30):Promise<MarketOpportunities>{
+  if(!base)return {days,sampleSize:0,zones:[]};
+  return req<MarketOpportunities>(`/agencies/${agencyId}/market-opportunities?days=${days}`,undefined,session.token);
+}
+
