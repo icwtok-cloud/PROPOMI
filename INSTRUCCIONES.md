@@ -90,7 +90,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V34 |
+| INSTRUCCIONES.md | V35 |
 | apps/api/app/main.py | V15 |
 | apps/web/lib/types.ts | V5 |
 | apps/web/lib/api.ts | V11 |
@@ -192,6 +192,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 032 | T8.7 carrera multi-agente: helpers listing_group; reveal permitido a todo el grupo; prioridad suscripción más antigua 24h (con sub) / 6h (sin); 409 si otro ya reveló; notify offer_created a todas las agencias del grupo; GET /offers incluye ofertas del group. **También re-aplica T4.5 list_offers** (se había perdido al pushear 031 sobre base stale). Sin schema nuevo. | apps/api/app/main.py | etapa-032_t87-carrera-multi-agente-reveal | Pendiente de push |
 | 033 | UX ficha multi-agente: `getPropertiesDeduped` + `getListingGroup`; una card por `listingGroupId` con priceMin–priceMax; PropertyCard muestra rango y conteo de agentes. | api.ts, types.ts, PropertyCard, page.tsx | etapa-033_ficha-fusionada-precio-rango | Pendiente de push |
 | 034 | Deep link `?property=<id>`: al cargar la home abre el detalle de esa ficha (compat. con links de tracking `buildShareUrl`). Usa getPropertiesDeduped + fallback getProperties. | apps/web/app/page.tsx | etapa-034_deep-link-property-query | Pendiente de push |
+| 035 | Tests T8.7: outsider 403, sub nueva bloqueada en ventana, sub antigua revela, post-ventana ok, segundo reveal 409 sin filtrar teléfono. | apps/api/tests/test_t87_listing_group_reveal.py | etapa-035_tests-t87-carrera-reveal | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -228,7 +229,7 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 035)
+## Próximo paso lógico (candidato para etapa 036)
 
-- Tests T8.7 (prioridad / ventana / 409) si hay entorno pytest.
-- Lemon Squeezy: checklist operativo cuando aprueben la cuenta.
+- Lemon Squeezy: checklist operativo (cuenta aún en verificación).
+- Correr localmente: `cd apps/api && pytest -q tests/test_t87_listing_group_reveal.py`
