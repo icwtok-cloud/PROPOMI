@@ -247,6 +247,12 @@ export default function AgentDashboard(){
       )}
       {agency?.verificationStatus==='VERIFIED' && offers.map(o=><div key={o.id} className="offercard">
         <div className="offercardhead"><strong>USD {o.amount.toLocaleString('en-US')}</strong><span className="pill">{o.status}</span></div>
+        {(o.property_title||o.property_zone) && (
+          <p className="muted small" style={{margin:'4px 0'}}>
+            {o.property_title||'Propiedad'}{o.property_zone?` · ${o.property_zone}`:''}
+            {o.listing_group_id?' · ficha multi-agente':''}
+          </p>
+        )}
         {o.origin && <p className="muted small">Origen: {o.origin}</p>}
         <div className="muted small">{o.payment_form} · {o.timeframe||'Plazo sin especificar'} · Capital: {o.capital?`USD ${o.capital.toLocaleString('en-US')}`:'—'}</div>
         {o.comment && <p className="muted small">{o.comment}</p>}

@@ -1656,12 +1656,17 @@ def list_offers(status: str | None = None, session: dict[str, Any] = Depends(cur
 
         result = []
         for o in offers:
+            prop = db.get(Property, o.property_id)
             row = {
                 "id": o.id, "user_id": o.user_id, "property_id": o.property_id,
                 "amount": o.amount, "currency": o.currency, "payment_form": o.payment_form,
                 "capital": o.capital, "timeframe": o.timeframe, "comment": o.comment,
                 "status": o.status, "created_at": o.created_at.isoformat(),
                 "contact_revealed": o.contact_revealed, "origin": getattr(o, "origin", None),
+                # Contexto de la ficha (nunca contacto del comprador).
+                "property_title": prop.title if prop else None,
+                "property_zone": prop.zone if prop else None,
+                "listing_group_id": prop.listing_group_id if prop else None,
             }
             if o.contact_revealed:
                 row["buyer_name"] = o.buyer_name
@@ -2095,12 +2100,6 @@ def agency(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
             "id": a.id, "name": a.name, "city": a.city, "verified": a.verified, "claimed": a.claimed, "phone": a.phone,
             "verificationStatus": a.verification_status, "instagram": a.instagram, "websiteLink": a.website_link,
             "freeLeadsRemaining": a.free_leads_remaining, "slug": a.slug,
-            # Solo lectura del plan actual (sin endpoints de compra todavía —
-            # T5.1 / precios: PENDIENTE DE CONFIRMACIÓN).
-            "subscriptionTier": a.subscription_tier,
-            "planLeadQuota": a.plan_lead_quota,
-            "leadsUsedCurrentPeriod": a.leads_used_current_period,
-            "subscriptionStartedAt": a.subscription_started_at.isoformat() if a.subscription_started_at else None,
         }
 
 

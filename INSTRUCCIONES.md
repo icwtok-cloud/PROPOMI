@@ -90,13 +90,13 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V38 |
-| apps/api/app/main.py | V16 |
-| apps/web/lib/types.ts | V6 |
+| INSTRUCCIONES.md | V39 |
+| apps/api/app/main.py | V17 |
+| apps/web/lib/types.ts | V7 |
 | apps/web/lib/api.ts | V11 |
 | apps/web/app/admin/page.tsx | V2 |
-| apps/api/app/main.py | V16 |
-| apps/web/components/AgentDashboard.tsx | V8 |
+| apps/api/app/main.py | V17 |
+| apps/web/components/AgentDashboard.tsx | V9 |
 | apps/web/components/DemandPanel.tsx | V3 |
 | apps/web/components/PropertyCard.tsx | V2 |
 | apps/web/components/OfferModal.tsx | V2 |
@@ -196,6 +196,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 036 | Checklist operativo Lemon Squeezy (sin código de runtime): store/variant/webhook/env/prueba de humo. | docs/LEMON_SQUEEZY_CHECKLIST.md | etapa-036_lemon-checklist-operativo | Pendiente de push |
 | 037 | UX 402 reveal: auto-abrir checkout_url, mensaje claro sin URL (mock/Lemon pendiente), ocultar botón dev cuando hay checkout real, copy «Ya pagué». | apps/web/components/AgentOfferActions.tsx | etapa-037_ux-402-checkout-reveal | Pendiente de push |
 | 038 | Plan solo lectura: GET `/agencies/{id}` expone subscriptionTier/quota/uso; bloque «Tu plan» en Mi cuenta. Sin compra ni precios (T5.1 PENDIENTE DE CONFIRMACIÓN). | main.py, types.ts, AgentDashboard.tsx | etapa-038_plan-solo-lectura-dashboard | Pendiente de push |
+| 039 | Ofertas del agente: GET /offers incluye property_title, property_zone, listing_group_id (sin contacto). Card muestra ficha y zona. | main.py, types.ts, AgentDashboard.tsx | etapa-039_ofertas-con-titulo-propiedad | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -232,7 +233,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 039)
+## Próximo paso lógico (candidato para etapa 040)
 
-- T5.1 CRUD de suscripción / checkout de plan (**PENDIENTE DE CONFIRMACIÓN**: precios, tiers, cupos).
-- Lemon aprobado → checklist en `docs/LEMON_SQUEEZY_CHECKLIST.md`.
+- Lemon: en pausa hasta verificación de la store.
+- T5.1 compra de plan: PENDIENTE DE CONFIRMACIÓN (precios/tiers).
+- Mejoras UX restantes sin dinero (galería fotos en detalle, etc.).
