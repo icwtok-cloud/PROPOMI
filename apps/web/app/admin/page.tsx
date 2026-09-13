@@ -6,8 +6,6 @@ import {
 } from '../../lib/api';
 import {PendingAgency,ReviewQueueItem} from '../../lib/types';
 
-// Panel interno: agencias pendientes, duplicados crawler, y cola cold-start
-// (T6.1). X-Admin-Key en localStorage — nunca OTP/Clerk.
 const ADMIN_KEY_STORAGE='propomi-admin-key';
 
 export default function AdminPage(){
@@ -17,21 +15,36 @@ export default function AdminPage(){
   const [agencies,setAgencies]=useState<PendingAgency[]>([]);
   const [queue,setQueue]=useState<ReviewQueueItem[]>([]);
   const [coldStart,setColdStart]=useState<ColdStartTaskItem[]>([]);
+  const [counts,setCounts]=useState({agencies:0,duplicates:0,coldstart:0});
   const [loading,setLoading]=useState(false);
   const [error,setError]=useState<string|null>(null);
   const [toast,setToast]=useState('');
+  const [notes,setNotes]=useState<Record<string,string>>({});
 
   useEffect(()=>{const saved=localStorage.getItem(ADMIN_KEY_STORAGE);if(saved)setAdminKey(saved)},[]);
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
-  useEffect(()=>{if(adminKey)load()},[adminKey,tab]);
+  useEffect(()=>{if(adminKey){loadTab();loadCounts()}},[adminKey,tab]);
 
   function saveKey(){if(!keyInput.trim())return;localStorage.setItem(ADMIN_KEY_STORAGE,keyInput.trim());setAdminKey(keyInput.trim())}
   function clearKey(){
     localStorage.removeItem(ADMIN_KEY_STORAGE);
     setAdminKey('');setKeyInput('');setAgencies([]);setQueue([]);setColdStart([]);
+    setCounts({agencies:0,duplicates:0,coldstart:0});
+  }
+  function setNote(id:string,v:string){setNotes(n=>({...n,[id]:v}))}
+
+  async function loadCounts(){
+    try{
+      const [a,d,c]=await Promise.all([
+        getPendingAgencies(adminKey),
+        getReviewQueue(adminKey),
+        getColdStartPending(adminKey),
+      ]);
+      setCounts({agencies:a.length,duplicates:d.items?.length||0,coldstart:c.length});
+    }catch{/* counts best-effort */}
   }
 
-  async function load(){
+  async function loadTab(){
     setLoading(true);setError(null);
     try{
       if(tab==='agencies')setAgencies(await getPendingAgencies(adminKey));
@@ -43,14 +56,22 @@ export default function AdminPage(){
     }finally{setLoading(false)}
   }
 
-  async function doApprove(id:string){try{await approveAgency(id,adminKey);setToast('Agencia verificada.');load()}catch(e:any){setToast(e?.message||'No se pudo aprobar.')}}
-  async function doReject(id:string){try{await rejectAgency(id,adminKey);setToast('Agencia rechazada.');load()}catch(e:any){setToast(e?.message||'No se pudo rechazar.')}}
+  async function reload(){await Promise.all([loadTab(),loadCounts()])}
+
+  async function doApprove(id:string){
+    try{await approveAgency(id,adminKey,notes[id]?.trim()||undefined);setToast('Agencia verificada.');reload()}
+    catch(e:any){setToast(e?.message||'No se pudo aprobar.')}
+  }
+  async function doReject(id:string){
+    try{await rejectAgency(id,adminKey,notes[id]?.trim()||undefined);setToast('Agencia rechazada.');reload()}
+    catch(e:any){setToast(e?.message||'No se pudo rechazar.')}
+  }
   async function doResolve(id:string,action:'confirm_duplicate'|'not_duplicate'){
-    try{await resolveReviewItem(id,action,adminKey);setToast(action==='confirm_duplicate'?'Marcado como duplicado.':'Descartado.');load()}
+    try{await resolveReviewItem(id,action,adminKey);setToast(action==='confirm_duplicate'?'Marcado como duplicado.':'Descartado.');reload()}
     catch(e:any){setToast(e?.message||'No se pudo resolver.')}
   }
   async function doMarkSent(id:string){
-    try{await markColdStartSent(id,adminKey);setToast('Marcado como enviado.');load()}
+    try{await markColdStartSent(id,adminKey,notes[id]?.trim()||undefined);setToast('Marcado como enviado.');reload()}
     catch(e:any){setToast(e?.message||'No se pudo marcar.')}
   }
   async function copyText(text:string){
@@ -69,15 +90,30 @@ export default function AdminPage(){
   }
 
   return <div className="container" style={{padding:'36px 0 64px'}}>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,gap:12,flexWrap:'wrap'}}>
       <h1 style={{fontSize:24,margin:0}}>Admin Propomi</h1>
-      <button className="secondary" onClick={clearKey}>Cerrar sesión</button>
+      <div style={{display:'flex',gap:8}}>
+        <button className="secondary" onClick={reload} disabled={loading}>Recargar</button>
+        <button className="secondary" onClick={clearKey}>Cerrar sesión</button>
+      </div>
+    </div>
+
+    <div className="agentmetrics" style={{marginBottom:20}}>
+      <div><b>{counts.agencies}</b><span>Agencias pendientes</span></div>
+      <div><b>{counts.duplicates}</b><span>Duplicados a revisar</span></div>
+      <div><b>{counts.coldstart}</b><span>Cold start pendientes</span></div>
     </div>
 
     <div style={{display:'flex',gap:8,marginBottom:20,flexWrap:'wrap'}}>
-      <button className={tab==='agencies'?'tab active':'tab'} style={{color:tab==='agencies'?'#102033':undefined,borderColor:'#d9e0e8'}} onClick={()=>setTab('agencies')}>Agencias pendientes</button>
-      <button className={tab==='duplicates'?'tab active':'tab'} style={{color:tab==='duplicates'?'#102033':undefined,borderColor:'#d9e0e8'}} onClick={()=>setTab('duplicates')}>Posibles duplicados</button>
-      <button className={tab==='coldstart'?'tab active':'tab'} style={{color:tab==='coldstart'?'#102033':undefined,borderColor:'#d9e0e8'}} onClick={()=>setTab('coldstart')}>Cold start</button>
+      <button className={tab==='agencies'?'tab active':'tab'} style={{color:tab==='agencies'?'#102033':undefined,borderColor:'#d9e0e8'}} onClick={()=>setTab('agencies')}>
+        Agencias {counts.agencies>0?`(${counts.agencies})`:''}
+      </button>
+      <button className={tab==='duplicates'?'tab active':'tab'} style={{color:tab==='duplicates'?'#102033':undefined,borderColor:'#d9e0e8'}} onClick={()=>setTab('duplicates')}>
+        Duplicados {counts.duplicates>0?`(${counts.duplicates})`:''}
+      </button>
+      <button className={tab==='coldstart'?'tab active':'tab'} style={{color:tab==='coldstart'?'#102033':undefined,borderColor:'#d9e0e8'}} onClick={()=>setTab('coldstart')}>
+        Cold start {counts.coldstart>0?`(${counts.coldstart})`:''}
+      </button>
     </div>
 
     {error && <div className="notice" style={{marginBottom:16}}>{error}</div>}
@@ -85,19 +121,27 @@ export default function AdminPage(){
 
     {!loading && tab==='agencies' && (
       agencies.length===0 ? <div className="empty">No hay agencias pendientes de revisión.</div> :
-      <div className="tablewrap"><table><thead><tr>
-        <th>Agencia</th><th>Ciudad</th><th>Teléfono</th><th>Instagram / Web</th><th>Prioridad</th><th></th>
-      </tr></thead><tbody>
-        {agencies.map(a=><tr key={a.id}>
-          <td>{a.name}</td><td>{a.city}</td><td>{a.phone||'—'}</td>
-          <td>{a.instagram||'—'}{a.websiteLink?` · ${a.websiteLink}`:''}</td>
-          <td>{a.verificationPriority>0?'Prioritaria':'Normal'}</td>
-          <td style={{display:'flex',gap:6}}>
-            <button className="secondary" onClick={()=>doApprove(a.id)}>Aprobar</button>
-            <button className="secondary" onClick={()=>doReject(a.id)}>Rechazar</button>
-          </td>
-        </tr>)}
-      </tbody></table></div>
+      <div style={{display:'flex',flexDirection:'column',gap:16}}>
+        {agencies.map(a=>(
+          <div key={a.id} className="summarycard" style={{padding:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+              <div>
+                <div><b>{a.name}</b> · {a.city}</div>
+                <div className="muted small">Tel: {a.phone||'—'} · IG: {a.instagram||'—'}{a.websiteLink?` · ${a.websiteLink}`:''}</div>
+                <div className="muted small">{a.verificationPriority>0?'Prioritaria':'Normal'} · claimed: {a.claimed?'sí':'no'}</div>
+              </div>
+              <div style={{display:'flex',gap:6,alignItems:'flex-start'}}>
+                <button className="primary" onClick={()=>doApprove(a.id)}>Aprobar</button>
+                <button className="secondary" onClick={()=>doReject(a.id)}>Rechazar</button>
+              </div>
+            </div>
+            <label style={{marginTop:10,display:'block'}}>
+              Notas (opcional)
+              <input value={notes[a.id]||''} onChange={e=>setNote(a.id,e.target.value)} placeholder="Motivo de aprobación/rechazo"/>
+            </label>
+          </div>
+        ))}
+      </div>
     )}
 
     {!loading && tab==='duplicates' && (
@@ -131,7 +175,7 @@ export default function AdminPage(){
     {!loading && tab==='coldstart' && (
       coldStart.length===0 ? <div className="empty">No hay notificaciones cold-start pendientes.</div> :
       <div style={{display:'flex',flexDirection:'column',gap:16}}>
-        <p className="muted small">Envío manual: copiá el mensaje, mandalo por WhatsApp/SMS al teléfono, después marcá como enviado. El teléfono solo se muestra acá (admin).</p>
+        <p className="muted small">Envío manual: copiá el mensaje, mandalo por WhatsApp/SMS, después marcá como enviado. El teléfono solo se muestra acá (admin).</p>
         {coldStart.map(t=>
           <div key={t.id} className="summarycard" style={{padding:16}}>
             <div style={{display:'flex',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
@@ -140,6 +184,7 @@ export default function AdminPage(){
                 <div className="muted small">{t.propertyZone} · {t.currency} {Number(t.amount).toLocaleString('en-US')}</div>
                 <div className="muted small">Tel: {t.targetPhone}</div>
                 <div className="muted small">Onboarding: {t.onboardingPath}</div>
+                {t.createdAt && <div className="muted small">Creado: {new Date(t.createdAt).toLocaleString('es-AR')}</div>}
               </div>
               <div style={{display:'flex',gap:6,alignItems:'flex-start',flexWrap:'wrap'}}>
                 <button className="secondary" onClick={()=>copyText(t.messageTemplate)}>Copiar mensaje</button>
@@ -147,6 +192,10 @@ export default function AdminPage(){
                 <button className="primary" onClick={()=>doMarkSent(t.id)}>Marcar enviado</button>
               </div>
             </div>
+            <label style={{marginTop:10,display:'block'}}>
+              Notas al marcar enviado (opcional)
+              <input value={notes[t.id]||''} onChange={e=>setNote(t.id,e.target.value)} placeholder="Ej. enviado por WA 11:30"/>
+            </label>
             <pre style={{marginTop:12,whiteSpace:'pre-wrap',fontSize:12,background:'#f5f7fa',padding:12,borderRadius:8}}>{t.messageTemplate}</pre>
           </div>
         )}

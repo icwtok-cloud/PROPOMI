@@ -255,3 +255,32 @@ export async function getPropertiesDeduped(filters?:Record<string,string|number|
   return out;
 }
 
+export type ColdStartTaskItem={
+  id:string;
+  offerId:string;
+  propertyId:string;
+  agencyId?:string|null;
+  targetPhone:string;
+  amount:number;
+  currency:string;
+  propertyTitle:string;
+  propertyZone:string;
+  onboardingToken:string;
+  onboardingPath:string;
+  status:string;
+  createdAt?:string|null;
+  messageTemplate:string;
+};
+
+export async function getColdStartPending(adminKey:string):Promise<ColdStartTaskItem[]>{
+  if(!base)return [];
+  return adminReq('/admin/cold-start/pending',adminKey);
+}
+
+export async function markColdStartSent(id:string,adminKey:string,notes?:string):Promise<{id:string;status:string;sentAt?:string}>{
+  if(!base)return {id,status:'SENT',sentAt:new Date().toISOString()};
+  return adminReq(`/admin/cold-start/${id}/mark-sent`,adminKey,{
+    method:'POST',
+    body:notes?JSON.stringify({notes}):undefined,
+  });
+}

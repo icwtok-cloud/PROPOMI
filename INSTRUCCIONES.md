@@ -90,11 +90,11 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V44 |
+| INSTRUCCIONES.md | V45 |
 | apps/api/app/main.py | V17 |
 | apps/web/lib/types.ts | V7 |
-| apps/web/lib/api.ts | V11 |
-| apps/web/app/admin/page.tsx | V2 |
+| apps/web/lib/api.ts | V12 |
+| apps/web/app/admin/page.tsx | V3 |
 | apps/api/app/main.py | V17 |
 | apps/web/components/AgentDashboard.tsx | V11 |
 | apps/web/components/DemandPanel.tsx | V3 |
@@ -202,6 +202,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 042 | Thumbs + contador de fotos en listado «Tus publicaciones» del agente. | AgentDashboard.tsx | etapa-042_thumbs-listado-propiedades-agente | Pendiente de push |
 | 043 | Badge «Multi-agente · N» en PropertyCard + copy de rango de precio. | PropertyCard.tsx | etapa-043_badge-multi-agente-card | Pendiente de push |
 | 044 | Detalle (home + tienda): precio en rango si multi-agente + nota de N publicaciones. | page.tsx, tienda/[slug]/page.tsx | etapa-044_detalle-precio-rango-multi-agente | Pendiente de push |
+| 045 | Admin UX: métricas de colas, badges en tabs, notas en approve/reject/mark-sent, botón Recargar. Reasegura helpers cold-start en api.ts. | admin/page.tsx, api.ts | etapa-045_admin-metricas-notas-reload | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -238,8 +239,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 045)
+## Próximo paso lógico (candidato para etapa 046)
 
-- Crawler: reformatear más adelante (pedido del usuario).
+- Admin: listado de agencias VERIFIED / búsqueda simple (si hace falta operar soporte).
+- Crawler: reformatear más adelante.
 - Lemon: en pausa hasta verificación de store.
-- T5.1: PENDIENTE DE CONFIRMACIÓN.
