@@ -24,7 +24,17 @@ export function setAgentSession(session:Session){localStorage.setItem(AGENT_KEY,
 export function clearAgentSession(){localStorage.removeItem(AGENT_KEY)}
 export async function saveIntent(property_id:string,intent:string,level:number,data:Intent,session?:Session|null){if(!base)return;const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/intents',{method:'POST',body:JSON.stringify({property_id,intent,level,...data})},s.token)}
 export async function createOffer(payload:{property_id:string;amount:number;payment_form:string;capital?:number;timeframe?:string;comment?:string;buyer_name:string;buyer_phone:string;buyer_email?:string;origin?:string},session?:Session|null){if(!base)return {id:`demo-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/offers',{method:'POST',body:JSON.stringify(payload)},s.token)}
-export async function listOffers(session?:Session|null){if(!base)return [];const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req<Offer[]>('/offers',undefined,s.token)}
+export type OffersListResponse=Offer[]|{verificationRequired:true;verificationStatus:string;count:number;offers:[]};
+export async function listOffers(session?:Session|null):Promise<OffersListResponse>{
+  if(!base)return [];
+  const s=session||await getOrCreateBuyerSession();
+  if(!s)throw new Error('Sesión requerida');
+  return req<OffersListResponse>('/offers',undefined,s.token);
+}
+export function isOffersRestricted(r:OffersListResponse):r is {verificationRequired:true;verificationStatus:string;count:number;offers:[]}{
+  return !!r && !Array.isArray(r) && (r as any).verificationRequired===true;
+}
+
 export async function counterOffer(id:string,amount:number,comment?:string,session?:Session|null){if(!base)return {status:'SENT'};return req(`/offers/${id}/counter`,{method:'POST',body:JSON.stringify({amount,comment})},session?.token)}
 export async function offerAction(id:string,action:'accept'|'reject'|'negotiate',session?:Session|null){if(!base)return {status:action};return req(`/offers/${id}/${action}`,{method:'POST'},session?.token)}
 export async function revealContact(offerId:string,session?:Session|null){if(!base)return {buyer_name:'Comprador demo',buyer_phone:'+5491100000000',buyer_email:undefined,method:'demo'};return req<{buyer_name:string;buyer_phone:string;buyer_email?:string;method?:string;already_revealed?:boolean}>(`/offers/${offerId}/reveal`,{method:'POST'},session?.token)}

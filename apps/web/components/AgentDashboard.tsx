@@ -2,7 +2,7 @@
 import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -78,6 +78,7 @@ export default function AgentDashboard(){
   const [ready,setReady]=useState(false);
   const [agency,setAgency]=useState<Agency|null>(null);
   const [offers,setOffers]=useState<Offer[]>([]);
+  const [offersRestrictedCount,setOffersRestrictedCount]=useState<number|null>(null);
   const [opps,setOpps]=useState<OppData|null>(null);
   const [analytics,setAnalytics]=useState<{properties:number;events:number;offers:number}|null>(null);
   const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'propiedades'|'cuenta'>('ofertas');
@@ -99,7 +100,9 @@ export default function AgentDashboard(){
       getProperties({agency_id:session.user.agency_id}),
     ]);
     setAgency(a);setNameDraft(a.name);setInstagramDraft(a.instagram||'');setWebsiteDraft(a.websiteLink||'');
-    setOffers(o);setOpps(opp as OppData);setAnalytics(an as any);setMyProperties(props);
+    if(isOffersRestricted(o)){setOffers([]);setOffersRestrictedCount(o.count)}
+    else{setOffers(o);setOffersRestrictedCount(null)}
+    setOpps(opp as OppData);setAnalytics(an as any);setMyProperties(props);
   })().catch(()=>{})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
@@ -115,7 +118,12 @@ export default function AgentDashboard(){
     }
   }
 
-  async function refreshOffers(){if(!session)return;setOffers(await listOffers(session))}
+  async function refreshOffers(){
+    if(!session)return;
+    const o=await listOffers(session);
+    if(isOffersRestricted(o)){setOffers([]);setOffersRestrictedCount(o.count)}
+    else{setOffers(o);setOffersRestrictedCount(null)}
+  }
 
   // Fix: antes se llamaba updateAgency(id, nameDraft.trim(), session) —
   // pasaba un string donde la función espera {name, instagram, website_link}.
@@ -210,7 +218,7 @@ export default function AgentDashboard(){
     </div>
 
     <div className="agentmetrics">
-      <div><b>{offers.filter(o=>o.status==='SENT').length}</b><span>Ofertas nuevas</span></div>
+      <div><b>{offersRestrictedCount!==null?offersRestrictedCount:offers.filter(o=>o.status==='SENT').length}</b><span>Ofertas nuevas</span></div>
       <div><b>{opps?.active??0}</b><span>Oportunidades activas</span></div>
       <div><b>{offers.filter(o=>o.contact_revealed).length}</b><span>Contactos revelados</span></div>
       <div><b>{analytics?.properties??0}</b><span>Publicaciones</span></div>
@@ -226,9 +234,20 @@ export default function AgentDashboard(){
     </div>
 
     {section==='ofertas' && <div className="agentdashpane">
-      {offers.length===0 && <div className="empty">Todavía no recibiste ofertas. En cuanto un comprador proponga un precio en alguna de tus publicaciones, va a aparecer acá.</div>}
-      {offers.map(o=><div key={o.id} className="offercard">
+      {agency?.verificationStatus!=='VERIFIED' && (
+        <div className="notice">
+          {offersRestrictedCount && offersRestrictedCount>0
+            ? <>Tenés <strong>{offersRestrictedCount}</strong> oferta{offersRestrictedCount===1?'':'s'} esperando — verificá tu cuenta para verlas y poder revelar contactos.</>
+            : <>Tu agencia está <strong>{agency?.verificationStatus==='REJECTED'?'rechazada':'pendiente de verificación'}</strong>. Cuando esté Verificada vas a poder ver el detalle de las ofertas y revelar contactos.</>}
+          {' '}Completá Instagram en Mi cuenta si todavía no lo hiciste.
+        </div>
+      )}
+      {agency?.verificationStatus==='VERIFIED' && offers.length===0 && (
+        <div className="empty">Todavía no recibiste ofertas. En cuanto un comprador proponga un precio en alguna de tus publicaciones, va a aparecer acá.</div>
+      )}
+      {agency?.verificationStatus==='VERIFIED' && offers.map(o=><div key={o.id} className="offercard">
         <div className="offercardhead"><strong>USD {o.amount.toLocaleString('en-US')}</strong><span className="pill">{o.status}</span></div>
+        {o.origin && <p className="muted small">Origen: {o.origin}</p>}
         <div className="muted small">{o.payment_form} · {o.timeframe||'Plazo sin especificar'} · Capital: {o.capital?`USD ${o.capital.toLocaleString('en-US')}`:'—'}</div>
         {o.comment && <p className="muted small">{o.comment}</p>}
         <AgentOfferActions offer={o} session={session} onDone={(m)=>{notify(m);refreshOffers()}}/>

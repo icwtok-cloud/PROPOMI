@@ -1604,20 +1604,42 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
 
 @app.get("/offers")
 def list_offers(status: str | None = None, session: dict[str, Any] = Depends(current_session)):
+    """T4.5: un agente con verification_status != VERIFIED solo recibe la
+    cantidad de ofertas esperando — nunca monto, propiedad ni ningún detalle.
+    Compradores y agentes VERIFIED siguen recibiendo la lista completa
+    (el contacto del comprador solo si contact_revealed)."""
     with Session(engine) as db:
         stmt = select(Offer)
         if session.get("role") == Role.AGENTE.value:
             stmt = stmt.where(Offer.property_id.in_(select(Property.id).where(Property.agency_id == session["agency_id"])))
+            agency = db.get(Agency, session["agency_id"]) if session.get("agency_id") else None
+            if status:
+                stmt = stmt.where(Offer.status == status)
+            offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
+            if not agency or agency.verification_status != "VERIFIED":
+                # Solo conteo — sin ids, montos ni property_id (anti-fuga de detalle comercial
+                # hasta verificación; el reveal ya estaba bloqueado en POST /offers/{id}/reveal).
+                return {
+                    "verificationRequired": True,
+                    "verificationStatus": (agency.verification_status if agency else "PENDING"),
+                    "count": len(offers),
+                    "offers": [],
+                }
         else:
             stmt = stmt.where(Offer.user_id == session["user_id"])
-        if status: stmt = stmt.where(Offer.status == status)
-        offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
+            if status:
+                stmt = stmt.where(Offer.status == status)
+            offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
+
         result = []
         for o in offers:
-            row = {"id":o.id,"user_id":o.user_id,"property_id":o.property_id,"amount":o.amount,"currency":o.currency,"payment_form":o.payment_form,"capital":o.capital,"timeframe":o.timeframe,"comment":o.comment,"status":o.status,"created_at":o.created_at.isoformat(),"contact_revealed":o.contact_revealed,"origin":getattr(o,"origin",None)}
-            # El contacto del comprador SOLO viaja en la respuesta si ya fue
-            # revelado formalmente — nunca antes, aunque sea el propio agente
-            # dueño de la propiedad quien esté consultando.
+            row = {
+                "id": o.id, "user_id": o.user_id, "property_id": o.property_id,
+                "amount": o.amount, "currency": o.currency, "payment_form": o.payment_form,
+                "capital": o.capital, "timeframe": o.timeframe, "comment": o.comment,
+                "status": o.status, "created_at": o.created_at.isoformat(),
+                "contact_revealed": o.contact_revealed, "origin": getattr(o, "origin", None),
+            }
             if o.contact_revealed:
                 row["buyer_name"] = o.buyer_name
                 row["buyer_phone"] = o.buyer_phone_raw
@@ -1629,6 +1651,9 @@ def list_offers(status: str | None = None, session: dict[str, Any] = Depends(cur
 @app.post("/offers/{offer_id}/counter", status_code=201)
 def counter_offer(offer_id: str, payload: CounterIn, session: dict[str, Any] = Depends(require_agent)):
     with Session(engine) as db:
+        agency = db.get(Agency, session["agency_id"])
+        if not agency or agency.verification_status != "VERIFIED":
+            raise HTTPException(status_code=403, detail="Tu agencia todavía no está verificada. No podés responder ofertas hasta estar Verificada.")
         offer = db.get(Offer, offer_id)
         if not offer: raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
@@ -1850,6 +1875,9 @@ async def lemonsqueezy_webhook(request: Request, x_signature: str | None = Heade
 def offer_action(offer_id: str, action: str, session: dict[str, Any] = Depends(require_agent)):
     if action not in {"accept", "reject", "negotiate"}: raise HTTPException(status_code=400, detail="Acción inválida")
     with Session(engine) as db:
+        agency = db.get(Agency, session["agency_id"])
+        if not agency or agency.verification_status != "VERIFIED":
+            raise HTTPException(status_code=403, detail="Tu agencia todavía no está verificada. No podés gestionar ofertas hasta estar Verificada.")
         offer = db.get(Offer, offer_id)
         if not offer: raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
