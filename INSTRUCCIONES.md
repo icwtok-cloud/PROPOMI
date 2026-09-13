@@ -90,16 +90,17 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V18 |
+| INSTRUCCIONES.md | V19 |
 | apps/web/lib/types.ts | V3 |
-| apps/web/lib/api.ts | V3 |
+| apps/web/lib/api.ts | V4 |
 | apps/web/app/admin/page.tsx | V1 |
-| apps/api/app/main.py | V6 |
+| apps/api/app/main.py | V7 |
 | apps/web/components/AgentDashboard.tsx | V2 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/app/globals.css | V1 |
 | apps/web/middleware.ts | V1 (nuevo) |
 | apps/web/app/tienda/[slug]/page.tsx | V1 (nuevo) |
+| apps/web/components/AgentOfferActions.tsx | V1 |
 
 ## Manifiesto de archivos del repo (raw links ya conocidos)
 
@@ -169,6 +170,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 015 | Parte frontend/infra de subdominios por agencia (sigue directo de la 014). `apps/web/middleware.ts` (nuevo): compara el `host` de cada request contra `NEXT_PUBLIC_ROOT_DOMAIN` (default `propomi.lat`); si es un host excluido (dominio raíz con/sin `www`, `propomi.vercel.app`, `localhost`) o no termina en `.{ROOT_DOMAIN}`, deja pasar sin tocar nada; si es un subdominio válido y el path pedido es exactamente `/`, hace `rewrite` (no redirect — la URL visible sigue siendo `{slug}.propomi.lat`) a `/tienda/{slug}`; cualquier OTRA ruta (`/agencia`, `/admin`, etc.) pedida contra un subdominio de agencia pasa sin reescribir, para no romperla por error. Página nueva `apps/web/app/tienda/[slug]/page.tsx`: storefront público mínimo de una sola agencia — pide `GET /agencies/by-slug/{slug}` y, si existe, `GET /properties?agency_id=<id>`, muestra nombre + badge de verificación + grilla de `PropertyCard` reutilizado (mismo componente de la home) con el flujo de "Proponer precio" ya existente (`OfferModal` + `BuyerIdentityModal`, misma gate de celular+Google verificados de la etapa 008); si el slug no resuelve (404), muestra una página explícita de "Agencia no encontrada" con link de vuelta a Propomi — se resolvió la ambigüedad de la etapa 013 (pasar a home normal vs. página propia) a favor de la página propia, porque silenciar el 404 mostrando la home completa hubiera sido más confuso para alguien que llegó por un link de agencia roto. Fix de paso en `api.ts`: `getProperties()` en modo demo (sin `NEXT_PUBLIC_API_URL`) ignoraba cualquier filtro — ahora si se le pasa `agency_id` sí filtra las fixtures de `data.ts` por ese campo, para poder probar el storefront sin backend real. Nueva función `getAgencyBySlug()` en `api.ts` (con fallback demo contra las 3 agencias semilla) y `slug` agregado a `Agency` en `types.ts`. Verificado en sandbox (no solo revisión manual, esta vez con Node real disponible): `npx tsc --noEmit` sin errores, `npx next build` completo y exitoso (5 rutas generadas incluyendo `/tienda/[slug]` como dinámica y el middleware compilado a 34.2kB; el único warning sigue siendo el de autoprefixer preexistente en `globals.css`, sin relación). | apps/web/middleware.ts (nuevo), apps/web/app/tienda/[slug]/page.tsx (nuevo), apps/web/lib/api.ts, apps/web/lib/types.ts | etapa-015_middleware-y-storefront-subdominio | Pendiente de push |
 | 016 | Cierra el paquete de subdominios por agencia (no depende del DNS, a diferencia del resto): la pestaña "Mi cuenta" de `AgentDashboard.tsx` ahora muestra "Tu página pública" con un input readonly con la URL del storefront (`https://{slug}.{NEXT_PUBLIC_ROOT_DOMAIN}` si ese env está seteado, o `/tienda/{slug}` relativo si no — mismo fallback que ya usa `middleware.ts`, así funciona incluso antes de que el DNS wildcard esté armado) y un botón "Copiar link" (`navigator.clipboard.writeText`, con aviso de fallback si el navegador lo bloquea). No se muestra nada si `agency.slug` todavía no llegó (agencia recién creada antes del backfill de la etapa 014) — evita mostrar un link roto en vez de fallar en silencio. Verificado en sandbox: `npx tsc --noEmit` sin errores, `npx next build` completo y exitoso (mismas 5 rutas de la etapa 015, sin cambios de tamaño relevantes). Con esto el roadmap de "subdominios por agencia" (Etapa 4 del roadmap general) queda funcionalmente completo del lado de Propomi — lo único pendiente es la infraestructura de DNS/Vercel que arma el usuario (ver "Próximo paso lógico"). | apps/web/components/AgentDashboard.tsx | etapa-016_url-storefront-en-mi-cuenta | Pendiente de push |
 | 017 | Gateway de pago real para pay-per-lead (reveal de contacto), con Lemon Squeezy (decisión del usuario, reemplaza al Mercado Pago/Stripe anotado en la etapa 016). `PaymentGateway` (Protocol) gana un método nuevo `create_checkout(agency_id, amount_usd, reference) -> str | None`, sin tocar `charge()`, porque Lemon Squeezy es un checkout hosteado + confirmación asíncrona por webhook, no un cobro síncrono con tarjeta como el Protocol original asumía. `MockPaymentGateway.create_checkout()` devuelve `None` (sin cambio de comportamiento fuera de producción). `LemonSqueezyPaymentGateway` (nueva): `charge()` siempre `False` (nunca hay confirmación en el mismo request); `create_checkout()` llama a `POST https://api.lemonsqueezy.com/v1/checkouts` (con `urllib` de la stdlib, sin agregar dependencia nueva) mandando `transaction_id`+`agency_id` en `custom_data` del checkout, para poder identificarlo cuando llegue el webhook. 4 variables de entorno nuevas: `LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`, `LEMON_SQUEEZY_VARIANT_ID`, `LEMON_SQUEEZY_WEBHOOK_SECRET`. `payment_gateway` se elige en el arranque (`_select_payment_gateway()`): Lemon Squeezy si las 3 primeras variables están, si no el mock (incluso en producción, con warning en logs, para no romper el arranque si todavía no se cargaron). El 402 de `POST /offers/{id}/reveal` ahora incluye `checkout_url` en el `detail` cuando el gateway pudo crear el checkout. Endpoint nuevo `POST /payments/webhooks/lemonsqueezy`: valida la firma `X-Signature` (HMAC-SHA256 del body crudo con `LEMON_SQUEEZY_WEBHOOK_SECRET`, `hmac.compare_digest` para evitar timing attacks; sin secreto configurado o sin firma, rechaza con 503/401), ignora cualquier evento que no sea `order_created` con `status=paid` y `custom_data.transaction_id` conocido (devuelve 200 igual, para que Lemon Squeezy no reintente de más), y si matchea una `RevealTransaction` `PENDING` la marca `COMPLETED` + revela el contacto de la oferta asociada — nunca crea una transacción nueva desde el webhook (si el id no existe en la base, se ignora). Tests automáticos: mismos 9/11 de siempre (los 2 preexistentes sin relación, confirmados de nuevo corriendo `pytest` real). No se pudo probar el checkout/webhook contra Lemon Squeezy real en este sandbox (sin credenciales ni acceso de red a `api.lemonsqueezy.com`) — verificado con lectura de código + `ast.parse` + suite de tests existente pasando igual que antes; falta probar end-to-end contra Lemon Squeezy de verdad (ver "Próximo paso lógico"). | apps/api/app/main.py | etapa-017_lemon-squeezy-payment-gateway | Pendiente de push |
+| 018 | Cierra el hueco que quedó anotado al final de la 017: ningún frontend mostraba el `checkout_url` del 402 de `/offers/{id}/reveal`. `AgentOfferActions.tsx`: cuando el 402 trae `checkout_url`, se guarda en estado y se muestra un link "Pagar con Lemon Squeezy" (`target="_blank"`) junto al box de "pago pendiente" ya existente. Al volver de pagar, el agente no aterriza de nuevo en este modal (el `redirect_url` del checkout es fijo, a `/mi-cuenta`), así que se agregó un botón "Ya pagué, verificar" que NO reintenta `revealContact` directo (eso generaría un checkout nuevo si Lemon Squeezy todavía no confirmó, duplicando transacciones) — primero consulta el estado real con el endpoint nuevo `GET /payments/{transaction_id}/status` (solo devuelve `PENDING`/`COMPLETED`, nunca el contacto) y, únicamente si ya está `COMPLETED`, recién ahí llama a `revealContact` (que ya sabe devolver el contacto sin volver a cobrar gracias a la idempotencia de la 017). Se mantiene el botón "Confirmar pago (dev)" tal cual (sigue pegándole al mock-complete, que sigue bloqueado en producción). Nuevas funciones en `api.ts`: `paymentStatus()`. Verificado en sandbox: `pytest` 9/11 (mismos 2 preexistentes), `npx tsc --noEmit` sin errores, `npx next build` completo y exitoso (mismas 5 rutas, sin cambios de tamaño relevantes, mismo warning de autoprefixer preexistente). Pendiente real (no de código, ver "Próximo paso lógico"): probar el flujo de punta a punta contra Lemon Squeezy de verdad, cosa que este sandbox no puede hacer sin credenciales ni acceso de red a `api.lemonsqueezy.com`. | apps/api/app/main.py, apps/web/lib/api.ts, apps/web/components/AgentOfferActions.tsx | etapa-018_checkout-url-y-verificacion-pago-frontend | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -188,33 +190,39 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 
 ## Cierre de sesión (2026-09-13, quinta sesión) — arrancar la próxima sesión directo desde acá
 
-Etapa 017 completa y pusheada: integración real de Lemon Squeezy como
-`PaymentGateway` para pay-per-lead (reveal de contacto), con checkout
-hosteado + webhook de confirmación. Ver detalle en la fila 017 de
-"Historial de etapas", incluidas las 4 variables de entorno nuevas que el
-usuario tiene que cargar en Render (`LEMON_SQUEEZY_API_KEY`,
-`LEMON_SQUEEZY_STORE_ID`, `LEMON_SQUEEZY_VARIANT_ID`,
-`LEMON_SQUEEZY_WEBHOOK_SECRET`) para que deje de usarse el mock en
-producción. Sin esas 4 variables cargadas, `/offers/{id}/reveal` sigue
-devolviendo 402 sin `checkout_url` (mismo comportamiento seguro que antes:
-nunca revela gratis).
+Etapas 017 y 018 completas y pusheadas: integración real de Lemon Squeezy
+como `PaymentGateway` para pay-per-lead (checkout hosteado + webhook de
+confirmación) y su consumo en `AgentOfferActions.tsx` (link de pago +
+verificación de estado sin duplicar checkouts). Con esto, el flujo de
+código de "cobrar por revelar contacto" queda funcionalmente completo. Ver
+detalle en las filas 017/018 de "Historial de etapas", incluidas las 4
+variables de entorno nuevas que el usuario tiene que cargar en Render
+(`LEMON_SQUEEZY_API_KEY`, `LEMON_SQUEEZY_STORE_ID`,
+`LEMON_SQUEEZY_VARIANT_ID`, `LEMON_SQUEEZY_WEBHOOK_SECRET`) para que deje de
+usarse el mock en producción. Sin esas 4 variables cargadas,
+`/offers/{id}/reveal` sigue devolviendo 402 sin `checkout_url` (mismo
+comportamiento seguro que antes: nunca revela gratis).
 
-## Próximo paso lógico (candidato para etapa 018)
+## Próximo paso lógico (candidato para etapa 019)
 
 - **Pendiente 100% del usuario, fuera de este chat**: cargar las 4 variables
   de entorno de Lemon Squeezy en Render (ver arriba) y, del lado de Lemon
   Squeezy, registrar la URL del webhook
   (`https://<host-de-render>/payments/webhooks/lemonsqueezy`) con el mismo
   secreto que `LEMON_SQUEEZY_WEBHOOK_SECRET`. Sin esto, la integración de
-  017 queda escrita pero inactiva (sigue cayendo al mock).
-- Ningún frontend todavía muestra el `checkout_url` que ahora puede venir en
-  el 402 de `/offers/{id}/reveal` — `AgentOfferActions.tsx` (o quien
-  consuma ese endpoint) necesita un botón/redirect a esa URL cuando venga.
-  Candidato natural para la etapa 018 si el usuario no da otra dirección.
+  017/018 queda escrita pero inactiva (sigue cayendo al mock). Una vez
+  cargado, conviene un pago real de prueba end-to-end antes de confiar en el
+  flujo — este sandbox no puede probarlo (sin credenciales ni acceso de red
+  a `api.lemonsqueezy.com`).
 - De la lista de pendientes que quedó registrada en
   `/areas/proferta-realestate.md` (memoria de Claude, no de este repo),
-  siguen abiertos además de lo anterior, en orden aproximado de impacto:
+  siguen abiertos, en orden aproximado de impacto:
   (a) esquema de múltiples agentes por propiedad con fusión de rango de
   precio; (b) UI de planes de suscripción y facturación real (ahora que ya
-  existe una pasarela real, esto se vuelve más viable); (c) feature "Busco
-  propiedad" (demanda particular) y su dashboard de métricas premium.
+  existe una pasarela real, esto se vuelve más viable — probablemente
+  también vía Lemon Squeezy, a confirmar con el usuario); (c) feature "Busco
+  propiedad" (demanda particular) y su dashboard de métricas premium. Al
+  abrir la próxima sesión, si el usuario no da una dirección explícita,
+  proponer (a) o (b) según lo que priorice el negocio, confirmando antes de
+  arrancar si toca dinero (regla "Si algo es ambiguo", no se asume en
+  silencio).

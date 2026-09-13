@@ -2,7 +2,7 @@
 import {useState} from 'react';
 import {Check,Handshake,Lock,RefreshCw,Unlock,X} from 'lucide-react';
 import {Offer,Session} from '../lib/types';
-import {counterOffer,mockCompletePayment,offerAction,revealContact} from '../lib/api';
+import {counterOffer,mockCompletePayment,offerAction,paymentStatus,revealContact} from '../lib/api';
 
 // Igual criterio que del lado comprador: nada de texto/números libres.
 // La contraoferta se arma con presets sobre el monto ofrecido por el
@@ -17,6 +17,7 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
     offer.contact_revealed && offer.buyer_name && offer.buyer_phone ? {buyer_name:offer.buyer_name,buyer_phone:offer.buyer_phone,buyer_email:offer.buyer_email} : null
   );
   const [pendingPayment,setPendingPayment]=useState<string|null>(null);
+  const [checkoutUrl,setCheckoutUrl]=useState<string|null>(null);
   const counterAmount=Math.round(offer.amount*(1+pct/100));
 
   async function action(a:'accept'|'reject'|'negotiate'){
@@ -40,10 +41,34 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
     }catch(e:any){
       if(e?.status===402 && e?.detail?.transaction_id){
         setPendingPayment(e.detail.transaction_id);
+        setCheckoutUrl(e.detail.checkout_url||null);
         onDone(e.message||'Se requiere pago para revelar este contacto.');
       }else{
         onDone(e?.message||'No se pudo revelar el contacto.');
       }
+    }finally{
+      setBusy(false);
+    }
+  }
+
+  async function checkPayment(){
+    if(!pendingPayment)return;
+    setBusy(true);
+    try{
+      const s=await paymentStatus(pendingPayment,session);
+      if(s.status==='COMPLETED'){
+        // ya se cobró (Lemon Squeezy confirmó por webhook) — el reveal ahora
+        // solo devuelve el contacto, sin volver a intentar cobrar.
+        const r=await revealContact(offer.id,session);
+        setRevealed({buyer_name:r.buyer_name,buyer_phone:r.buyer_phone,buyer_email:r.buyer_email});
+        setPendingPayment(null);
+        setCheckoutUrl(null);
+        onDone('Pago confirmado — contacto revelado.');
+      }else{
+        onDone('Todavía no se confirmó el pago. Probá de nuevo en unos segundos.');
+      }
+    }catch(e:any){
+      onDone(e?.message||'No se pudo verificar el pago.');
     }finally{
       setBusy(false);
     }
@@ -57,6 +82,7 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
       if(r.buyer_name && r.buyer_phone){
         setRevealed({buyer_name:r.buyer_name,buyer_phone:r.buyer_phone,buyer_email:r.buyer_email});
         setPendingPayment(null);
+        setCheckoutUrl(null);
         onDone('Pago confirmado (modo desarrollo) — contacto revelado.');
       }
     }finally{
@@ -84,7 +110,15 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
     ) : pendingPayment ? (
       <div className="reveal-box reveal-box--pending">
         <Lock size={15}/> Pago pendiente para ver el contacto.
-        <button className="primary" disabled={busy} onClick={confirmMockPayment}>Confirmar pago (dev)</button>
+        {checkoutUrl && (
+          <a className="primary" href={checkoutUrl} target="_blank" rel="noopener noreferrer">
+            Pagar con Lemon Squeezy
+          </a>
+        )}
+        {checkoutUrl && (
+          <button className="secondary" disabled={busy} onClick={checkPayment}>Ya pagué, verificar</button>
+        )}
+        <button className="secondary" disabled={busy} onClick={confirmMockPayment}>Confirmar pago (dev)</button>
       </div>
     ) : (
       <button className="primary" disabled={busy} onClick={reveal}><Lock size={15}/> Revelar contacto</button>

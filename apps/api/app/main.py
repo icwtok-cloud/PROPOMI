@@ -1509,6 +1509,23 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
         return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": "pay_per_lead"}
 
 
+@app.get("/payments/{transaction_id}/status")
+def payment_status(transaction_id: str, session: dict[str, Any] = Depends(require_agent)):
+    """Etapa 017/018: permite que el frontend pregunte '¿ya se confirmó?'
+    después de volver de un checkout de Lemon Squeezy, sin tener que generar
+    un checkout nuevo cada vez (a diferencia de reintentar
+    POST /offers/{id}/reveal directamente, que crearía una transacción
+    nueva si todavía no se pagó). Nunca revela nada acá — solo dice si el
+    pago quedó COMPLETED; el reveal real sigue pasando por
+    POST /offers/{id}/reveal, que ya sabe devolver el contacto sin volver a
+    cobrar cuando encuentra una transacción COMPLETED (idempotencia)."""
+    with Session(engine) as db:
+        txn = db.get(RevealTransaction, transaction_id)
+        if not txn or txn.agency_id != session["agency_id"]:
+            raise HTTPException(status_code=404, detail="Transacción no encontrada")
+        return {"status": txn.status}
+
+
 if ENV != "production":
     @app.post("/payments/{transaction_id}/mock-complete")
     def mock_complete_payment(transaction_id: str, session: dict[str, Any] = Depends(require_agent)):
