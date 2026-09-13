@@ -16,6 +16,30 @@ Formato de cada entrada:
 
 ---
 
+## 2026-09-13 — Infraestructura: proyecto de Render creado y configurado
+
+- El usuario creó el Blueprint de Render para `propomi-api` a partir de
+  `render.yaml` y además un **Environment Group** en Render con las 4
+  variables necesarias: `DATABASE_URL` (apuntando a la instancia Postgres
+  ya creada), `CORS_ORIGINS`, `ENV=production`, `JWT_SECRET` (valor random
+  generado, no el default inseguro de desarrollo).
+- **Nota de seguridad:** el valor concreto de `JWT_SECRET` circuló en el
+  chat de esta sesión (el usuario compartió una captura con el valor
+  visible). No es explotable por sí solo sin acceso a la base de datos,
+  pero **se recomienda rotarlo en Render** (Environment Group → editar la
+  variable → cualquier valor random nuevo) en cuanto termine de probar el
+  flujo actual — rotar invalida todas las sesiones activas (JWT firmados),
+  así que no hacerlo en medio de una prueba.
+- **Pendiente de confirmar por el usuario:** que `/health` en la URL real
+  de Render devuelva `"version":"1.3.0"` (confirma que el código de la
+  Etapa 2 quedó desplegado, no una versión vieja).
+- No hubo cambios de código en esta entrada — es un registro de
+  infraestructura para que la próxima sesión sepa que Render ya existe y no
+  hay que volver a explicar cómo crearlo.
+- Archivos tocados: `PROGRESS_LOG.md` (este mismo, v7).
+
+---
+
 ## 2026-09-13 — Etapa 2: Login de Google + verificación de celular del comprador
 
 - **Objetivo (roadmap sección 10, punto 2 / decisión 6.2.1):** agregar
