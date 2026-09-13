@@ -82,7 +82,7 @@ export default function AgentDashboard(){
   const [opps,setOpps]=useState<OppData|null>(null);
   const [analytics,setAnalytics]=useState<{properties:number;events:number;offers:number}|null>(null);
   const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'propiedades'|'cuenta'>('ofertas');
-  const [propForm,setPropForm]=useState({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrl:''});
+  const [propForm,setPropForm]=useState({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
   const [myProperties,setMyProperties]=useState<Property[]>([]);
   const [toast,setToast]=useState('');
   const [nameDraft,setNameDraft]=useState('');
@@ -172,14 +172,18 @@ export default function AgentDashboard(){
     }
     setBusy(true);
     try{
-      const images=propForm.imageUrl.trim()?[propForm.imageUrl.trim()]:[];
+      const images=propForm.imageUrls
+        .split(/\n|,/)
+        .map(s=>s.trim())
+        .filter(s=>s.startsWith('http://')||s.startsWith('https://'))
+        .slice(0,5);
       await createProperty({
         title,zone,city,price,surface,rooms,
         type:'Departamento',operation:'Venta',currency:'USD',
         description:propForm.description.trim()||undefined,
         images,
       },session);
-      setPropForm({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrl:''});
+      setPropForm({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
       notify('Propiedad publicada.');
       try{
         const [an,props]=await Promise.all([
@@ -309,7 +313,15 @@ export default function AgentDashboard(){
       <label>Precio (USD)<input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/></label>
       <label>Superficie (m²)<input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/></label>
       <label>Ambientes<input type="number" min={0} value={propForm.rooms} onChange={e=>setPropForm(f=>({...f,rooms:e.target.value}))}/></label>
-      <label>URL de foto (opcional)<input value={propForm.imageUrl} onChange={e=>setPropForm(f=>({...f,imageUrl:e.target.value}))} placeholder="https://..."/></label>
+      <label>Fotos (opcional, una URL por línea, máx. 5)
+        <textarea
+          value={propForm.imageUrls}
+          onChange={e=>setPropForm(f=>({...f,imageUrls:e.target.value}))}
+          rows={3}
+          placeholder={"https://.../foto1.jpg\nhttps://.../foto2.jpg"}
+        />
+      </label>
+      <p className="muted small">Solo URLs http(s). Se usan en la galería del detalle.</p>
       <label>Descripción (sin teléfonos ni links)<textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/></label>
       <div className="modalactions" style={{justifyContent:'flex-start'}}>
         <button className="primary" disabled={busy||agency?.verificationStatus!=='VERIFIED'} onClick={submitProperty}><Plus size={15}/> Publicar propiedad</button>
