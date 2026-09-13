@@ -2095,6 +2095,12 @@ def agency(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
             "id": a.id, "name": a.name, "city": a.city, "verified": a.verified, "claimed": a.claimed, "phone": a.phone,
             "verificationStatus": a.verification_status, "instagram": a.instagram, "websiteLink": a.website_link,
             "freeLeadsRemaining": a.free_leads_remaining, "slug": a.slug,
+            # Solo lectura del plan actual (sin endpoints de compra todavía —
+            # T5.1 / precios: PENDIENTE DE CONFIRMACIÓN).
+            "subscriptionTier": a.subscription_tier,
+            "planLeadQuota": a.plan_lead_quota,
+            "leadsUsedCurrentPeriod": a.leads_used_current_period,
+            "subscriptionStartedAt": a.subscription_started_at.isoformat() if a.subscription_started_at else None,
         }
 
 

@@ -337,6 +337,24 @@ export default function AgentDashboard(){
         </p>
       )}
 
+      <div className="summarycard" style={{marginTop:8}}>
+        <strong>Tu plan (solo lectura)</strong>
+        <p className="muted small" style={{margin:'6px 0'}}>
+          {agency?.subscriptionTier
+            ? <>Plan: <b>{agency.subscriptionTier}</b>
+                {agency.planLeadQuota==null
+                  ? ' · cupo ilimitado este período'
+                  : ` · ${agency.leadsUsedCurrentPeriod??0} / ${agency.planLeadQuota} reveals del plan`}
+              </>
+            : <>Sin suscripción activa — los reveals van por créditos gratis o pago por lead.</>}
+        </p>
+        <p className="muted small" style={{margin:0}}>
+          Créditos gratis restantes: <b>{agency?.freeLeadsRemaining??0}</b>
+          {agency?.subscriptionStartedAt ? ` · desde ${new Date(agency.subscriptionStartedAt).toLocaleDateString('es-AR')}` : ''}
+        </p>
+        <p className="muted small">La contratación/cambio de plan se habilita cuando Lemon y T5.1 estén confirmados.</p>
+      </div>
+
       <p className="muted small">Tu teléfono de acceso es el mismo que usan tus publicaciones para identificarte automáticamente como dueño.</p>
     </div>}
 
