@@ -1,3 +1,53 @@
+## 2026-09-13 — Etapa 4 parte 1: backend del panel de revisión manual de agencias
+
+- **Objetivo (roadmap sección 10, punto 4):** panel interno mínimo viable
+  para aprobar/rechazar agencias pendientes de verificación, protegido por
+  clave fija, ordenado por prioridad de suscripción. Esta parte es **solo
+  backend** — el frontend (la pantalla en sí) queda para la próxima entrega,
+  siguiendo la sugerencia explícita de `CLAUDE.md` de partir esta etapa en
+  back-end primero y funcionando solo, front-end después.
+- **Archivo pusheado:** `apps/api/app/main.py` → versión **v6**.
+- **Nueva variable de entorno `ADMIN_KEY`:** mismo patrón de seguridad que
+  `JWT_SECRET` — si `ENV=production` y no está seteada, el proceso no
+  arranca (falla rápido en vez de correr insegura). En desarrollo tiene un
+  default (`dev-only-admin-key`). **Falta cargarla en Render** con un valor
+  random antes de que el panel se use en producción real.
+- **Nueva dependencia `require_admin`:** valida un header `X-Admin-Key`
+  (nunca query param, para que la clave no quede en logs de acceso ni en el
+  historial del navegador) contra `ADMIN_KEY` con `secrets.compare_digest`
+  (comparación segura contra timing attacks, mismo patrón ya usado para
+  comparar códigos OTP).
+- **3 endpoints nuevos, todos protegidos por `require_admin`:**
+  - `GET /admin/agencies/pending`: lista agencias con
+    `verification_status == PENDING`, ordenadas por `verification_priority`
+    descendente (doc 6.2 — quien ya se suscribió antes de verificarse pasa
+    primero).
+  - `POST /admin/agencies/{id}/approve`: pasa a `VERIFIED`, sincroniza el
+    booleano `verified` (deprecated) por compatibilidad hacia atrás, y
+    otorga los `FREE_LEADS_ON_VERIFICATION` (10 leads gratis) si todavía no
+    los tenía cargados.
+  - `POST /admin/agencies/{id}/reject`: pasa a `REJECTED`.
+  - Ambos de aprobar/rechazar aceptan `notes` opcional, pasado siempre por
+    `sanitize_free_text()` (regla no negociable de la sección 5 — ningún
+    campo de texto libre nuevo se guarda sin pasar por ahí, ni siquiera en
+    el panel interno).
+- **No se tocó:** ningún endpoint ni modelo existente — solo se agregaron
+  la constante, la dependencia y los 3 endpoints nuevos al final del
+  archivo.
+- **Validado en este entorno (Claude):** `python3 -m py_compile` sin
+  errores. Mismo alcance que entregas anteriores (sin `pytest` local
+  disponible) — recomendable sumar tests para estos 3 endpoints cuando se
+  pueda correr `pytest` real, no se escribieron todavía.
+- **Pendiente / próximo paso (parte 2, sin preguntar según regla v7):**
+  pantalla interna en `apps/web` (ruta nueva, ej. `/admin`) que pida la
+  clave una vez, la guarde en memoria de sesión del navegador, liste la
+  cola de `GET /admin/agencies/pending` y tenga botones de aprobar/rechazar
+  — siguiente entrega.
+- Archivos tocados: `apps/api/app/main.py` (v6), `PROGRESS_LOG.md` (v11 —
+  este mismo archivo).
+
+---
+
 ## 2026-09-13 — Etapa 3 v4: pestaña "Demanda" integrada al dashboard de agencia
 
 - **Cierra la Etapa 3 de punta a punta:** search_performed se guarda (v1) →

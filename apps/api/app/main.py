@@ -77,6 +77,14 @@ if ENV == "production" and not JWT_SECRET:
     raise RuntimeError("JWT_SECRET must be configured in production")
 JWT_SECRET = JWT_SECRET or "dev-only-change-me"
 JWT_ALGORITHM = "HS256"
+# Etapa 4 (sección 10 / doc 6.2 · panel de revisión manual de agencias):
+# clave fija única, no por-usuario. Es intencionalmente simple (mínimo
+# viable, según el plan maestro) — no reemplaza un sistema de roles de
+# equipo interno, que queda para más adelante si hace falta.
+ADMIN_KEY = os.getenv("ADMIN_KEY")
+if ENV == "production" and not ADMIN_KEY:
+    raise RuntimeError("ADMIN_KEY must be configured in production")
+ADMIN_KEY = ADMIN_KEY or "dev-only-admin-key"
 OTP_TTL_SECONDS = 5 * 60
 OTP_RATE_WINDOW = 10 * 60
 OTP_MAX_REQUESTS = 3
@@ -514,6 +522,14 @@ def require_agent(session: dict[str, Any] = Depends(current_session)) -> dict[st
     if session.get("role") != Role.AGENTE.value or not session.get("agency_id"):
         raise HTTPException(status_code=403, detail="Se requiere una sesión de agente")
     return session
+
+
+def require_admin(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")) -> None:
+    """Etapa 4: clave fija de administración para el panel interno de
+    revisión de agencias. Va en el header `X-Admin-Key`, nunca en la URL
+    (para no quedar en logs de acceso ni en el historial del navegador)."""
+    if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
+        raise HTTPException(status_code=401, detail="Clave de administración inválida")
 
 
 DEMO = [
@@ -1405,3 +1421,67 @@ def demand(limit: int = 500, session: dict[str, Any] = Depends(require_agent)):
             "topOperations": [{"operation": o, "count": c} for o, c in top_operations],
             "avgResultCount": (result_counts_sum / result_counts_n) if result_counts_n else None,
         }
+
+
+class AgencyReviewIn(BaseModel):
+    notes: str | None = None
+
+
+def agency_admin_dict(a: "Agency") -> dict[str, Any]:
+    return {
+        "id": a.id, "name": a.name, "city": a.city, "phone": a.phone, "claimed": a.claimed,
+        "instagram": a.instagram, "websiteLink": a.website_link,
+        "verificationStatus": a.verification_status, "verificationPriority": a.verification_priority,
+        "verificationNotes": a.verification_notes,
+        "verificationReviewedAt": a.verification_reviewed_at.isoformat() if a.verification_reviewed_at else None,
+    }
+
+
+@app.get("/admin/agencies/pending")
+def admin_pending_agencies(_: None = Depends(require_admin)):
+    """Etapa 4: cola de agencias pendientes de revisión manual, ordenada
+    por `verification_priority` descendente (doc 6.2 — quien ya se
+    suscribió antes de verificarse pasa primero, SLA 24hs)."""
+    with Session(engine) as db:
+        ensure_seed(db)
+        rows = db.scalars(
+            select(Agency)
+            .where(Agency.verification_status == "PENDING")
+            .order_by(Agency.verification_priority.desc(), Agency.id)
+        ).all()
+        return [agency_admin_dict(a) for a in rows]
+
+
+@app.post("/admin/agencies/{agency_id}/approve")
+def admin_approve_agency(agency_id: str, payload: AgencyReviewIn | None = None, _: None = Depends(require_admin)):
+    with Session(engine) as db:
+        a = db.get(Agency, agency_id)
+        if not a:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        a.verification_status = "VERIFIED"
+        a.verified = True  # DEPRECATED, se mantiene en sync por compatibilidad hacia atrás
+        a.verification_reviewed_at = datetime.now(timezone.utc)
+        if payload and payload.notes:
+            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisión")
+        # Los 10 leads gratis al verificarse (doc 06.2.3/08) se otorgan acá,
+        # una sola vez — si por algún motivo ya tenía cupo cargado (no
+        # debería pasar en el flujo normal), no se lo pisa ni se lo duplica.
+        if a.free_leads_remaining == 0:
+            a.free_leads_remaining = FREE_LEADS_ON_VERIFICATION
+        db.commit()
+        return agency_admin_dict(a)
+
+
+@app.post("/admin/agencies/{agency_id}/reject")
+def admin_reject_agency(agency_id: str, payload: AgencyReviewIn | None = None, _: None = Depends(require_admin)):
+    with Session(engine) as db:
+        a = db.get(Agency, agency_id)
+        if not a:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        a.verification_status = "REJECTED"
+        a.verified = False
+        a.verification_reviewed_at = datetime.now(timezone.utc)
+        if payload and payload.notes:
+            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisión")
+        db.commit()
+        return agency_admin_dict(a)
