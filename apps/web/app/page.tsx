@@ -6,7 +6,7 @@ import PropertyCard from '../components/PropertyCard';
 import OfferModal from '../components/OfferModal';
 import ComparePanel from '../components/ComparePanel';
 import BuyerIdentityModal from '../components/BuyerIdentityModal';
-import {getProperties,trackEvent,saveIntent,listOffers,getOrCreateBuyerSession,getBuyerProfile,captureOfferOriginFromUrl} from '../lib/api';
+import {getPropertiesDeduped,trackEvent,saveIntent,listOffers,getOrCreateBuyerSession,getBuyerProfile,captureOfferOriginFromUrl} from '../lib/api';
 import {BuyerProfile,Property,Offer} from '../lib/types';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
@@ -30,7 +30,7 @@ export default function Home(){
   const [pendingAction,setPendingAction]=useState<null|(()=>void)>(null);
 
   useEffect(()=>{captureOfferOriginFromUrl()},[]);
-  useEffect(()=>{(async()=>{const s=await getOrCreateBuyerSession();const [items,offers]=await Promise.all([getProperties(),listOffers(s)]);setItems(items);setOffers(offers)})().catch(()=>{})},[]);
+  useEffect(()=>{(async()=>{const s=await getOrCreateBuyerSession();const [items,offers]=await Promise.all([getPropertiesDeduped(),listOffers(s)]);setItems(items);setOffers(offers)})().catch(()=>{})},[]);
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
 
   const filtered=useMemo(()=>items.filter(p=>(!zone||p.zone===zone)&&(ptype==='Todos'||p.type===ptype)&&(!rooms||rooms==='Todos'||p.rooms===Number(rooms))&&p.price<=Number(budget||Infinity)&&(!parking||p.parking)&&(!credit||p.credit)),[items,zone,ptype,rooms,budget,parking,credit]);

@@ -207,3 +207,51 @@ export async function getMarketOpportunities(agencyId:string,session:Session,day
   return req<MarketOpportunities>(`/agencies/${agencyId}/market-opportunities?days=${days}`,undefined,session.token);
 }
 
+
+export type ListingGroup={
+  grouped:boolean;
+  listingGroupId?:string|null;
+  members?:Property[];
+  priceMin?:number;
+  priceMax?:number;
+};
+
+export async function getListingGroup(propertyId:string):Promise<ListingGroup>{
+  if(!base)return {grouped:false};
+  return req<ListingGroup>(`/properties/${encodeURIComponent(propertyId)}/group`);
+}
+
+/** Deja una sola ficha por listing_group y adjunta rango de precio (T8.7 UX). */
+export async function getPropertiesDeduped(filters?:Record<string,string|number|boolean>):Promise<Property[]>{
+  const items=await getProperties(filters);
+  const seen=new Set<string>();
+  const out:Property[]=[];
+  const groupCache=new Map<string,ListingGroup>();
+  for(const p of items){
+    const gid=p.listingGroupId;
+    if(!gid){out.push(p);continue}
+    if(seen.has(gid))continue;
+    seen.add(gid);
+    try{
+      let g=groupCache.get(gid);
+      if(!g){
+        g=await getListingGroup(p.id);
+        groupCache.set(gid,g);
+      }
+      if(g.grouped&&g.priceMin!=null&&g.priceMax!=null){
+        out.push({
+          ...p,
+          priceMin:g.priceMin,
+          priceMax:g.priceMax,
+          groupMemberCount:g.members?.length||1,
+        });
+      }else{
+        out.push(p);
+      }
+    }catch{
+      out.push(p);
+    }
+  }
+  return out;
+}
+
