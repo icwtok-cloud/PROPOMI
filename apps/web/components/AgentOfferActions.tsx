@@ -40,9 +40,16 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
       onDone('Contacto revelado.');
     }catch(e:any){
       if(e?.status===402 && e?.detail?.transaction_id){
+        const url=e.detail.checkout_url||null;
         setPendingPayment(e.detail.transaction_id);
-        setCheckoutUrl(e.detail.checkout_url||null);
-        onDone(e.message||'Se requiere pago para revelar este contacto.');
+        setCheckoutUrl(url);
+        if(url){
+          // Abrir checkout hosteado sin forzar pop-up blockers: el click del usuario ya abrió el handler.
+          try{window.open(url,'_blank','noopener,noreferrer')}catch{}
+          onDone('Te redirigimos al pago. Cuando termines, volvé y tocá «Ya pagué».');
+        }else{
+          onDone('Pago requerido. Todavía no hay checkout real (Lemon sin configurar o modo mock).');
+        }
       }else{
         onDone(e?.message||'No se pudo revelar el contacto.');
       }
@@ -109,16 +116,23 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
       </div>
     ) : pendingPayment ? (
       <div className="reveal-box reveal-box--pending">
-        <Lock size={15}/> Pago pendiente para ver el contacto.
-        {checkoutUrl && (
-          <a className="primary" href={checkoutUrl} target="_blank" rel="noopener noreferrer">
-            Pagar con Lemon Squeezy
-          </a>
+        <Lock size={15}/> Pago pendiente (USD 5) para ver el contacto.
+        {checkoutUrl ? (
+          <>
+            <a className="primary" href={checkoutUrl} target="_blank" rel="noopener noreferrer">
+              Abrir pago (Lemon Squeezy)
+            </a>
+            <button className="secondary" disabled={busy} onClick={checkPayment}>Ya pagué, verificar</button>
+            <p className="muted small" style={{margin:0}}>Si cerraste la ventana de pago, volvé a abrir el link y después verificá.</p>
+          </>
+        ) : (
+          <>
+            <p className="muted small" style={{margin:0}}>
+              No hay URL de checkout. En desarrollo usá «Confirmar pago (dev)». En producción configurá Lemon (ver docs/LEMON_SQUEEZY_CHECKLIST.md).
+            </p>
+            <button className="secondary" disabled={busy} onClick={confirmMockPayment}>Confirmar pago (dev)</button>
+          </>
         )}
-        {checkoutUrl && (
-          <button className="secondary" disabled={busy} onClick={checkPayment}>Ya pagué, verificar</button>
-        )}
-        <button className="secondary" disabled={busy} onClick={confirmMockPayment}>Confirmar pago (dev)</button>
       </div>
     ) : (
       <button className="primary" disabled={busy} onClick={reveal}><Lock size={15}/> Revelar contacto</button>

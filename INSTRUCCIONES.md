@@ -90,7 +90,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V36 |
+| INSTRUCCIONES.md | V37 |
 | apps/api/app/main.py | V15 |
 | apps/web/lib/types.ts | V5 |
 | apps/web/lib/api.ts | V11 |
@@ -194,6 +194,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 034 | Deep link `?property=<id>`: al cargar la home abre el detalle de esa ficha (compat. con links de tracking `buildShareUrl`). Usa getPropertiesDeduped + fallback getProperties. | apps/web/app/page.tsx | etapa-034_deep-link-property-query | Pendiente de push |
 | 035 | Tests T8.7: outsider 403, sub nueva bloqueada en ventana, sub antigua revela, post-ventana ok, segundo reveal 409 sin filtrar teléfono. | apps/api/tests/test_t87_listing_group_reveal.py | etapa-035_tests-t87-carrera-reveal | Pendiente de push |
 | 036 | Checklist operativo Lemon Squeezy (sin código de runtime): store/variant/webhook/env/prueba de humo. | docs/LEMON_SQUEEZY_CHECKLIST.md | etapa-036_lemon-checklist-operativo | Pendiente de push |
+| 037 | UX 402 reveal: auto-abrir checkout_url, mensaje claro sin URL (mock/Lemon pendiente), ocultar botón dev cuando hay checkout real, copy «Ya pagué». | apps/web/components/AgentOfferActions.tsx | etapa-037_ux-402-checkout-reveal | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -230,8 +231,7 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 037)
+## Próximo paso lógico (candidato para etapa 038)
 
-- Cuando Lemon apruebe: cargar env en Render y crear webhook (seguir `docs/LEMON_SQUEEZY_CHECKLIST.md`).
-- T5.1 CRUD de suscripción (tocan dinero — confirmar antes de implementar).
-- Abrir/depurar flujo 402 → checkout_url en el front si falta feedback al agente.
+- T5.1 CRUD de suscripción (tocan dinero — **confirmar** antes de implementar).
+- Cuando Lemon apruebe: seguir `docs/LEMON_SQUEEZY_CHECKLIST.md`.
