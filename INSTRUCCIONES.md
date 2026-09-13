@@ -71,6 +71,11 @@
     comandos `git revert` en cada entrega. Si el usuario necesita revertir algo,
     lo pide en el momento y ahí se le da el comando puntual para esa etapa.
 
+14. **Formato al pedir links faltantes**: cuando Claude necesite un raw link que
+    el usuario todavía no pasó, lo pide SIEMPRE dentro de un bloque de código
+    (```), una URL por línea, sin texto extra alrededor más que lo imprescindible
+    — así el usuario copia y pega directo, sin tener que editar nada.
+
 ## Convención de nombres de commit / reversión
 
 Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<descripcion-corta>`
@@ -79,7 +84,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V7 |
+| INSTRUCCIONES.md | V8 |
 | apps/web/lib/types.ts | V1 |
 | apps/web/lib/api.ts | V1 |
 | apps/web/components/AgentDashboard.tsx | V1 |
@@ -143,13 +148,32 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 004 | Fix funcional: la agencia no tenía forma de completar su verificación desde la web. `updateAgency()` en `api.ts` solo mandaba `{name}` (el backend acepta también `instagram`/`website_link`, requeridos para pasar de PENDING a VERIFIED). Se corrigió `updateAgency` para mandar los tres campos, y se amplió la pestaña "Mi cuenta" de `AgentDashboard.tsx` con: badge de estado de verificación (VERIFIED/PENDING/REJECTED), inputs de Instagram y sitio web, aviso cuando la agencia no está verificada, y contador de "reveals gratis restantes" (`freeLeadsRemaining`) en las métricas. | apps/web/lib/api.ts, apps/web/components/AgentDashboard.tsx | etapa-004_fix-verificacion-agencia-en-mi-cuenta | Pendiente de push |
 | 005 | `PropertyCard.tsx` solo mostraba `p.image` (singular, campo DEPRECATED) e ignoraba `p.images[]`, `p.originPublishedAt`, `p.pool` y `p.petFriendly` que el backend ya devuelve y el tipo `Property` ya soporta desde la etapa 001. Se corrigió: la portada ahora usa `images[0]` con fallback a `image`, se muestra un contador "+N fotos" si hay más de una, se agrega `originPublishedAt` debajo de la superficie/ambientes, y se suman los tags "Pileta" y "Acepta mascotas". Se evitó a propósito usar clases CSS nuevas (se reutilizaron `fresh`, `muted`, `tags`, etc. ya existentes) para no depender de `globals.css`, que todavía no fue leído. | apps/web/components/PropertyCard.tsx | etapa-005_fix-galeria-y-campos-faltantes-property-card | Pendiente de push |
 | 006 | Se confirmó que `globals.css` NO tenía las clases `.notice-ok` / `.notice-warn` usadas por `AgentDashboard.tsx` desde la etapa 004 (el aviso de verificación se veía sin color). Se agregaron reutilizando la paleta ya existente de `.reveal-box--done` / `.reveal-box--pending` (verde/ámbar) para mantener consistencia visual. | apps/web/app/globals.css | etapa-006_fix-clases-css-faltantes-notice-ok-warn | Pendiente de push |
+| 007 | Reglas de sesión agregadas: sin narración (Claude entrega resultado + comandos, sin relatar el proceso), sin comandos de rollback salvo pedido explícito, y formato fijo en bloque de código para pedir links faltantes. | INSTRUCCIONES.md | etapa-007_reglas-sin-narracion-sin-rollback-automatico | Pendiente de push |
 
-## Próximo paso lógico (candidato para etapa 007)
+## Cierre de sesión (2026-09-13) — arrancar la próxima sesión directo desde acá
 
-- Confirmar visualmente el flujo de oferta: revisar `OfferModal.tsx` y
-  `BuyerIdentityModal.tsx` (raw links todavía no obtenidos — no aparecen en el
-  manifiesto probado hasta ahora, hay que pedirlos puntualmente al usuario una
-  vez más, o pedirle que fetchee `INSTRUCCIONES.md` primero) para confirmar que
-  el frontend bloquea visualmente "Enviar oferta" hasta tener celular + Google
-  verificados (el backend en `POST /offers` ya lo exige de todas formas — esto
-  es una mejora de UX, no un fix de seguridad).
+El usuario va a abrir la próxima sesión pasando SOLO el repo, sin repetir contexto.
+Claude debe, sin preguntar nada más:
+
+1. Pedir en un bloque de código el raw link de este mismo archivo
+   (`INSTRUCCIONES.md`) si todavía no lo tiene en la conversación, para desbloquear
+   el resto del manifiesto (ver regla 10).
+2. Retomar directo en la etapa 008: pedir, en un bloque de código, los dos links
+   pendientes de la etapa 007/008 (no fueron entregados antes de cerrar esta
+   sesión):
+
+```
+https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/OfferModal.tsx
+https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/BuyerIdentityModal.tsx
+```
+
+3. Con esos dos archivos, confirmar si el frontend bloquea visualmente "Enviar
+   oferta" hasta tener celular + Google verificados (el backend ya lo exige en
+   `POST /offers`), corregir si falta, entregar archivo(s) + comandos de
+   PowerShell (sin narrar el proceso, sin comandos de rollback salvo que se pidan),
+   y seguir encadenando etapas chicas sin volver a preguntar "qué sigue".
+
+## Próximo paso lógico (candidato para etapa 008)
+
+- Ver "Cierre de sesión" arriba — es el mismo paso, ya con los links listos para
+  pegar.
