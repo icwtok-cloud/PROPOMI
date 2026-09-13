@@ -1,3 +1,13 @@
+> ⚠️ **Este archivo quedó desactualizado el 2026-09-13.**
+> El registro oficial y vigente del proyecto es `PROGRESS_LOG.md` (raíz del
+> repo), no este archivo. `PROGRESS.md` se dejó de actualizar después de la
+> entrada de "AgencyPhone" — el trabajo posterior (Etapa 1 v2, Etapa 2
+> Google+OTP, infraestructura de Render) solo quedó registrado en
+> `PROGRESS_LOG.md`. Se conserva este archivo como historial, pero **para
+> saber en qué etapa está el proyecto, leer siempre `PROGRESS_LOG.md`.**
+
+---
+
 # Propomi — Notas de avance
 
 Registro de cambios pusheados, en orden. Cada entrada = un cambio ya probado y subido a `main`.
