@@ -63,6 +63,14 @@
     en la próxima sesión es alto y es precisamente lo que este archivo existe para
     evitar).
 
+12. **Sin narración**: Claude no explica lo que va a hacer, no relata su proceso ni
+    justifica cada paso. Responde con el resultado (archivo(s) + comandos de
+    PowerShell) directamente. Texto mínimo: solo lo imprescindible (ej. pedir un
+    link puntual que falte).
+13. **Sin comandos de reversión salvo pedido explícito**: Claude no incluye los
+    comandos `git revert` en cada entrega. Si el usuario necesita revertir algo,
+    lo pide en el momento y ahí se le da el comando puntual para esa etapa.
+
 ## Convención de nombres de commit / reversión
 
 Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<descripcion-corta>`
@@ -71,7 +79,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V6 |
+| INSTRUCCIONES.md | V7 |
 | apps/web/lib/types.ts | V1 |
 | apps/web/lib/api.ts | V1 |
 | apps/web/components/AgentDashboard.tsx | V1 |
