@@ -1,5 +1,23 @@
 # Instrucciones para Claude (o cualquier IA) trabajando en este repo
 
+## Frase de arranque (aplica en CUALQUIER sesión nueva, sin excepción)
+
+El dueño del producto va a abrir sesiones nuevas de chat sin memoria previa
+del repo (o con memoria de Claude.ai activada pero sin este archivo en
+contexto) y va a decir simplemente algo como:
+
+> "Acá está el repo (link o clonado local). Seguí las instrucciones."
+
+Eso alcanza. No hace falta que repita nada más. Ante esa frase (o cualquier
+variante equivalente: "segui las instrucciones", "continuemos", "retomemos
+el repo"), la sesión tiene que **arrancar a ejecutar de una**, siguiendo los
+4 pasos de más abajo, sin:
+- Pedirle que reexplique el proyecto.
+- Preguntar de nuevo por preferencias ya fijadas acá (Windows/PowerShell,
+  versionado, zips, sin ambiente de test, sin Claude Code — ver más abajo).
+- Tratar el pedido como ambiguo. No lo es: la ambigüedad la resuelve este
+  archivo + `PROGRESS_LOG.md`, no una pregunta nueva al usuario.
+
 Si estás leyendo esto porque el dueño del producto compartió este repo y dijo
 algo como **"Seguí las instrucciones y continuemos"**, hacé esto en orden:
 
@@ -19,22 +37,49 @@ algo como **"Seguí las instrucciones y continuemos"**, hacé esto en orden:
 
 ## Por qué existe este archivo
 
-No hay una herramienta de código (Claude Code) conectada a este repo todavía
-— el trabajo se hace pegando archivos en un chat normal de Claude.ai. El flujo
-real es:
+No hay una herramienta de código (Claude Code) conectada a este repo — el
+trabajo se hace **exclusivamente en un chat normal de Claude.ai (o app),
+nunca con acceso directo al repo del usuario**. El repo puede estar clonado
+en la máquina del usuario o accesible públicamente en GitHub, pero quien
+edita, versiona y pushea archivos siempre es el usuario, a mano, con los
+comandos que Claude le da listos para copiar/pegar.
+
+**Tampoco hay ambiente de test instalado en la máquina del usuario.** Ni
+`pytest` ni `npm run build` se pueden correr localmente antes de pushear.
+Esto es una limitación permanente, no algo a resolver en una etapa futura.
+Consecuencias concretas para cómo trabajar:
+- El checklist de calidad de la sección 11 del plan maestro **no se puede
+  verificar corriendo los comandos** — hay que aplicarlo por revisión
+  manual/lectura del código antes de entregar cada archivo (imports
+  completos, sintaxis válida, nombres de funciones/rutas consistentes con
+  el resto del archivo, etc.).
+- Cualquier cambio se entrega asumiendo que el primer despliegue real (en
+  Render/Vercel) es también la primera vez que ese código corre. Si algo
+  falla ahí, el usuario pega el error de log en el chat y se corrige en la
+  siguiente versión — no hay forma de detectarlo antes.
+- Por eso mismo, los cambios grandes conviene partirlos en versiones chicas
+  y probables de andar, en vez de una reescritura enorme de una sola vez.
+
+El flujo real, en orden, es siempre:
 
 1. El usuario pega o sube el archivo puntual del repo que hay que tocar para
    la etapa en curso (ej. `apps/api/app/main.py` para agregar un modelo
-   nuevo).
-2. Claude devuelve el archivo completo listo para reemplazar (o instrucciones
-   de edición muy precisas), respetando el checklist de la sección 11 del
-   plan maestro.
-3. El usuario aplica el cambio localmente, corre `pytest` / `npm run build`,
-   y si todo pasa, hace `git commit` + `git push` él mismo.
-4. Después de cada push, Claude agrega una entrada nueva en
-   `PROGRESS_LOG.md` (fecha, qué se hizo, qué falta, qué decisiones quedaron
-   tomadas) — esto es lo que le permite a una sesión futura, con cero
-   contexto previo, retomar exactamente donde quedó.
+   nuevo), o Claude ya lo tiene clonado en su propio sandbox si el repo es
+   público (puede leerlo, pero no editarlo ahí para el usuario — igual
+   entrega el archivo completo por chat).
+2. Claude devuelve el archivo completo listo para reemplazar (nunca un
+   diff/parche), respetando el checklist de la sección 11 del plan maestro
+   aplicado por revisión manual (ver limitación de arriba).
+3. Claude entrega, junto con el archivo, los **comandos exactos de
+   PowerShell** para copiar el archivo a su ruta real dentro del repo,
+   hacer `git add` / `git commit` / `git push` — ver reglas de entrega más
+   abajo. El usuario los pega tal cual, sin adaptar nada.
+4. Después de cada push confirmado por el usuario, Claude agrega una
+   entrada nueva en `PROGRESS_LOG.md` (fecha, qué se hizo, qué falta, qué
+   decisiones quedaron tomadas) — esto es lo que le permite a una sesión
+   futura, con cero contexto previo, retomar exactamente donde quedó.
+
+## Versión de este archivo: v4
 
 ## Reglas que nunca se rompen (resumen — el detalle está en la sección 5 del plan maestro)
 
