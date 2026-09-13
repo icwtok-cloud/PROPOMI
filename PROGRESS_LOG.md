@@ -1,3 +1,38 @@
+## 2026-09-13 — Cierre de sesión / punto de retomada
+
+- **Este es un corte de sesión de chat, no una etapa nueva.** El usuario va
+  a continuar en una sesión distinta de Claude.ai. Todo lo relevante ya
+  está pusheado en `main` — no hay nada "en el aire" sin guardar.
+- **Estado real confirmado al cierre:** Etapas 1, 2 y 3 del roadmap
+  (sección 10) cerradas de punta a punta. Etapa 4 (panel de revisión
+  manual de agencias) con la **parte 1 (backend) ya pusheada**
+  (`main.py` v6: `ADMIN_KEY`, `require_admin`,
+  `GET /admin/agencies/pending`, `POST /admin/agencies/{id}/approve`,
+  `POST /admin/agencies/{id}/reject`).
+- **Próximo paso exacto, sin ambigüedad:** Etapa 4 **parte 2 (frontend)** —
+  pantalla interna nueva en `apps/web` (ej. ruta `/admin`) que:
+  1. Pida la clave (`X-Admin-Key`) una sola vez y la guarde en memoria de
+     sesión del navegador (no en `localStorage` persistente — es una
+     clave de administración, no una sesión de usuario común).
+  2. Liste la cola de `GET /admin/agencies/pending` (ya ordenada por
+     prioridad desde el backend).
+  3. Tenga botones de aprobar/rechazar por agencia, con campo opcional de
+     notas, llamando a `POST /admin/agencies/{id}/approve` o `/reject`.
+- **Pendiente recordatorio operativo (no de código):** cargar `ADMIN_KEY`
+  en el Environment Group de Render con un valor random antes de usar el
+  panel en producción real — todavía no confirmado si el usuario ya lo
+  hizo.
+- **Cómo debe arrancar la próxima sesión:** con la frase de arranque
+  estándar ya definida en `CLAUDE.md` ("Acá está el repo, seguí las
+  instrucciones" o equivalente) alcanza — la sesión nueva lee `CLAUDE.md`
+  (v7) + este archivo, entiende que el próximo paso es la Etapa 4 parte 2,
+  y arranca directo a construirla sin preguntar qué hacer (regla v7) y sin
+  re-preguntar nada de lo ya fijado (rutas, PowerShell, versionado, trabajo
+  en partes chicas, etc.).
+- No hubo cambios de código en esta entrada — es puramente de cierre/traspaso.
+
+---
+
 ## 2026-09-13 — Etapa 4 parte 1: backend del panel de revisión manual de agencias
 
 - **Objetivo (roadmap sección 10, punto 4):** panel interno mínimo viable
