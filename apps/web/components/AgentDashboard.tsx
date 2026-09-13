@@ -1,8 +1,8 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Building2,Check,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
+import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -103,6 +103,17 @@ export default function AgentDashboard(){
   })().catch(()=>{})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
+
+  async function copyShareLink(propertyId:string){
+    const origin=agency?.slug||'agente';
+    const url=buildShareUrl(propertyId,origin);
+    try{
+      await navigator.clipboard.writeText(url);
+      notify('Link copiado (origen: '+origin+').');
+    }catch{
+      notify('No se pudo copiar. URL: '+url);
+    }
+  }
 
   async function refreshOffers(){if(!session)return;setOffers(await listOffers(session))}
 
@@ -218,7 +229,6 @@ export default function AgentDashboard(){
       {offers.length===0 && <div className="empty">Todavía no recibiste ofertas. En cuanto un comprador proponga un precio en alguna de tus publicaciones, va a aparecer acá.</div>}
       {offers.map(o=><div key={o.id} className="offercard">
         <div className="offercardhead"><strong>USD {o.amount.toLocaleString('en-US')}</strong><span className="pill">{o.status}</span></div>
-        {o.origin && <p className="muted small">Origen: {o.origin}</p>}
         <div className="muted small">{o.payment_form} · {o.timeframe||'Plazo sin especificar'} · Capital: {o.capital?`USD ${o.capital.toLocaleString('en-US')}`:'—'}</div>
         {o.comment && <p className="muted small">{o.comment}</p>}
         <AgentOfferActions offer={o} session={session} onDone={(m)=>{notify(m);refreshOffers()}}/>
@@ -251,11 +261,18 @@ export default function AgentDashboard(){
       {myProperties.length===0 && <div className="empty">Todavía no tenés propiedades publicadas en Propomi.</div>}
       {myProperties.map(p=>(
         <div key={p.id} className="opprow" style={{alignItems:'flex-start',flexDirection:'column',gap:4}}>
-          <div style={{display:'flex',justifyContent:'space-between',width:'100%',gap:12}}>
-            <strong>{p.title}</strong>
-            <span>{p.currency} {Number(p.price).toLocaleString('en-US')}</span>
+          <div style={{display:'flex',justifyContent:'space-between',width:'100%',gap:12,alignItems:'flex-start'}}>
+            <div>
+              <strong>{p.title}</strong>
+              <div className="muted small">{p.zone} · {p.surface} m² · {p.rooms} amb.{p.needsReview?' · en revisión':''}</div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:6}}>
+              <span>{p.currency} {Number(p.price).toLocaleString('en-US')}</span>
+              <button type="button" className="secondary" style={{padding:'6px 10px',fontSize:12}} onClick={()=>copyShareLink(p.id)}>
+                <Copy size={13}/> Copiar link
+              </button>
+            </div>
           </div>
-          <span className="muted small">{p.zone} · {p.surface} m² · {p.rooms} amb.{p.needsReview?' · en revisión':''}</span>
         </div>
       ))}
 
