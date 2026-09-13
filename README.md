@@ -42,3 +42,45 @@ En Render usar PostgreSQL y `DATABASE_URL`. En Vercel configurar `NEXT_PUBLIC_AP
 
 ## Importante
 Esta versión une las cinco fases en una arquitectura funcional de producto. Para producción todavía deben agregarse autenticación real, RBAC/aislamiento de agencias, verificación de identidad empresarial, secretos gestionados, rate limiting, auditoría avanzada, crawler legal/robusto, almacenamiento de imágenes y migraciones Alembic. El núcleo de producto y sus contratos API quedan preparados para esas capas.
+
+## Checklist de cambio (DoD)
+
+```bash
+# desde la raíz del repo
+bash scripts/check.sh
+# o
+npm run check
+```
+
+Incluye: `pytest`, `tsc --noEmit`, guardia de `'use client'`, `next build`.
+
+## Variables de entorno relevantes
+
+### API (Render / local)
+| Variable | Uso |
+|----------|-----|
+| `DATABASE_URL` | Postgres en prod; SQLite por defecto en dev |
+| `JWT_SECRET` | Firmas de sesión |
+| `CORS_ORIGINS` | Orígenes permitidos |
+| `ADMIN_API_KEY` | Header `X-Admin-Key` del panel `/admin` |
+| `ENV` | `production` desactiva mock-complete de pagos |
+
+### Web (Vercel / local)
+| Variable | Uso |
+|----------|-----|
+| `NEXT_PUBLIC_API_URL` | Base del API; vacío = modo demo |
+| `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Google Sign-In comprador (OfferModal) |
+
+## Estructura de carpetas
+
+```
+apps/api/app/main.py   # API (pendiente partir en routers)
+apps/api/tests/        # pytest
+apps/web/app/          # App Router
+apps/web/components/   # UI
+apps/web/lib/          # types, api client, fixtures
+docs/                  # mapeo especificación ↔ código
+scripts/check.sh       # puerta de calidad
+```
+
+No debe existir `apps/apps` (duplicado). Si reaparece, borrarla.
