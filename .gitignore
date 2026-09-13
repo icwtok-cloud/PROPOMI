@@ -17,3 +17,5 @@ apps/web/.env.local
 # Editor / OS
 .vscode/
 .DS_Store
+test_propomi.db
+*.db
