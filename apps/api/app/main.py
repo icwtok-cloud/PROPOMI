@@ -1022,7 +1022,53 @@ def prop_dict(p: Property) -> dict[str, Any]:
         "image": p.image, "images": p.images or ([p.image] if p.image else []),
         "originPublishedAt": p.origin_published_at,
         "description": p.description, "agencyId": p.agency_id, "detectedAt": p.detected_at.isoformat(), "lastSeenAt": p.last_seen_at.isoformat(),
+        "needsReview": p.needs_review, "possibleDuplicateOf": p.possible_duplicate_of,
     }
+
+
+class ReviewResolutionIn(BaseModel):
+    action: str  # "confirm_duplicate" | "not_duplicate"
+
+
+@app.get("/properties/review-queue")
+def review_queue(_: None = Depends(require_admin)):
+    """Etapa 2 (doc 05): cola de revisión manual para lo que el dedup de
+    `POST /properties/ingest` marcó como posible duplicado. Devuelve cada
+    propiedad en cuestión junto con la candidata a duplicado, para poder
+    compararlas lado a lado sin tener que consultar la base a mano."""
+    with Session(engine) as db:
+        flagged = db.scalars(select(Property).where(Property.needs_review == True)).all()  # noqa: E712
+        items = []
+        for p in flagged:
+            candidate = db.get(Property, p.possible_duplicate_of) if p.possible_duplicate_of else None
+            items.append({"property": prop_dict(p), "candidate": prop_dict(candidate) if candidate else None})
+        return {"count": len(items), "items": items}
+
+
+@app.post("/properties/{property_id}/review")
+def resolve_review(property_id: str, payload: ReviewResolutionIn, _: None = Depends(require_admin)):
+    """Resuelve una entrada de la cola de revisión:
+    - "confirm_duplicate": es realmente el mismo aviso duplicado -> se oculta
+      (no se borra: se limpia `agency_id`/`source_url` no, solo se saca de
+      circulación bajándola de la búsqueda pública vía `last_seen_at` muy
+      viejo, coherente con el mismo mecanismo que ya usa el filtro de
+      frescura, en vez de inventar un segundo mecanismo de ocultamiento).
+    - "not_duplicate": falso positivo del dedup -> se limpia la marca y sigue
+      circulando normalmente."""
+    if payload.action not in ("confirm_duplicate", "not_duplicate"):
+        raise HTTPException(status_code=400, detail="action debe ser 'confirm_duplicate' o 'not_duplicate'")
+    with Session(engine) as db:
+        p = db.get(Property, property_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        if payload.action == "confirm_duplicate":
+            p.last_seen_at = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS + 1)
+            p.needs_review = False
+        else:
+            p.needs_review = False
+            p.possible_duplicate_of = None
+        db.commit()
+        return {"id": p.id, "status": payload.action, "needsReview": p.needs_review}
 
 
 @app.get("/properties")

@@ -90,8 +90,8 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V12 |
-| apps/api/app/main.py | V3 |
+| INSTRUCCIONES.md | V13 |
+| apps/api/app/main.py | V4 |
 | apps/web/lib/types.ts | V1 |
 | apps/web/lib/api.ts | V1 |
 | apps/web/components/AgentDashboard.tsx | V1 |
@@ -160,6 +160,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 009 | Regla nueva (15): la sección "Próximo paso lógico" tiene que quedar siempre escrita en este archivo al cierre de cada etapa, no solo mencionada en el chat. Se auditó también `AgentOfferActions.tsx`, `DemandPanel.tsx` y el 402 de `reveal_contact` (sin bugs) y se dejó anotado el candidato real para la próxima etapa (filtro de 60 días + dedup del crawler, Etapa 2 del roadmap). | INSTRUCCIONES.md | etapa-009_regla-proximo-paso-siempre-en-instrucciones | Pendiente de push |
 | 010 | Arranque de Etapa 2 del roadmap general (cold-start): `GET /properties` no filtraba por antigüedad — una propiedad que el crawler dejó de ver seguía apareciendo en la búsqueda pública para siempre. Se agregó `PROPERTY_FRESHNESS_DAYS = 60` y el filtro `last_seen_at >= ahora - 60 días`, aplicado solo cuando NO se pide `agency_id` (una agencia sigue viendo sus propias publicaciones stale en "Mi cuenta" para poder notar y resolver el problema). Tests corridos: 9/11 pasan; los 2 que fallan (`test_reveal_blocked_without_subscription_or_payment`, `test_cannot_add_phone_already_used_by_another_agency`) son preexistentes y no están relacionados con este cambio (drift de tests vs. reglas de verificación de comprador y código de estado, de etapas anteriores). Dedup del crawler (mismo rango de precio + zona + superficie similar → revisión manual) queda como candidato de la próxima etapa — no hay endpoint de ingesta del crawler todavía en el backend, así que dedup se implementará junto con ese endpoint. | apps/api/app/main.py | etapa-010_filtro-frescura-60-dias | Pendiente de push |
 | 011 | Endpoint de ingesta del crawler: `POST /properties/ingest` (protegido con `X-Admin-Key`, mismo mecanismo que el panel de revisión de agencias). Upsert por `source`+`source_url` (identidad natural de una publicación en su portal): si ya existe, actualiza los datos y `last_seen_at` (nunca toca `detected_at`); si es nueva, la crea. Dedup simple sin IA (doc 05): misma zona + precio dentro de ±5% + superficie dentro de ±10% de una propiedad ya existente → se marca `needs_review=true` y `possible_duplicate_of=<id>`, nunca se fusiona ni descarta sola. La descripción que trae el crawler se limpia en silencio con la nueva `strip_contact_leaks()` (reemplaza teléfonos/wsp/emails/usuarios por "[dato de contacto oculto]") — distinta de `sanitize_free_text()` (que RECHAZA texto tipeado por una persona), porque acá no hay a quién devolverle un error. Columnas nuevas en `Property`: `needs_review` (bool), `possible_duplicate_of` (str, nullable), migradas en `ensure_schema_columns`. Probado manualmente (create → 201, mismo source+url → update sin duplicar, propiedad similar en otra URL → needs_review=true, sin X-Admin-Key → 401, descripción sanitizada correctamente). Tests automáticos: mismos 9/11 de antes (los 2 que fallan siguen siendo los preexistentes, no relacionados). | apps/api/app/main.py | etapa-011_endpoint-ingesta-crawler-y-dedup | Pendiente de push |
+| 012 | Cola de revisión manual para lo que el dedup de la etapa 011 marca: `GET /properties/review-queue` (X-Admin-Key) devuelve cada propiedad `needs_review=true` junto a su `possible_duplicate_of` ya resuelto (para comparar lado a lado sin consultar la base a mano), y `POST /properties/{id}/review` con `{"action": "confirm_duplicate"}` (la oculta reusando el mismo mecanismo del filtro de frescura — le pisa `last_seen_at` a más de 60 días atrás en vez de inventar un segundo mecanismo de ocultamiento) o `{"action": "not_duplicate"}` (limpia la marca y sigue circulando normal). `prop_dict()` ahora también expone `needsReview`/`possibleDuplicateOf` al frontend. Probado manualmente end-to-end: ingesta con dedup → aparece en la cola → resolver "not_duplicate" → cola vacía; ingesta con dedup → resolver "confirm_duplicate" → desaparece de `GET /properties`. Tests automáticos: mismos 9/11 de siempre (los 2 preexistentes sin relación). Nota: ningún frontend consume estos dos endpoints todavía — es panel interno puro, como el resto de la administración de agencias. | apps/api/app/main.py | etapa-012_cola-revision-duplicados | Pendiente de push |
 
 ## Cierre de sesión (2026-09-13) — arrancar la próxima sesión directo desde acá
 
@@ -184,15 +185,16 @@ https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/
    PowerShell (sin narrar el proceso, sin comandos de rollback salvo que se pidan),
    y seguir encadenando etapas chicas sin volver a preguntar "qué sigue".
 
-## Próximo paso lógico (candidato para etapa 012)
+## Próximo paso lógico (candidato para etapa 013)
 
-- El endpoint de ingesta ya existe (`POST /properties/ingest`) pero no hay
-  ninguna pantalla ni endpoint de LECTURA para que un humano revise las
-  propiedades con `needs_review=true` (quedan invisibles salvo consultando la
-  base directo).
-- Candidato elegido para etapa 012: endpoint `GET /properties/review-queue`
-  (protegido con `X-Admin-Key`, mismo patrón que el resto del panel interno)
-  que liste las propiedades con `needs_review=true` junto a la propiedad
-  candidata a duplicado (`possible_duplicate_of`) para poder comparar, y una
-  acción para resolver la revisión (marcar como duplicado real → ocultar, o
-  como falso positivo → `needs_review=false`).
+- El panel interno de administración (verificación de agencias + ahora cola de
+  duplicados) ya tiene 5 endpoints protegidos con `X-Admin-Key` pero CERO
+  frontend — todo se probó manualmente con requests directos.
+- Candidato elegido para etapa 013: armar una pantalla mínima de admin
+  (`apps/web/app/admin/page.tsx`, protegida por el mismo `X-Admin-Key` pedido
+  una vez y guardado en `localStorage`, no por Clerk/OTP — es un panel interno,
+  no de cara al comprador/agente) que junte verificación de agencias
+  (`/agencies/pending`, `/agencies/{id}/verify`, `/agencies/{id}/reject`, si
+  existen con esos nombres — confirmar primero) y la cola de duplicados
+  (`GET /properties/review-queue`, `POST /properties/{id}/review`) en una sola
+  vista, para no seguir dependiendo de curl/Postman para operar el producto.
