@@ -2,7 +2,7 @@ use client';
 import {useEffect,useState} from 'react';
 import {
   getPendingAgencies,approveAgency,rejectAgency,getReviewQueue,resolveReviewItem,
-  getColdStartPending,markColdStartSent,ColdStartTaskItem,listAdminAgencies,
+  getColdStartPending,markColdStartSent,ColdStartTaskItem,listAdminAgencies,reopenAgency,
 } from '../../lib/api';
 import {PendingAgency,ReviewQueueItem} from '../../lib/types';
 
@@ -76,6 +76,10 @@ export default function AdminPage(){
   async function doResolve(id:string,action:'confirm_duplicate'|'not_duplicate'){
     try{await resolveReviewItem(id,action,adminKey);setToast(action==='confirm_duplicate'?'Marcado como duplicado.':'Descartado.');reload()}
     catch(e:any){setToast(e?.message||'No se pudo resolver.')}
+  }
+  async function doReopen(id:string){
+    try{await reopenAgency(id,adminKey,notes[id]?.trim()||undefined);setToast('Agencia vuelta a PENDING.');reload()}
+    catch(e:any){setToast(e?.message||'No se pudo reabrir.')}
   }
   async function doMarkSent(id:string){
     try{await markColdStartSent(id,adminKey,notes[id]?.trim()||undefined);setToast('Marcado como enviado.');reload()}
@@ -231,7 +235,7 @@ export default function AdminPage(){
         </div>
         {directory.length===0 ? <div className="empty">Sin resultados.</div> : (
           <div className="tablewrap"><table><thead><tr>
-            <th>Nombre</th><th>Estado</th><th>Ciudad</th><th>Tel</th><th>IG</th><th>Claimed</th>
+            <th>Nombre</th><th>Estado</th><th>Ciudad</th><th>Tel</th><th>IG</th><th>Claimed</th><th></th>
           </tr></thead><tbody>
             {directory.map(a=>(
               <tr key={a.id}>
@@ -241,6 +245,11 @@ export default function AdminPage(){
                 <td>{a.phone||'—'}</td>
                 <td>{a.instagram||'—'}</td>
                 <td>{a.claimed?'sí':'no'}</td>
+                <td>
+                  {a.verificationStatus!=='PENDING' && (
+                    <button className="secondary" style={{padding:'4px 8px',fontSize:12}} onClick={()=>doReopen(a.id)}>Reabrir</button>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody></table></div>

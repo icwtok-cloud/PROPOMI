@@ -90,12 +90,12 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V46 |
-| apps/api/app/main.py | V18 |
+| INSTRUCCIONES.md | V47 |
+| apps/api/app/main.py | V19 |
 | apps/web/lib/types.ts | V7 |
-| apps/web/lib/api.ts | V13 |
-| apps/web/app/admin/page.tsx | V4 |
-| apps/api/app/main.py | V18 |
+| apps/web/lib/api.ts | V14 |
+| apps/web/app/admin/page.tsx | V5 |
+| apps/api/app/main.py | V19 |
 | apps/web/components/AgentDashboard.tsx | V11 |
 | apps/web/components/DemandPanel.tsx | V3 |
 | apps/web/components/PropertyCard.tsx | V3 |
@@ -204,6 +204,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 044 | Detalle (home + tienda): precio en rango si multi-agente + nota de N publicaciones. | page.tsx, tienda/[slug]/page.tsx | etapa-044_detalle-precio-rango-multi-agente | Pendiente de push |
 | 045 | Admin UX: métricas de colas, badges en tabs, notas en approve/reject/mark-sent, botón Recargar. Reasegura helpers cold-start en api.ts. | admin/page.tsx, api.ts | etapa-045_admin-metricas-notas-reload | Pendiente de push |
 | 046 | Admin directorio: GET `/admin/agencies?status=&q=` + pestaña Directorio con filtro y búsqueda. | main.py, api.ts, admin/page.tsx | etapa-046_admin-directorio-agencias | Pendiente de push |
+| 047 | Admin: POST `/admin/agencies/{id}/reopen` (→ PENDING) + botón Reabrir en Directorio. | main.py, api.ts, admin/page.tsx | etapa-047_admin-reabrir-agencia | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -240,8 +241,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 047)
+## Próximo paso lógico (candidato para etapa 048)
 
-- Admin: re-verificar / pasar REJECTED → PENDING desde directorio (si hace falta soporte).
-- Crawler: reformatear más adelante.
-- Lemon: en pausa.
+- Admin está cubierto para operación diaria (colas + directorio + reopen).
+- Bloqueadores externos: Lemon store, crawler reformateado, T5.1 precios.
+- Sin esos, el producto ya se puede usar en flujo manual (OTP, ofertas, reveal gratis/cupo).

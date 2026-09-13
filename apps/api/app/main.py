@@ -2405,6 +2405,24 @@ def admin_reject_agency(agency_id: str, payload: AgencyReviewIn | None = None, _
 
 
 
+
+@app.post("/admin/agencies/{agency_id}/reopen")
+def admin_reopen_agency(agency_id: str, payload: AgencyReviewIn | None = None, _: None = Depends(require_admin)):
+    """Soporte: vuelve una agencia REJECTED (o VERIFIED, si hace falta re-revisar)
+    a PENDING sin inventar leads gratis de nuevo."""
+    with Session(engine) as db:
+        a = db.get(Agency, agency_id)
+        if not a:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        a.verification_status = "PENDING"
+        a.verified = False
+        a.verification_reviewed_at = None
+        if payload and payload.notes:
+            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisión")
+        db.commit()
+        return agency_admin_dict(a)
+
+
 @app.get("/admin/agencies")
 def admin_list_agencies(
     status: str | None = None,

@@ -299,3 +299,11 @@ export async function listAdminAgencies(
   const path=`/admin/agencies${qs.toString()?`?${qs}`:''}`;
   return adminReq(path,adminKey);
 }
+
+export async function reopenAgency(id:string,adminKey:string,notes?:string):Promise<PendingAgency>{
+  if(!base)return {} as PendingAgency;
+  return adminReq(`/admin/agencies/${id}/reopen`,adminKey,{
+    method:'POST',
+    body:notes?JSON.stringify({notes}):undefined,
+  });
+}
