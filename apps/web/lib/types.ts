@@ -12,3 +12,6 @@ export type Opportunity={id:number;property_id?:string;user_id?:string;event:str
 // `User.google_verified_at` en cada POST /offers — la fuente de verdad
 // siempre es el servidor (sección 6.2.1 / Etapa 2), esto es solo UX.
 export type BuyerProfile={name:string;phone:string;email?:string;phoneVerified?:boolean;googleVerified?:boolean};
+// Etapa 3 v2: espejo del shape que devuelve GET /analytics/demand
+// (backend main.py v5) — rankings agregados y anónimos de búsquedas.
+export type DemandSummary={sampleSize:number;topZones:{zone:string;count:number}[];topTypes:{type:string;count:number}[];topOperations:{operation:string;count:number}[];avgResultCount:number|null};

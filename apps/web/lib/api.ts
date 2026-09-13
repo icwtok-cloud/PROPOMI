@@ -1,4 +1,4 @@
-import {Agency,BuyerProfile,EventName,Intent,Offer,Opportunity,Property,Role,Session} from './types';
+import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Offer,Opportunity,Property,Role,Session} from './types';
 
 import {PROPERTIES} from './data';
 const base=process.env.NEXT_PUBLIC_API_URL;
@@ -50,3 +50,10 @@ export async function verifyOtpBuyer(phone:string,code:string){if(!base)return {
 // que ser la sesión devuelta por verifyOtpBuyer, no la guest original.
 export async function linkGoogleIdentity(idToken:string,session:Session){if(!base)return {email:'demo@propomi.lat',google_verified:true};return req<{email:string;google_verified:boolean}>('/auth/google',{method:'POST',body:JSON.stringify({id_token:idToken})},session.token)}
 export async function getAnalytics(session?:Session|null){if(!base)return {properties:PROPERTIES.length,events:0,offers:0,funnel:{}};if(!session)throw new Error('Sesión de agente requerida');return req('/analytics/summary',undefined,session.token)}
+
+// Etapa 3 v2: lee el ranking de demanda (zonas/tipos/operaciones más
+// buscados) calculado por el backend sobre los eventos search_performed
+// que ya se vienen guardando desde GET /properties (Etapa 3 v1). En modo
+// demo (sin NEXT_PUBLIC_API_URL) devuelve un shape vacío pero válido para
+// no romper el panel mientras no hay backend real conectado.
+export async function getAnalyticsDemand(session?:Session|null){if(!base)return {sampleSize:0,topZones:[],topTypes:[],topOperations:[],avgResultCount:null} as DemandSummary;if(!session)throw new Error('Sesión de agente requerida');return req<DemandSummary>('/analytics/demand',undefined,session.token)}
