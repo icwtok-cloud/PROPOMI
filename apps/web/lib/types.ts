@@ -11,3 +11,5 @@ export type BuyerProfile={name:string;phone:string;email?:string;phoneVerified?:
 export type DemandSummary={sampleSize:number;topZones:{zone:string;count:number}[];topTypes:{type:string;count:number}[];topOperations:{operation:string;count:number}[];avgResultCount:number|null};
 export type PendingAgency={id:string;name:string;city:string;phone?:string|null;claimed:boolean;instagram?:string|null;websiteLink?:string|null;verificationStatus:string;verificationPriority:number;verificationNotes?:string|null;verificationReviewedAt?:string|null};
 export type ReviewQueueItem={property:Property;candidate:Property|null};
+
+export type Session={token:string;user:{id:string;phone:string;role:Role;agency_id:string}};
