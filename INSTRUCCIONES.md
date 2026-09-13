@@ -90,11 +90,11 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V14 |
+| INSTRUCCIONES.md | V15 |
 | apps/web/lib/types.ts | V2 |
 | apps/web/lib/api.ts | V2 |
 | apps/web/app/admin/page.tsx | V1 |
-| apps/api/app/main.py | V4 |
+| apps/api/app/main.py | V5 |
 | apps/web/components/AgentDashboard.tsx | V1 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/app/globals.css | V1 |
@@ -164,41 +164,47 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 012 | Cola de revisión manual para lo que el dedup de la etapa 011 marca: `GET /properties/review-queue` (X-Admin-Key) devuelve cada propiedad `needs_review=true` junto a su `possible_duplicate_of` ya resuelto (para comparar lado a lado sin consultar la base a mano), y `POST /properties/{id}/review` con `{"action": "confirm_duplicate"}` (la oculta reusando el mismo mecanismo del filtro de frescura — le pisa `last_seen_at` a más de 60 días atrás en vez de inventar un segundo mecanismo de ocultamiento) o `{"action": "not_duplicate"}` (limpia la marca y sigue circulando normal). `prop_dict()` ahora también expone `needsReview`/`possibleDuplicateOf` al frontend. Probado manualmente end-to-end: ingesta con dedup → aparece en la cola → resolver "not_duplicate" → cola vacía; ingesta con dedup → resolver "confirm_duplicate" → desaparece de `GET /properties`. Tests automáticos: mismos 9/11 de siempre (los 2 preexistentes sin relación). Nota: ningún frontend consume estos dos endpoints todavía — es panel interno puro, como el resto de la administración de agencias. | apps/api/app/main.py | etapa-012_cola-revision-duplicados | Pendiente de push |
 | 013 | Pantalla mínima de panel interno: `apps/web/app/admin/page.tsx` (nueva), protegida con la clave `X-Admin-Key` pedida una sola vez y guardada en `localStorage` (`propomi-admin-key`) — NUNCA Clerk/OTP, porque este panel no es de cara al comprador/agente. Dos pestañas: "Agencias pendientes" (consume `GET /admin/agencies/pending`, `POST /admin/agencies/{id}/approve`, `POST /admin/agencies/{id}/reject`, endpoints que ya existían desde la etapa 4 pero sin frontend) y "Posibles duplicados" (consume los dos endpoints nuevos de la etapa 012, muestra la propiedad nueva junto a su candidata a duplicado lado a lado, con botones "No es duplicado"/"Confirmar duplicado"). Se agregaron `PendingAgency` y `ReviewQueueItem` a `types.ts`, y `getPendingAgencies`/`approveAgency`/`rejectAgency`/`getReviewQueue`/`resolveReviewItem` a `api.ts` (usan un `adminReq()` nuevo, separado del `req()` de sesión porque el header es `X-Admin-Key` y no `Authorization: Bearer`). Reutiliza clases CSS ya existentes (`.tablewrap`, `.summarycard`, `.tab`, `.notice`, `.toast`, etc.) sin tocar `globals.css`. Verificado con `tsc --noEmit` (sin errores) y `next build` completo (build exitoso, 4 rutas generadas incluyendo `/admin`; el único warning es de autoprefixer en `globals.css`, preexistente y no relacionado). | apps/web/lib/types.ts, apps/web/lib/api.ts, apps/web/app/admin/page.tsx | etapa-013_panel-admin-agencias-y-duplicados | Pendiente de push |
 
-## Cierre de sesión (2026-09-13) — arrancar la próxima sesión directo desde acá
+| 014 | Arranque de subdominios por agencia (Etapa 4 del roadmap general de negocio — distinta de la numeración 000-014 de este archivo, ver aclaración de la etapa 009/013 anteriores). Parte backend únicamente (frontend queda para 015): columna nueva `Agency.slug` (única, nullable por compatibilidad), helper `slugify()` (minúsculas, sin acentos, solo `[a-z0-9-]`, fallback `"agencia"` si el nombre queda vacío) y `ensure_agency_slugs()` que rellena el slug de cualquier agencia que todavía no lo tenga (barato: no hace nada si no hay filas con `slug IS NULL`), resolviendo colisiones con sufijo `-2`, `-3`, etc. Se llama en los dos puntos donde se lee/expone una agencia por fuera del alta (`GET /agencies/{id}` autenticado y el endpoint nuevo). Las 3 agencias semilla ya tienen slug fijo (`inmobiliaria-norte`, `red-urbana`, `urbania`) para que las URLs no cambien entre reinicios. Nuevo endpoint público (sin auth) `GET /agencies/by-slug/{slug}` → `{id, name, city, slug, verificationStatus}` — solo datos ya públicos en otras pantallas, nunca teléfono/contacto — pensado para que un middleware de Next.js (etapa 015, todavía no escrito) resuelva `inmobiliaria-norte.propomi.lat` a un `agency_id` y de ahí pida `GET /properties?agency_id=<id>` (ese endpoint ya es público desde antes de esta etapa). `GET /agencies/{id}` autenticado ahora también devuelve `slug`, para que el propio agente pueda ver/copiar su URL de storefront desde "Mi cuenta" cuando esa parte del frontend se construya. Tests automáticos: 9/11 (los mismos 2 preexistentes, sin relación, confirmados de nuevo). Smoke test manual corrido en sandbox: `GET /agencies/by-slug/inmobiliaria-norte` → 200 con el slug correcto; slug inexistente → 404; `GET /properties?agency_id=a1` → 200 con las propiedades de esa agencia. | apps/api/app/main.py | etapa-014_slug-agencia-backend | Pendiente de push |
+
+## Cierre de sesión (2026-09-13, segunda sesión) — arrancar la próxima sesión directo desde acá
 
 El usuario va a abrir la próxima sesión pasando SOLO el repo, sin repetir contexto.
-Claude debe, sin preguntar nada más:
-
-1. Pedir en un bloque de código el raw link de este mismo archivo
-   (`INSTRUCCIONES.md`) si todavía no lo tiene en la conversación, para desbloquear
-   el resto del manifiesto (ver regla 10).
-2. Retomar directo en la etapa 008: pedir, en un bloque de código, los dos links
-   pendientes de la etapa 007/008 (no fueron entregados antes de cerrar esta
-   sesión):
+Claude debe, sin preguntar nada más, retomar directo en la etapa 015 (ver
+"Próximo paso lógico" abajo): middleware Next.js para subdominios por agencia,
+consumiendo el endpoint `GET /agencies/by-slug/{slug}` ya pusheado en la
+etapa 014. Antes de escribir código, pedir en un bloque de código los raw
+links que todavía no estén "ya vistos" en la conversación activa (ver regla 10):
 
 ```
-https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/OfferModal.tsx
-https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/BuyerIdentityModal.tsx
+https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/next.config.ts
+https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/api.ts
+https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/layout.tsx
 ```
 
-3. Con esos dos archivos, confirmar si el frontend bloquea visualmente "Enviar
-   oferta" hasta tener celular + Google verificados (el backend ya lo exige en
-   `POST /offers`), corregir si falta, entregar archivo(s) + comandos de
-   PowerShell (sin narrar el proceso, sin comandos de rollback salvo que se pidan),
-   y seguir encadenando etapas chicas sin volver a preguntar "qué sigue".
+## Próximo paso lógico (candidato para etapa 015)
 
-## Próximo paso lógico (candidato para etapa 014)
-
-- El panel `/admin` ya existe pero no está linkeado desde ningún lado del sitio
-  (hay que tipear la URL a mano) y no hay ningún dato real de agencia
-  verification_priority más allá del campo — no se probó `next build` con
-  Playwright/browser real, solo build+typecheck.
-- Candidato elegido para etapa 014: revisar si el checklist de doc 05 (Etapa 2)
-  tiene algo más pendiente aparte de freshness+dedup+cap de fotos+strip de
-  contacto (todo eso ya está) antes de dar la Etapa 2 por cerrada y pasar a la
-  Etapa 3 del roadmap general (verificación de agencias YA implementada desde
-  etapa 4, así que en rigor falta revisar si falta algo de subdominios por
-  agencia, que es la Etapa 4 del roadmap general — hay dos numeraciones
-  "Etapa N" corriendo en paralelo, una del roadmap de negocio y otra de estas
-  INSTRUCCIONES.md; conviene aclarar con el usuario a cuál se refiere cuando
-  diga "Etapa 2/3/4" de acá en más, para no confundir ambas).
+- Backend listo (etapa 014): `GET /agencies/by-slug/{slug}`. Falta la parte
+  de frontend/infra que el usuario ya adelantó que quiere para esta etapa:
+  1. `apps/web/middleware.ts` (nuevo): si el `host` de la request no es el
+     dominio raíz (`propomi.lat` / `propomi.vercel.app` / `localhost`), tomar
+     el subdominio, y hacer `rewrite` (no redirect, para que la URL visible
+     siga siendo `inmobiliaria-norte.propomi.lat`) hacia una ruta interna
+     nueva tipo `/tienda/[slug]` que llame a `GET /agencies/by-slug/{slug}`
+     y, si existe, a `GET /properties?agency_id=<id>` para armar un
+     storefront público mínimo (nombre de la agencia + grilla de
+     `PropertyCard` reutilizado, sin las acciones de "Mi cuenta").
+  2. Si el slug no resuelve a ninguna agencia (404 del endpoint), el
+     middleware deja pasar a la home normal en vez de mostrar una página
+     rota — a confirmar con el usuario si prefiere en cambio una página de
+     "agencia no encontrada" explícita.
+  3. **Lo que NO se puede hacer desde este chat, ya avisado al usuario**: la
+     infraestructura de DNS real (registro wildcard `*.propomi.lat` en
+     Namecheap/Cloudflare apuntando al mismo destino que `propomi.lat`, y
+     agregar el wildcard domain en la configuración de dominios de Vercel)
+     la tiene que armar el usuario en esos paneles — Claude solo entrega el
+     código del middleware y, si hace falta, los pasos textuales de qué
+     configurar en cada panel, pero no tiene acceso a esas cuentas.
+  4. Una vez el middleware+storefront estén andando, evaluar si vale la pena
+     mostrarle al agente su URL de subdominio (`{slug}.propomi.lat`) directo
+     en "Mi cuenta" (`AgentDashboard.tsx`), ya que el backend expone `slug`
+     desde esta etapa.

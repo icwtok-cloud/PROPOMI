@@ -5,6 +5,7 @@ import os
 import re
 import secrets
 import time
+import unicodedata
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -229,6 +230,14 @@ class Agency(Base):
     # Es un contador propio, separado del cupo de suscripción, para que no
     # se pisen ni se dupliquen entre sí (reveal_contact consume de acá primero).
     free_leads_remaining: Mapped[int] = mapped_column(Integer, default=0)
+    # Etapa 4 del roadmap general (subdominios por agencia): identificador
+    # público y estable para la URL de la agencia (ej. inmobiliaria-norte
+    # -> inmobiliaria-norte.propomi.lat vía middleware Next.js). Se genera
+    # una sola vez (ensure_agency_slugs / al crear la agencia) y nunca se
+    # recalcula solo, para no romper links/subdominios ya compartidos si el
+    # nombre de la agencia cambia después. Nullable por compatibilidad con
+    # filas viejas hasta que corre el backfill.
+    slug: Mapped[str | None] = mapped_column(String(160), nullable=True, unique=True)
 
 
 class AgencyPhone(Base):
@@ -404,6 +413,7 @@ def ensure_schema_columns() -> None:
             "subscription_started_at": "TIMESTAMP",
             "current_period_start": "TIMESTAMP",
             "free_leads_remaining": "INTEGER DEFAULT 0",
+            "slug": "VARCHAR(160)",
         },
         "contact_requests": {
             "requester_role": "VARCHAR(20) DEFAULT 'COMPRADOR'",
@@ -513,6 +523,40 @@ def normalize_phone(raw: str, default_country: str = "AR") -> str | None:
         return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
     except phonenumbers.NumberParseException:
         return None
+
+
+def slugify(name: str) -> str:
+    """Etapa 4 (subdominios por agencia): normaliza un nombre de agencia a un
+    slug apto para subdominio (minúsculas, sin acentos, solo [a-z0-9-]).
+    No garantiza unicidad por sí sola — eso lo resuelve el caller agregando
+    un sufijo numérico (ver ensure_agency_slugs)."""
+    normalized = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    normalized = normalized.lower().strip()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
+    return normalized or "agencia"
+
+
+def ensure_agency_slugs(db: Session) -> None:
+    """Backfill de slugs para agencias creadas antes de que existiera la
+    columna (o cualquier fila que por algún motivo haya quedado sin slug).
+    Se corre en cada request a los endpoints públicos de agencia (barato:
+    solo hace algo si hay filas con slug NULL) en vez de una migración
+    one-shot, para no depender de un script aparte que el usuario tendría
+    que acordarse de correr una vez."""
+    pending = db.scalars(select(Agency).where(Agency.slug.is_(None))).all()
+    if not pending:
+        return
+    existing = {s for (s,) in db.execute(select(Agency.slug).where(Agency.slug.isnot(None))).all()}
+    for a in pending:
+        base = slugify(a.name)
+        candidate = base
+        n = 2
+        while candidate in existing:
+            candidate = f"{base}-{n}"
+            n += 1
+        a.slug = candidate
+        existing.add(candidate)
+    db.commit()
 
 
 def hash_otp(code: str) -> str:
@@ -791,9 +835,9 @@ def ensure_seed(db: Session) -> None:
             row["contact_phone_normalized"] = normalize_phone(row["contact_phone_raw"])
             db.add(Property(**row))
         db.add_all([
-            Agency(id="a1", name="Inmobiliaria Norte", city="Buenos Aires", verified=True, claimed=True, phone=normalize_phone("11 5555-0101"), verification_status="VERIFIED", instagram="@inmobiliarianorte", free_leads_remaining=FREE_LEADS_ON_VERIFICATION),
-            Agency(id="a2", name="Red Urbana", city="Buenos Aires", verified=True, claimed=False, phone=normalize_phone("+54 9 11 5555-0202"), verification_status="VERIFIED", instagram="@redurbana", free_leads_remaining=FREE_LEADS_ON_VERIFICATION),
-            Agency(id="a3", name="Urbania", city="Buenos Aires", verified=False, claimed=False, phone=normalize_phone("11 5555-0303"), verification_status="PENDING"),
+            Agency(id="a1", name="Inmobiliaria Norte", slug="inmobiliaria-norte", city="Buenos Aires", verified=True, claimed=True, phone=normalize_phone("11 5555-0101"), verification_status="VERIFIED", instagram="@inmobiliarianorte", free_leads_remaining=FREE_LEADS_ON_VERIFICATION),
+            Agency(id="a2", name="Red Urbana", slug="red-urbana", city="Buenos Aires", verified=True, claimed=False, phone=normalize_phone("+54 9 11 5555-0202"), verification_status="VERIFIED", instagram="@redurbana", free_leads_remaining=FREE_LEADS_ON_VERIFICATION),
+            Agency(id="a3", name="Urbania", slug="urbania", city="Buenos Aires", verified=False, claimed=False, phone=normalize_phone("11 5555-0303"), verification_status="PENDING"),
         ])
         db.commit()
     else:
@@ -1486,16 +1530,35 @@ def opportunities(agency_id: str, session: dict[str, Any] = Depends(require_agen
         return {"active": active, "eventCount": len(events), "opportunities": [{"id":e.id,"property_id":e.property_id,"user_id":e.user_id,"event":e.name,"created_at":e.created_at.isoformat(),"context":e.context} for e in events[:50]], "propertyIds": property_ids}
 
 
+@app.get("/agencies/by-slug/{slug}")
+def agency_by_slug(slug: str):
+    """Etapa 4 (subdominios por agencia): lookup público, sin auth, para que
+    el storefront de una agencia (ej. inmobiliaria-norte.propomi.lat, resuelto
+    por un middleware de Next.js que todavía no existe en el frontend) pueda
+    traducir el subdominio a un agency_id y después pedir sus propiedades con
+    GET /properties?agency_id=<id> (ese endpoint ya es público desde antes).
+    Solo expone datos ya públicos en otras pantallas (nombre/ciudad/estado de
+    verificación) — nunca teléfono ni ningún dato de contacto."""
+    with Session(engine) as db:
+        ensure_seed(db)
+        ensure_agency_slugs(db)
+        a = db.scalars(select(Agency).where(Agency.slug == slug)).first()
+        if not a:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        return {"id": a.id, "name": a.name, "city": a.city, "slug": a.slug, "verificationStatus": a.verification_status}
+
+
 @app.get("/agencies/{agency_id}")
 def agency(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
     if session["agency_id"] != agency_id: raise HTTPException(status_code=403, detail="Agencia no autorizada")
     with Session(engine) as db:
         a = db.get(Agency, agency_id)
         if not a: raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        ensure_agency_slugs(db)
         return {
             "id": a.id, "name": a.name, "city": a.city, "verified": a.verified, "claimed": a.claimed, "phone": a.phone,
             "verificationStatus": a.verification_status, "instagram": a.instagram, "websiteLink": a.website_link,
-            "freeLeadsRemaining": a.free_leads_remaining,
+            "freeLeadsRemaining": a.free_leads_remaining, "slug": a.slug,
         }
 
 
