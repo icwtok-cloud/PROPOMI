@@ -60,11 +60,22 @@ Reglas de entrega, todas obligatorias:
 1. **Windows + PowerShell siempre.** El usuario copia y pega, no adapta
    nada. Nunca dar comandos de bash/mac ni pedirle que "reemplace la ruta"
    — usar `$env:USERPROFILE\...` para que se resuelva solo.
-2. **Versionado creciente por archivo.** Cada archivo que se reemplaza
-   lleva un sufijo de versión que sube respecto de la entrega anterior de
-   ESE archivo puntual (no un número global del proyecto): `main_v2.py`,
-   `main_v3.py`, `OfferModal_v2.tsx`, etc. `PROGRESS_LOG.md` es la fuente
-   de verdad de qué versión de cada archivo está pusheada.
+2. **Versionado creciente por archivo — y esto aplica también a los
+   archivos "fijos" como `CLAUDE.md` y `PROGRESS_LOG.md`.** Nunca repetir
+   un nombre de descarga que ya se usó antes en la conversación, ni
+   siquiera para un archivo que en el repo siempre se llama igual —
+   Windows le agrega automáticamente `(1)`, `(2)`, etc. al repetirse, y
+   eso obliga al usuario a borrar el archivo viejo y renombrar el nuevo a
+   mano cada vez. Regla concreta:
+   - Todo archivo que se entregue para bajar lleva un sufijo de versión
+     único en el nombre de descarga: `main_v2.py`, `main_v3.py`,
+     `CLAUDE_v2.md`, `CLAUDE_v3.md`, `PROGRESS_LOG_v4.md`, etc.
+   - El paso de PowerShell que lo copia al repo es el que le pone el
+     nombre final correcto (`CLAUDE.md`, sin sufijo) vía `Copy-Item
+     -Destination` — el usuario nunca tiene que renombrar nada a mano.
+   - El número de versión de cada archivo es propio de ESE archivo, no un
+     contador global del proyecto (ver regla de versionado más abajo,
+     donde ya se explica esto para el código).
 3. **Si la entrega incluye más de un archivo, empaquetar en un .zip** y
    los pasos de PowerShell tienen que incluir la extracción
    (`Expand-Archive`) antes de copiar cada archivo a su carpeta real dentro

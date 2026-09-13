@@ -16,6 +16,22 @@ Formato de cada entrada:
 
 ---
 
+## 2026-09-13 — Corrección de proceso: nombres de descarga únicos
+
+- El usuario marcó que `CLAUDE.md` y `PROGRESS_LOG.md` se venían entregando
+  siempre con el mismo nombre de descarga, lo cual en Windows genera
+  `(1)`, `(2)` automáticos y obliga a borrar/renombrar a mano cada vez.
+- **Corrección aplicada en `CLAUDE.md` (ahora v3):** todo archivo que se
+  entrega para bajar —incluidos los "fijos" como `CLAUDE.md` y
+  `PROGRESS_LOG.md`— lleva de acá en más un sufijo de versión único en el
+  nombre de descarga (`CLAUDE_v3.md`, `PROGRESS_LOG_v3.md`, etc.). El paso
+  de PowerShell que copia el archivo al repo es el que le pone el nombre
+  final correcto sin sufijo.
+- Archivos tocados: `CLAUDE.md` (v3), `PROGRESS_LOG.md` (v3 — este mismo
+  archivo).
+
+---
+
 ## 2026-09-13 — Etapa 1 v2: modelo de datos ampliado (apps/api/app/main.py)
 
 - **Archivo pusheado:** `apps/api/app/main.py` → versión **v2** (la anterior,
