@@ -121,3 +121,39 @@ export async function getAgencyBySlug(slug:string):Promise<Agency>{
   if(!base){const a=DEMO_AGENCIES_BY_SLUG[slug];if(!a){const err:any=new Error('Agencia no encontrada');err.status=404;throw err}return a}
   return req<Agency>(`/agencies/by-slug/${slug}`);
 }
+
+
+export type OnboardingInfo={
+  status:string;
+  propertyTitle:string;
+  propertyZone:string;
+  amount:number;
+  currency:string;
+  agencyId?:string|null;
+  agencyName?:string|null;
+  expiresInDays?:number;
+  message?:string;
+};
+
+// T6.2: resumen público del cold-start (sin teléfonos ni datos de comprador).
+export async function getOnboarding(token:string):Promise<OnboardingInfo>{
+  if(!base){
+    return {
+      status:'PENDING',propertyTitle:'Departamento demo',propertyZone:'Palermo',
+      amount:120000,currency:'USD',agencyId:'a2',agencyName:'Red Urbana',expiresInDays:14,
+    };
+  }
+  return req<OnboardingInfo>(`/onboarding/${encodeURIComponent(token)}`);
+}
+
+export async function completeOnboarding(
+  token:string,
+  data:{instagram:string;website_link?:string;name?:string},
+  session:Session,
+):Promise<{status:string;agencyId:string;agencyName:string;verificationStatus:string;message:string}>{
+  if(!base){
+    return {status:'CLAIMED',agencyId:session.user.agency_id,agencyName:'Demo',verificationStatus:'PENDING',message:'Perfil reclamado (demo).'};
+  }
+  return req(`/onboarding/${encodeURIComponent(token)}/complete`,{method:'POST',body:JSON.stringify(data)},session.token);
+}
+

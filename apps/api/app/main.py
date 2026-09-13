@@ -109,7 +109,8 @@ OTP_TTL_SECONDS = 5 * 60
 OTP_RATE_WINDOW = 10 * 60
 OTP_MAX_REQUESTS = 3
 MAX_PROPERTY_IMAGES = 5  # doc 06.1: hasta 5 fotos por propiedad, decisión ya tomada
-FREE_LEADS_ON_VERIFICATION = 10  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
+FREE_LEADS_ON_VERIFICATION = 10
+ONBOARDING_TOKEN_DAYS = 14  # T6.2: token de onboarding expira a los 14 días  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
 PROPERTY_FRESHNESS_DAYS = 60  # doc 05 (Etapa 2): filtro de cold-start — una propiedad
 # que el crawler no vuelve a ver hace más de 60 días se considera potencialmente
 # vendida/dada de baja en el portal de origen y se oculta de la búsqueda pública
@@ -2208,4 +2209,107 @@ def admin_cold_start_mark_sent(
             task.notes = payload.notes
         db.commit()
         return {"id": task.id, "status": task.status, "sentAt": task.sent_at.isoformat()}
+
+
+@app.get("/onboarding/{token}")
+def get_onboarding(token: str):
+    """T6.2: resumen público del cold-start. Nunca expone teléfonos ni
+    datos del comprador — solo lo necesario para motivar el claim."""
+    with Session(engine) as db:
+        task = db.scalar(select(ColdStartTask).where(ColdStartTask.onboarding_token == token))
+        if not task:
+            raise HTTPException(status_code=404, detail="Link inválido o vencido")
+        created = task.created_at
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if created and datetime.now(timezone.utc) - created > timedelta(days=ONBOARDING_TOKEN_DAYS):
+            if task.status in {"PENDING", "SENT"}:
+                task.status = "EXPIRED"
+                db.commit()
+            raise HTTPException(status_code=410, detail="Este link de onboarding expiró")
+        if task.status == "CLAIMED":
+            return {
+                "status": "CLAIMED",
+                "propertyTitle": task.property_title,
+                "propertyZone": task.property_zone,
+                "amount": task.amount,
+                "currency": task.currency,
+                "message": "Este perfil ya fue reclamado. Entrá a /agencia con tu teléfono.",
+            }
+        if task.status == "EXPIRED":
+            raise HTTPException(status_code=410, detail="Este link de onboarding expiró")
+        agency_name = None
+        if task.agency_id:
+            agency = db.get(Agency, task.agency_id)
+            agency_name = agency.name if agency else None
+        return {
+            "status": task.status,
+            "propertyTitle": task.property_title,
+            "propertyZone": task.property_zone,
+            "amount": task.amount,
+            "currency": task.currency,
+            "agencyId": task.agency_id,
+            "agencyName": agency_name,
+            "expiresInDays": ONBOARDING_TOKEN_DAYS,
+        }
+
+
+class OnboardingCompleteIn(BaseModel):
+    instagram: str = Field(min_length=2, max_length=120)
+    website_link: str | None = Field(default=None, max_length=300)
+    name: str | None = Field(default=None, max_length=180)
+
+
+@app.post("/onboarding/{token}/complete")
+def complete_onboarding(
+    token: str,
+    payload: OnboardingCompleteIn,
+    session: dict[str, Any] = Depends(require_agent),
+):
+    """T6.2: el agente (ya autenticado por OTP con el teléfono de la
+    agencia) completa Instagram/link, marca claimed y consume el token.
+    Token de un solo uso: status → CLAIMED."""
+    with Session(engine) as db:
+        task = db.scalar(select(ColdStartTask).where(ColdStartTask.onboarding_token == token))
+        if not task:
+            raise HTTPException(status_code=404, detail="Link inválido o vencido")
+        created = task.created_at
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if created and datetime.now(timezone.utc) - created > timedelta(days=ONBOARDING_TOKEN_DAYS):
+            task.status = "EXPIRED"
+            db.commit()
+            raise HTTPException(status_code=410, detail="Este link de onboarding expiró")
+        if task.status == "CLAIMED":
+            raise HTTPException(status_code=400, detail="Este perfil ya fue reclamado")
+        if task.status == "EXPIRED":
+            raise HTTPException(status_code=410, detail="Este link de onboarding expiró")
+        if not task.agency_id:
+            raise HTTPException(status_code=400, detail="Esta invitación no tiene agencia asociada todavía")
+        if session.get("agency_id") != task.agency_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Entrá con el teléfono de la agencia asociada a esta invitación.",
+            )
+        agency = db.get(Agency, task.agency_id)
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        agency.claimed = True
+        agency.instagram = payload.instagram.strip() or None
+        if payload.website_link is not None:
+            agency.website_link = payload.website_link.strip() or None
+        if payload.name and payload.name.strip():
+            agency.name = payload.name.strip()
+        # Si sigue PENDING de verificación, queda en cola; no auto-VERIFIED.
+        if agency.verification_status not in {"VERIFIED", "REJECTED"}:
+            agency.verification_status = "PENDING"
+        task.status = "CLAIMED"
+        db.commit()
+        return {
+            "status": "CLAIMED",
+            "agencyId": agency.id,
+            "agencyName": agency.name,
+            "verificationStatus": agency.verification_status,
+            "message": "Perfil reclamado. Completá la verificación desde el panel de agencia si todavía está pendiente.",
+        }
 

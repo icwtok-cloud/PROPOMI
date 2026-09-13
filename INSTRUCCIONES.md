@@ -90,17 +90,18 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V25 |
-| apps/api/app/main.py | V10 |
+| INSTRUCCIONES.md | V26 |
+| apps/api/app/main.py | V11 |
 | apps/web/lib/types.ts | V3 |
-| apps/web/lib/api.ts | V5 |
+| apps/web/lib/api.ts | V6 |
 | apps/web/app/admin/page.tsx | V1 |
-| apps/api/app/main.py | V10 |
+| apps/api/app/main.py | V11 |
 | apps/web/components/AgentDashboard.tsx | V4 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/app/globals.css | V1 |
 | apps/web/middleware.ts | V1 (nuevo) |
 | apps/web/app/tienda/[slug]/page.tsx | V1 (nuevo) |
+| apps/web/app/onboarding/[token]/page.tsx | V1 (nuevo) |
 | apps/web/components/AgentOfferActions.tsx | V1 |
 
 ## Manifiesto de archivos del repo (raw links ya conocidos)
@@ -180,6 +181,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 023 | T7.2 frontend: pestaña Propiedades en AgentDashboard + createProperty() en api.ts. Formulario de alta manual (título/zona/ciudad/precio/superficie/ambientes/foto/descripción) llama POST /properties. Bloqueado si agencia no VERIFIED. Descripción tipada → backend sanitize_free_text. | apps/web/lib/api.ts, apps/web/components/AgentDashboard.tsx | etapa-023_formulario-alta-manual-propiedades | Pendiente de push |
 | 024 | Listado de propiedades propias en pestaña Propiedades del dashboard: GET /properties?agency_id= al cargar sesión y tras publicar. Muestra título/precio/zona/superficie/ambientes + flag needsReview. | apps/web/components/AgentDashboard.tsx | etapa-024_listado-propiedades-agencia | Pendiente de push |
 | 025 | T6.1 cold start: tabla `cold_start_tasks` + al crear oferta sobre agencia no reclamada (o sin agency con teléfono scrapeado) se genera tarea PENDING con resumen (monto/título/zona) + token onboarding. GET `/admin/cold-start/pending` (único lugar que expone targetPhone). POST mark-sent. Comprador NUNCA viaja en la tarea. | apps/api/app/main.py | etapa-025_cold-start-notification-task | Pendiente de push |
+| 026 | T6.2 onboarding: GET `/onboarding/{token}` (público, sin teléfonos) + POST `/onboarding/{token}/complete` (agente OTP, Instagram requerido, token un solo uso → CLAIMED, expira 14 días). Página `/onboarding/[token]` con OTP + form. | apps/api/app/main.py, apps/web/lib/api.ts, apps/web/app/onboarding/[token]/page.tsx | etapa-026_onboarding-token-claim | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -216,7 +218,7 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 026)
+## Próximo paso lógico (candidato para etapa 027)
 
-- T6.2: página `/onboarding/[token]` para que la agencia reclame el perfil (claim + Instagram) y entre a cola de verificación. Token de un solo uso / expiración.
-- Lemon Squeezy: checklist operativo cuando aprueben.
+- Mostrar cola cold-start en panel `/admin` (GET `/admin/cold-start/pending` + mark-sent).
+- Lemon Squeezy: checklist operativo cuando aprueben la cuenta.
