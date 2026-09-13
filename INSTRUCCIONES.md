@@ -90,7 +90,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V42 |
+| INSTRUCCIONES.md | V43 |
 | apps/api/app/main.py | V17 |
 | apps/web/lib/types.ts | V7 |
 | apps/web/lib/api.ts | V11 |
@@ -98,7 +98,7 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 | apps/api/app/main.py | V17 |
 | apps/web/components/AgentDashboard.tsx | V11 |
 | apps/web/components/DemandPanel.tsx | V3 |
-| apps/web/components/PropertyCard.tsx | V2 |
+| apps/web/components/PropertyCard.tsx | V3 |
 | apps/web/components/OfferModal.tsx | V2 |
 | apps/web/app/globals.css | V1 |
 | apps/web/middleware.ts | V1 (nuevo) |
@@ -200,6 +200,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 040 | Galería de fotos en detalle (home + tienda): thumbs de `images[]`, contador n/N. | page.tsx, tienda/[slug]/page.tsx | etapa-040_galeria-fotos-detalle | Pendiente de push |
 | 041 | Alta manual: hasta 5 URLs de foto (una por línea) → `images[]` para la galería. | AgentDashboard.tsx | etapa-041_multi-foto-alta-manual | Pendiente de push |
 | 042 | Thumbs + contador de fotos en listado «Tus publicaciones» del agente. | AgentDashboard.tsx | etapa-042_thumbs-listado-propiedades-agente | Pendiente de push |
+| 043 | Badge «Multi-agente · N» en PropertyCard + copy de rango de precio. | PropertyCard.tsx | etapa-043_badge-multi-agente-card | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -236,8 +237,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 043)
+## Próximo paso lógico (candidato para etapa 044)
 
 - Lemon: en pausa hasta verificación de store.
 - T5.1: PENDIENTE DE CONFIRMACIÓN.
-- UX: badge «multi-agente» en PropertyCard cuando hay groupMemberCount.
+- Si querés parar de pulir UX, indicar prioridad de negocio (crawler, admin, etc.).
