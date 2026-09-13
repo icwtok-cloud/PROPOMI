@@ -27,13 +27,21 @@ algo como **"Seguí las instrucciones y continuemos"**, hacé esto en orden:
    y la sección 11 (checklist de calidad).
 2. Leé completo `PROGRESS_LOG.md` — ahí está el historial real de qué se
    entregó, en qué etapa del roadmap vamos, y qué decisiones se tomaron sobre
-   la marcha. El roadmap oficial (orden de dependencia) está en la sección 10
+   la marcha. Es el ÚNICO log vigente (ver nota sobre `PROGRESS.md` abajo).
+   El roadmap oficial (orden de dependencia) está en la sección 10
    de `docs/PLAN_MAESTRO.md`; `PROGRESS_LOG.md` te dice en qué punto de ese
    roadmap está el repo HOY.
 3. Confirmá con el usuario en qué etapa retomar (por default: la primera
    etapa del roadmap que no esté marcada como cerrada en `PROGRESS_LOG.md`).
 4. Trabajá en partes chicas, un archivo o un grupo chico de archivos por vez
    — nunca prometas ni asumas cambios sobre archivos que no viste.
+
+**Nota sobre `PROGRESS.md`:** existe un archivo viejo `PROGRESS.md` en la raíz
+que quedó desactualizado (se dejó de usar después de la entrega de
+"AgencyPhone"). No es el log vigente. El único log vigente es
+`PROGRESS_LOG.md`. Si en algún momento hay que decidir cuál refleja la
+realidad del repo, la fuente de verdad final es siempre `git log --oneline`,
+no ningún log en markdown — los logs son un resumen humano, no la verdad.
 
 ## Por qué existe este archivo
 
@@ -68,8 +76,9 @@ El flujo real, en orden, es siempre:
    público (puede leerlo, pero no editarlo ahí para el usuario — igual
    entrega el archivo completo por chat).
 2. Claude devuelve el archivo completo listo para reemplazar (nunca un
-   diff/parche), respetando el checklist de la sección 11 del plan maestro
-   aplicado por revisión manual (ver limitación de arriba).
+   diff/parche salvo que se indique explícitamente lo contrario), respetando
+   el checklist de la sección 11 del plan maestro aplicado por revisión
+   manual (ver limitación de arriba).
 3. Claude entrega, junto con el archivo, los **comandos exactos de
    PowerShell** para copiar el archivo a su ruta real dentro del repo,
    hacer `git add` / `git commit` / `git push` — ver reglas de entrega más
@@ -79,9 +88,28 @@ El flujo real, en orden, es siempre:
    decisiones quedaron tomadas) — esto es lo que le permite a una sesión
    futura, con cero contexto previo, retomar exactamente donde quedó.
 
-## Versión de este archivo: v5
+## Versión de este archivo: v6
 
-## Trabajar en partes CHICAS (regla nueva, crítica)
+## Regla de comunicación y forma de trabajo (NUEVA — crítica, v6)
+
+El usuario pidió explícitamente, más de una vez, que **todo lo que se acuerda,
+corrige o define durante una sesión de chat quede anotado en este archivo (o
+en `PROGRESS_LOG.md` si es histórico de una entrega puntual) en el momento en
+que se acuerda** — no reexplicado la próxima vez, no asumido de memoria por
+Claude, no repetido por el usuario.
+
+Regla concreta: **cualquier corrección, preferencia, o acuerdo de forma de
+trabajo que surja en el chat (no código, no una etapa del roadmap — la forma
+en que se trabaja) se escribe en la próxima versión de `CLAUDE.md` ANTES de
+seguir con lo que se estaba haciendo**, aunque sea una sola línea. Ejemplos ya
+capturados así: versionado por sufijo, trabajar en partes chicas, no
+preguntar por rutas ya fijadas, etc. Si el usuario tiene que decir "esto ya te
+lo expliqué antes" o "anotalo para la próxima", eso es una falla de proceso
+de la sesión anterior, no algo a resolver solo en el momento — hay que
+buscar en `CLAUDE.md` si ya estaba y no se leyó, o agregarlo si nunca se
+anotó.
+
+## Trabajar en partes CHICAS
 
 El usuario reportó que sesiones largas de código se cortan antes de
 terminar, obligándolo a empezar de cero en una sesión nueva sin haber
@@ -138,13 +166,13 @@ Reglas de entrega, todas obligatorias:
    mano cada vez. Regla concreta:
    - Todo archivo que se entregue para bajar lleva un sufijo de versión
      único en el nombre de descarga: `main_v2.py`, `main_v3.py`,
-     `CLAUDE_v2.md`, `CLAUDE_v3.md`, `PROGRESS_LOG_v4.md`, etc.
+     `CLAUDE_v6.md`, `PROGRESS_LOG_v8.md`, etc.
    - El paso de PowerShell que lo copia al repo es el que le pone el
      nombre final correcto (`CLAUDE.md`, sin sufijo) vía `Copy-Item
-     -Destination` — el usuario nunca tiene que renombrar nada a mano.
+     -Destination` (o `Move-Item -Force` si el destino puede ya existir)
+     — el usuario nunca tiene que renombrar nada a mano.
    - El número de versión de cada archivo es propio de ESE archivo, no un
-     contador global del proyecto (ver regla de versionado más abajo,
-     donde ya se explica esto para el código).
+     contador global del proyecto.
 3. **Si la entrega incluye más de un archivo, empaquetar en un .zip** y
    los pasos de PowerShell tienen que incluir la extracción
    (`Expand-Archive`) antes de copiar cada archivo a su carpeta real dentro
@@ -153,11 +181,17 @@ Reglas de entrega, todas obligatorias:
 4. **Los pasos de push van siempre completos y listos para pegar:** entrar
    a la carpeta del repo, copiar/mover cada archivo a su ruta real dentro
    de `apps/...`, `git add` de esos paths puntuales, `git commit` con un
-   mensaje que incluya la etapa y la versión (ej. `"Etapa 1 v2: modelo de
-   datos ampliado"`), `git push origin main`.
+   mensaje que incluya la etapa y la versión (ej. `"Etapa 3 v1: evento
+   search_performed"`), `git push origin main`.
 5. **Después de cada push confirmado, sumar una entrada nueva en
    `PROGRESS_LOG.md`** (nunca reemplazar entradas viejas) con lo que se
    hizo, qué versión de qué archivo quedó pusheada, y qué sigue.
+6. **Regla técnica de PowerShell (NUEVA — v6):** nunca dar un comando que
+   lea y escriba el mismo archivo en una sola tubería (ej.
+   `Get-Content X | Set-Content X`) — PowerShell falla con "el proceso no
+   puede tener acceso al archivo porque está siendo utilizado en otro
+   proceso". Siempre escribir a un archivo temporal distinto y después
+   `Move-Item temp.md destino.md -Force`.
 
 ## Si algo es ambiguo
 
