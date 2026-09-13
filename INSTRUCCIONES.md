@@ -1,65 +1,116 @@
 # INSTRUCCIONES DEL PROYECTO — PROPOMI
 
-> Este archivo es la memoria persistente entre sesiones. Al iniciar una nueva sesión,
-> el usuario solo pasa el link del repo y dice "seguí las instrucciones". Claude debe
-> leer este archivo primero, ubicar en qué etapa quedó el proyecto, y continuar sin
-> pedir que se repitan estas reglas.
+> Memoria persistente entre sesiones. Al iniciar sesión, el usuario solo pasa el
+> link del repo (o de este archivo) y dice "seguí las instrucciones". Claude lee
+> este archivo primero, ubica en qué etapa quedó el proyecto, y continúa sin pedir
+> que se repitan estas reglas ni los links de archivos ya listados en el manifiesto.
 
 ## Reglas de trabajo (fijas, no se repiten)
 
-1. El usuario abre sesión enviando el repo. Se debe continuar exactamente donde quedó
-   la última sesión (ver sección "Historial de etapas" abajo).
+1. El usuario abre sesión enviando el repo. Se continúa exactamente donde quedó
+   la última sesión (ver "Historial de etapas").
 2. No hay CLI ni conexión directa al repo desde Claude. El usuario tiene el repo
    clonado localmente y pushea manualmente. Claude nunca asume que puede pushear él mismo.
 3. Cada archivo entregado para pushear va acompañado de los comandos exactos de
-   PowerShell (Windows) para que el usuario los copie y pegue tal cual.
-4. Cada actualización/push, por mínimo que sea, se anota en la sección "Historial de
-   etapas" de este archivo (fecha lógica de la etapa, qué se hizo, archivos tocados).
-5. Cada nueva actualización debe tener un nombre de commit/reversión claro y
-   descriptivo (convención abajo), para poder revertir puntualmente si hace falta.
-6. Toda instrucción o regla nueva que dé el usuario se anota en este archivo antes
-   de seguir, para que persista en próximas sesiones.
-7. Claude decide el próximo paso lógico de construcción por su cuenta. No debe
-   consultarle al usuario "qué sigue" — solo ejecutar y avisar qué hizo.
-8. Las etapas de construcción deben ser PEQUEÑAS (cambios acotados), para no perder
-   progreso si una sesión se corta a mitad de camino.
+   PowerShell (Windows) para copiar, agregar, commitear y pushear.
+4. Cada actualización/push, por mínimo que sea, se anota en "Historial de etapas"
+   (archivos tocados, nombre de commit, estado).
+5. Cada nueva actualización tiene un nombre de commit claro y su reversión asociada
+   (convención abajo), para poder revertir puntualmente.
+6. Toda instrucción o regla nueva del usuario se anota en este archivo ANTES de
+   seguir, sumándose a lo ya existente (nunca se pisa lo anterior sin querer).
+7. Claude decide el próximo paso lógico de construcción por su cuenta. No consulta
+   "qué sigue" — ejecuta y avisa qué hizo.
+8. Las etapas de construcción son PEQUEÑAS, para no perder progreso si una sesión
+   se corta a mitad de camino.
+9. **Versionado de archivos entregados**: cada vez que Claude entrega un archivo
+   para pushear (incluido este mismo archivo de instrucciones), el nombre de
+   descarga lleva un sufijo de versión `_Vn` (V1, V2, V3...) que nunca se repite,
+   para que no se pisen archivos en la carpeta de Descargas de Windows. La versión
+   vigente de cada archivo se anota en la tabla "Versionado de archivos" más abajo.
+   El nombre final dentro del repo (ej. `INSTRUCCIONES.md`, `types.ts`) NUNCA lleva
+   el sufijo `_Vn` — el sufijo es solo para el archivo de descarga temporal; los
+   comandos de PowerShell ya se encargan de renombrarlo al copiarlo al repo.
+10. **Manifiesto de archivos (raw links)**: Claude no puede construir ni adivinar
+    URLs raw de GitHub — su herramienta solo puede abrir URLs que ya aparecieron
+    antes en la conversación (mensaje del usuario, o texto dentro de un archivo ya
+    fetcheado). Por eso, todo raw link de un archivo del repo que el usuario haya
+    pasado alguna vez queda anotado permanentemente en la sección "Manifiesto de
+    archivos del repo" de este documento. Como ESTE archivo se fetchea al inicio de
+    cada sesión, los links quedan disponibles para Claude sin que el usuario tenga
+    que volver a pegarlos. Si Claude necesita un archivo que todavía no está en el
+    manifiesto, ahí sí debe pedir puntualmente ese raw link (y agregarlo al
+    manifiesto en cuanto lo reciba).
 
 ## Convención de nombres de commit / reversión
 
 Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<descripcion-corta>`
 
-Ejemplo:
-- Commit: `etapa-004_agrega-endpoint-ofertas`
-- Reversión asociada: `revert-etapa-004_agrega-endpoint-ofertas`
+## Versionado de archivos entregados (para no pisar descargas)
 
-## Cómo Claude accede al código en cada sesión (regla de método, agregada por el usuario)
+| Archivo (nombre real en el repo) | Última versión de descarga entregada |
+|---|---|
+| INSTRUCCIONES.md | V2 |
+| apps/web/lib/types.ts | V1 |
 
-- No hay CLI ni conexión de Claude al repo. Claude NO puede fetchear URLs "raw" que
-  él mismo construya: su herramienta de lectura web solo abre URLs que ya aparecieron
-  antes en la conversación (por búsqueda o por mensaje del usuario).
-- Por eso, el usuario debe pegar directamente los links raw de GitHub de los archivos
-  relevantes, con este formato (sacar `/blob/` y cambiar el dominio):
-  `https://github.com/<user>/<repo>/blob/<rama>/<ruta>`
-  → `https://raw.githubusercontent.com/<user>/<repo>/<rama>/<ruta>`
-- Para saber qué archivos existen en una carpeta, el usuario corre en PowerShell
-  parado en la raíz del repo: `Get-ChildItem -Recurse .\apps\web -Name` (o la carpeta
-  que corresponda) y pega el resultado.
-- Al iniciar sesión, si Claude necesita ver contenido de archivos para decidir el
-  siguiente paso, debe pedir puntualmente esos raw links (no relanzar todas las
-  preguntas de reglas generales, que ya están accesibles acá).
+## Manifiesto de archivos del repo (raw links ya conocidos)
+
+Formato de conversión manual si hace falta un archivo nuevo:
+`https://github.com/<user>/<repo>/blob/<rama>/<ruta>` → cambiar dominio a
+`raw.githubusercontent.com` y sacar `/blob/`.
+
+Raíz del repo:
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/README.md
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/package.json
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/render.yaml
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/vercel.json
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/.gitignore
+
+apps/api/app/ (backend FastAPI — solo se conoce este archivo por ahora):
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/api/app/main.py
+
+apps/web/ (frontend Next.js — estructura completa ya relevada, links por confirmar
+uno a uno a medida que se necesiten; los ya usados están arriba):
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/package.json
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/next.config.ts
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/tsconfig.json
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/.env.example
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/layout.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/page.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/globals.css
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/app/agencia/page.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/AgentDashboard.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/AgentOfferActions.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/BuyerIdentityModal.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/ComparePanel.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/DemandPanel.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/OfferModal.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/components/PropertyCard.tsx
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/api.ts ✅ (ya leído)
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/data.ts
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/google.ts
+- https://raw.githubusercontent.com/icwtok-cloud/PROPOMI/main/apps/web/lib/types.ts ✅ (ya leído, ya corregido en etapa 001)
+
+> NOTA IMPORTANTE: estos links todavía no fueron probados uno por uno (salvo los
+> marcados ✅) porque hasta ahora Claude no podía adivinar URLs raw. A partir de que
+> este archivo se fetchee al inicio de sesión, cualquiera de estos links pasa a ser
+> "ya visto" y Claude puede intentar abrirlo directamente. Si alguno da error 404
+> (por ejemplo por un typo de mayúsculas/minúsculas en la ruta real), Claude debe
+> avisar y pedir que el usuario confirme el nombre exacto con
+> `Get-ChildItem -Recurse .\apps -Name`.
 
 ## Historial de etapas
 
 | Etapa | Descripción | Archivos tocados | Commit | Estado |
 |-------|-------------|-------------------|--------|--------|
 | 000 | Creación de este archivo de instrucciones y reglas del proyecto | INSTRUCCIONES.md | etapa-000_instrucciones-iniciales | Pendiente de push |
-| 001 | Fix de contrato API↔Web: `types.ts` no tenía `images[]` ni `originPublishedAt` que el backend (`prop_dict` en main.py) ya devuelve hace etapas. También se completó el tipo `Agency` (faltaban `verificationStatus`, `instagram`, `websiteLink`, `freeLeadsRemaining`, ya usados por el backend) y se agregó `'search_performed'` a `EventName`. | apps/web/lib/types.ts | etapa-001_fix-contrato-property-agency-types | Pendiente de push |
+| 001 | Fix de contrato API↔Web: `types.ts` no tenía `images[]` ni `originPublishedAt` que el backend (`prop_dict` en main.py) ya devuelve hace etapas. Se completó también el tipo `Agency` (faltaban `verificationStatus`, `instagram`, `websiteLink`, `freeLeadsRemaining`) y se agregó `'search_performed'` a `EventName`. | apps/web/lib/types.ts | etapa-001_fix-contrato-property-agency-types | Pendiente de push |
+| 002 | Se agregan reglas de versionado de archivos de descarga (`_Vn`) y manifiesto completo de raw links del repo, para que Claude no vuelva a pedirle al usuario los mismos links en cada sesión. | INSTRUCCIONES.md | etapa-002_versionado-y-manifiesto-de-archivos | Pendiente de push |
 
-## Próximo paso lógico (candidato para etapa 002)
+## Próximo paso lógico (candidato para etapa 003)
 
-- Revisar `components/PropertyCard.tsx` y `components/AgentDashboard.tsx` para
-  confirmar si ya consumen `images`/`originPublishedAt`/los campos nuevos de
-  `Agency`, o si quedaron mostrando solo `image` (singular) y datos de agencia
-  incompletos — típico arrastre de la misma deuda que se corrigió en la etapa 001.
-  Requiere que el usuario pase los raw links de esos dos componentes en la próxima
-  sesión si no están ya disponibles en el historial de la conversación.
+- Con el manifiesto ya cargado, Claude debe intentar abrir directamente
+  `components/PropertyCard.tsx` y `components/AgentDashboard.tsx` (sin pedírselos
+  al usuario) para confirmar si ya consumen `images`/`originPublishedAt`/los campos
+  nuevos de `Agency` corregidos en la etapa 001, o si quedaron mostrando solo
+  `image` (singular) y datos de agencia incompletos.
