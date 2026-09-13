@@ -1,8 +1,8 @@
 'use client';
 import {useEffect,useState} from 'react';
 import {Building2,Check,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
-import {Agency,Offer,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty} from '../lib/api';
+import {Agency,Offer,Property,Session} from '../lib/types';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -82,6 +82,7 @@ export default function AgentDashboard(){
   const [analytics,setAnalytics]=useState<{properties:number;events:number;offers:number}|null>(null);
   const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'propiedades'|'cuenta'>('ofertas');
   const [propForm,setPropForm]=useState({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrl:''});
+  const [myProperties,setMyProperties]=useState<Property[]>([]);
   const [toast,setToast]=useState('');
   const [nameDraft,setNameDraft]=useState('');
   const [instagramDraft,setInstagramDraft]=useState('');
@@ -90,14 +91,15 @@ export default function AgentDashboard(){
 
   useEffect(()=>{const s=getAgentSession();setSession(s);setReady(true)},[]);
   useEffect(()=>{if(!session)return;(async()=>{
-    const [a,o,opp,an]=await Promise.all([
+    const [a,o,opp,an,props]=await Promise.all([
       getAgency(session.user.agency_id,session),
       listOffers(session),
       getAgencyOpportunities(session.user.agency_id,session),
       getAnalytics(session),
+      getProperties({agency_id:session.user.agency_id}),
     ]);
     setAgency(a);setNameDraft(a.name);setInstagramDraft(a.instagram||'');setWebsiteDraft(a.websiteLink||'');
-    setOffers(o);setOpps(opp as OppData);setAnalytics(an as any);
+    setOffers(o);setOpps(opp as OppData);setAnalytics(an as any);setMyProperties(props);
   })().catch(()=>{})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
@@ -160,8 +162,14 @@ export default function AgentDashboard(){
       },session);
       setPropForm({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrl:''});
       notify('Propiedad publicada.');
-      // refrescar contador de analytics
-      try{const an=await getAnalytics(session);setAnalytics(an as any)}catch{}
+      try{
+        const [an,props]=await Promise.all([
+          getAnalytics(session),
+          getProperties({agency_id:session.user.agency_id}),
+        ]);
+        setAnalytics(an as any);
+        setMyProperties(props);
+      }catch{}
     }catch(e:any){
       notify(e?.message||'No pudimos publicar la propiedad.');
     }finally{
@@ -234,6 +242,24 @@ export default function AgentDashboard(){
           Tu agencia tiene que estar <strong>Verificada</strong> para publicar propiedades. Completá Instagram en Mi cuenta y esperá la revisión.
         </div>
       )}
+
+      <div className="summarycard">
+        <strong>Tus publicaciones</strong>
+        <span className="muted small">{myProperties.length} propiedad{myProperties.length===1?'':'es'}</span>
+      </div>
+      {myProperties.length===0 && <div className="empty">Todavía no tenés propiedades publicadas en Propomi.</div>}
+      {myProperties.map(p=>(
+        <div key={p.id} className="opprow" style={{alignItems:'flex-start',flexDirection:'column',gap:4}}>
+          <div style={{display:'flex',justifyContent:'space-between',width:'100%',gap:12}}>
+            <strong>{p.title}</strong>
+            <span>{p.currency} {Number(p.price).toLocaleString('en-US')}</span>
+          </div>
+          <span className="muted small">{p.zone} · {p.surface} m² · {p.rooms} amb.{p.needsReview?' · en revisión':''}</span>
+        </div>
+      ))}
+
+      <hr style={{border:'none',borderTop:'1px solid #e3e8ee',margin:'8px 0'}}/>
+      <strong>Publicar nueva</strong>
       <label>Título<input value={propForm.title} onChange={e=>setPropForm(f=>({...f,title:e.target.value}))} placeholder="2 ambientes luminoso en Palermo"/></label>
       <label>Zona<input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo"/></label>
       <label>Ciudad<input value={propForm.city} onChange={e=>setPropForm(f=>({...f,city:e.target.value}))} placeholder="Buenos Aires"/></label>

@@ -90,13 +90,13 @@ Formato: `etapa-NNN_<descripcion-corta>` y su reversión `revert-etapa-NNN_<desc
 
 | Archivo (nombre real en el repo) | Última versión de descarga entregada |
 |---|---|
-| INSTRUCCIONES.md | V23 |
+| INSTRUCCIONES.md | V24 |
 | apps/api/app/main.py | V9 |
 | apps/web/lib/types.ts | V3 |
 | apps/web/lib/api.ts | V5 |
 | apps/web/app/admin/page.tsx | V1 |
 | apps/api/app/main.py | V9 |
-| apps/web/components/AgentDashboard.tsx | V3 |
+| apps/web/components/AgentDashboard.tsx | V4 |
 | apps/web/components/PropertyCard.tsx | V1 |
 | apps/web/app/globals.css | V1 |
 | apps/web/middleware.ts | V1 (nuevo) |
@@ -178,6 +178,7 @@ uno a uno a medida que se necesiten; los ya usados están arriba):
 | 021 | Lemon Squeezy en verificación (usuario). Código 017–020 confirmado en GitHub por fetch real (commits etapa-017…020). No se puede probar e2e de pagos hasta que Lemon apruebe la cuenta. Se anota preferencia: partes muy pequeñas, un archivo por entrega, usuario pushea. Próximo código independiente de Lemon: pendiente de confirmación (multi-agente lead distribution o UI suscripción tocan dinero). Mientras tanto, checklist operativo Lemon (env vars + product/variant + webhook) queda listo para cuando aprueben. | INSTRUCCIONES.md | etapa-021_lemon-en-verificacion-y-estado-real | Pendiente de push |
 | 022 | T7.1/T7.2 backend: `POST /properties` alta manual de propiedad solo para agencias `VERIFIED`. `agency_id` forzado desde la sesión. Descripción con `sanitize_free_text`. Dedup multi-agencia → `listing_group_id`; misma agencia → `needs_review`. Sin frontend todavía (formulario = etapa siguiente). Lemon S sigue en verificación — no se tocó pagos. | apps/api/app/main.py | etapa-022_post-properties-alta-manual-agente | Pendiente de push |
 | 023 | T7.2 frontend: pestaña Propiedades en AgentDashboard + createProperty() en api.ts. Formulario de alta manual (título/zona/ciudad/precio/superficie/ambientes/foto/descripción) llama POST /properties. Bloqueado si agencia no VERIFIED. Descripción tipada → backend sanitize_free_text. | apps/web/lib/api.ts, apps/web/components/AgentDashboard.tsx | etapa-023_formulario-alta-manual-propiedades | Pendiente de push |
+| 024 | Listado de propiedades propias en pestaña Propiedades del dashboard: GET /properties?agency_id= al cargar sesión y tras publicar. Muestra título/precio/zona/superficie/ambientes + flag needsReview. | apps/web/components/AgentDashboard.tsx | etapa-024_listado-propiedades-agencia | Pendiente de push |
 
 ## Instrucciones/preferencias nuevas del usuario (quinta sesión, 2026-09-13)
 
@@ -214,8 +215,8 @@ sesión:
   filas sin borrar por la regla 6, pero su columna "Estado" no es confiable
   — confiar en el fetch real, no en la tabla, hasta limpiarla).
 
-## Próximo paso lógico (candidato para etapa 024)
+## Próximo paso lógico (candidato para etapa 025)
 
-- Listar propiedades propias de la agencia en la pestaña Propiedades (GET /properties?agency_id=…) para ver lo publicado tras el alta.
-- Lemon Squeezy: sigue en verificación — checklist operativo cuando aprueben.
-- No arrancar multi-agente lead distribution ni UI de planes sin confirmación (tocan dinero).
+- T6.1 cold start: al llegar oferta sobre propiedad de agencia no reclamada, generar tarea de notificación (sin exponer teléfono scrapeado en API pública).
+- O T5.1 endpoints CRUD de suscripción (tocan dinero — confirmar si Lemon ya no está en verificación).
+- Lemon Squeezy: checklist operativo cuando aprueben la cuenta.
