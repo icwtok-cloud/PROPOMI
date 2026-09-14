@@ -1840,13 +1840,12 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
         raise HTTPException(status_code=400, detail="Ingresá un teléfono de contacto válido")
     with Session(engine) as db:
         # Etapa 2 / sección 6.2.1: enforcement real del lado del servidor —
-        # el paso de identidad del frontend (OTP + Google) es UX, esto es lo
-        # que de verdad impide que una oferta se cree sin las dos pruebas.
+        # el paso de identidad del frontend es UX, esto es lo que de verdad
+        # impide que una oferta se cree sin el celular verificado. Google es
+        # opcional (no se exige server-side).
         buyer_user = db.get(User, session["user_id"])
         if not buyer_user or not buyer_user.phone_verified_at:
             raise HTTPException(status_code=403, detail="Verificá tu celular antes de enviar una oferta.")
-        if not buyer_user.google_verified_at:
-            raise HTTPException(status_code=403, detail="Confirmá tu cuenta de Google antes de enviar una oferta.")
         p = db.get(Property, payload.property_id)
         if not p: raise HTTPException(status_code=404, detail="Propiedad no encontrada")
         offer_data = payload.model_dump(exclude={"buyer_phone"})
@@ -1936,8 +1935,6 @@ def create_lead(payload: LeadIn, session: dict[str, Any] = Depends(current_sessi
         buyer_user = db.get(User, session["user_id"])
         if not buyer_user or not buyer_user.phone_verified_at:
             raise HTTPException(status_code=403, detail="Verificá tu celular antes de continuar.")
-        if not buyer_user.google_verified_at:
-            raise HTTPException(status_code=403, detail="Confirmá tu cuenta de Google antes de continuar.")
         p = db.get(Property, payload.property_id)
         if not p:
             raise HTTPException(status_code=404, detail="Propiedad no encontrada")

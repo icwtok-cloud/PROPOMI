@@ -310,22 +310,10 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
           </div>
         </div>}
 
-        {phoneVerified&&!googleSkipped&&<div className="summarycard" style={{marginTop:12}}>
-          <div className="summaryrow">
-            <span>Cuenta de Google (opcional)</span>
-            <b>{googleVerified?'✅ Confirmada':''}</b>
-          </div>
-          {!googleVerified&&<div style={{marginTop:10}}>
-            <div ref={googleBtnRef}/>
-            {googleError&&<div className="notice notice-error" style={{marginTop:8}}>{googleError}</div>}
-            <button className="secondary" style={{marginTop:10}} onClick={()=>setGoogleSkipped(true)}>Omitir, ya verifiqué por SMS</button>
-          </div>}
-        </div>}
-
         {error && <div className="notice notice-error" style={{marginTop:12}}>{error}</div>}
         <div className="wizactions modalactions">
           <button className="secondary" onClick={()=>setStep(4)}>Volver</button>
-          <button className="primary" disabled={busy||!(phoneVerified||googleVerified)} onClick={send}>{busy?'Enviando…':(mode==='offer'?'Enviar oferta':mode==='visit'?'Enviar solicitud':'Enviar consulta')}</button>
+          <button className="primary" disabled={busy||!phoneVerified} onClick={send}>{busy?'Enviando…':(mode==='offer'?'Enviar oferta':mode==='visit'?'Enviar solicitud':'Enviar consulta')}</button>
         </div>
       </div>}
     </div>
