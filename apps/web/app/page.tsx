@@ -3,11 +3,10 @@ import {useEffect,useMemo,useState} from 'react';
 import Link from 'next/link';
 import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarChart3,MessageSquare,Lock} from 'lucide-react';
 import PropertyCard from '../components/PropertyCard';
-import OfferModal from '../components/OfferModal';
+import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
-import BuyerIdentityModal from '../components/BuyerIdentityModal';
-import {getProperties,getPropertiesDeduped,trackEvent,saveIntent,listOffers,isOffersRestricted,getOrCreateBuyerSession,getBuyerProfile,captureOfferOriginFromUrl} from '../lib/api';
-import {BuyerProfile,Property,Offer} from '../lib/types';
+import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl} from '../lib/api';
+import {Property,Offer} from '../lib/types';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
 const FUNNEL=['Vistas','Guardados','Comparaciones','Consultas','Visitas','Ofertas','Negociaciones','Contacto compartido','Operaciones'];
@@ -23,12 +22,11 @@ export default function Home(){
   const [credit,setCredit]=useState(false);
   const [saved,setSaved]=useState<string[]>([]);
   const [compared,setCompared]=useState<string[]>([]);
-  const [offer,setOffer]=useState<Property|null>(null);
+  const [wizard,setWizard]=useState<{p:Property;mode:WizardMode}|null>(null);
   const [detail,setDetail]=useState<Property|null>(null);
   const [photoIdx,setPhotoIdx]=useState(0);
   const [offers,setOffers]=useState<Offer[]>([]);
   const [toast,setToast]=useState('');
-  const [pendingAction,setPendingAction]=useState<null|(()=>void)>(null);
 
   useEffect(()=>{captureOfferOriginFromUrl()},[]);
   useEffect(()=>{(async()=>{
@@ -74,18 +72,6 @@ export default function Home(){
     if(isOffersRestricted(r))setOffers([]);
     else setOffers(r);
   }
-
-  async function askVisit(p:Property){const s=await getOrCreateBuyerSession();await saveIntent(p.id,'VISIT',6,{visit:true,budget:Number(budget),timeframe:'30-60 días'},s);await trackEvent('visit_request',p.id,{availability:'A coordinar'},s);setToast('Solicitud de visita creada. La agencia puede aceptar o proponer otro horario.')}
-  async function askQuestion(p:Property){const s=await getOrCreateBuyerSession();await saveIntent(p.id,'QUESTION',4,{budget:Number(budget)},s);await trackEvent('property_question',p.id,undefined,s);setToast('Consulta registrada como parte de tu intención. Tus datos siguen ocultos.')}
-
-  // Única compuerta de identidad de todo el sitio: se pide nombre+celular
-  // una sola vez, antes de la primera acción de alta intención (oferta,
-  // visita o consulta), y se reutiliza siempre después.
-  function withIdentity(action:()=>void){
-    if(getBuyerProfile()){action();return}
-    setPendingAction(()=>action);
-  }
-  function onIdentityDone(_:BuyerProfile){const a=pendingAction;setPendingAction(null);if(a)a()}
 
   return <>
     <nav className="nav"><div className="container navin">
@@ -141,7 +127,7 @@ export default function Home(){
         <div className="grid">{filtered.map(p=>
           <PropertyCard key={p.id} p={p} saved={saved.includes(p.id)} compared={compared.includes(p.id)}
             onSave={()=>toggleSave(p)} onCompare={()=>toggleCompare(p)}
-            onOffer={()=>withIdentity(()=>setOffer(p))} onView={()=>openDetail(p)}/>)}
+            onOffer={()=>setWizard({p,mode:'offer'})} onView={()=>openDetail(p)}/>)}
         </div>
         {filtered.length===0&&<div className="empty">No encontramos propiedades con estos criterios. Ampliá presupuesto, zona o ambientes.</div>}
       </div></section>
@@ -232,7 +218,7 @@ export default function Home(){
     </div>}
     {compared.length>0&&<ComparePanel items={compareItems} onClose={()=>setCompared([])}/>}
 
-    {offer&&<OfferModal p={offer} onClose={()=>setOffer(null)} onDone={m=>{setOffer(null);setToast(m);refreshOffers()}}/>}
+    {wizard&&<IntentWizard p={wizard.p} mode={wizard.mode} onClose={()=>setWizard(null)} onDone={m=>{setWizard(null);setToast(m);refreshOffers()}}/>}
 
     {detail&&<div className="modalback"><div className="modal wide">
       <div className="modalhead">
@@ -279,16 +265,14 @@ export default function Home(){
           <div className="specs large">{detail.surface} m² · {detail.rooms} ambientes · {detail.bedrooms} dormitorios · {detail.bathrooms} baño</div>
           <div className="tags"><span>Fuente: {detail.source}</span><span>{detail.freshness}</span></div>
           <div className="detailactions">
-            <button className="secondary" onClick={()=>{setDetail(null);withIdentity(()=>askQuestion(detail))}}><MessageSquare size={15}/> Hacer pregunta</button>
-            <button className="secondary" onClick={()=>{setDetail(null);withIdentity(()=>askVisit(detail))}}><CalendarDays size={15}/> Pedir visita</button>
-            <button className="primary" onClick={()=>{setDetail(null);withIdentity(()=>setOffer(detail))}}>Proponer precio</button>
+            <button className="secondary" onClick={()=>{setDetail(null);setWizard({p:detail,mode:'question'})}}><MessageSquare size={15}/> Hacer pregunta</button>
+            <button className="secondary" onClick={()=>{setDetail(null);setWizard({p:detail,mode:'visit'})}}><CalendarDays size={15}/> Pedir visita</button>
+            <button className="primary" onClick={()=>{setDetail(null);setWizard({p:detail,mode:'offer'})}}>Proponer precio</button>
           </div>
           <div className="notice"><b>Privacidad:</b> ninguna de estas acciones comparte automáticamente tu teléfono o email.</div>
         </div>
       </div>
     </div></div>}
-
-    {pendingAction&&<BuyerIdentityModal onClose={()=>setPendingAction(null)} onDone={onIdentityDone}/>}
 
     {toast&&<div className="toast"><Check size={17}/>{toast}</div>}
     <footer className="footer"><div className="container">
