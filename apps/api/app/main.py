@@ -423,7 +423,8 @@ class RevealTransaction(Base):
     Stripe, etc.) — ver PaymentGateway más abajo."""
     __tablename__ = "reveal_transactions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    offer_id: Mapped[str] = mapped_column(String(40), index=True)
+    offer_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)
+    lead_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)
     agency_id: Mapped[str] = mapped_column(String(40))
     method: Mapped[str] = mapped_column(String(30))
     amount_usd: Mapped[float] = mapped_column(Float, default=0.0)
@@ -549,6 +550,7 @@ def ensure_schema_columns() -> None:
             "shared_phone": "VARCHAR(30)",
         },
         "otp_codes": {"verify_attempts": "INTEGER DEFAULT 0"},
+        "reveal_transactions": {"lead_id": "VARCHAR(40)"},
         "users": {
             "phone_verified_at": "TIMESTAMP",
             "email": "VARCHAR(160)",
@@ -574,6 +576,14 @@ def ensure_schema_columns() -> None:
             for column, ddl in columns.items():
                 if column not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+
+        # Etapa (rediseño wizard): reveal_transactions.offer_id era NOT NULL
+        # cuando solo existian reveals de Offer. Ahora tambien puede haber
+        # reveals de Lead (lead_id en su lugar), asi que offer_id debe poder
+        # ser NULL. Postgres soporta ALTER COLUMN DROP NOT NULL directo;
+        # SQLite no, asi que se omite ahi (uso local/dev, no produccion).
+        if inspector.has_table("reveal_transactions") and conn.dialect.name == "postgresql":
+            conn.execute(text("ALTER TABLE reveal_transactions ALTER COLUMN offer_id DROP NOT NULL"))
 
 
 
