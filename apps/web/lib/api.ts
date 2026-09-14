@@ -9,6 +9,7 @@ export async function trackEvent(name:EventName,property_id?:string,context?:Rec
 const BUYER_KEY='propomi-buyer-session';
 function getBuyerSession():Session|null{try{const raw=localStorage.getItem(BUYER_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 export function setBuyerSession(session:Session){localStorage.setItem(BUYER_KEY,JSON.stringify(session))}
+export function clearBuyerIdentity(){localStorage.removeItem(BUYER_KEY);localStorage.removeItem(BUYER_PROFILE_KEY)}
 export async function getOrCreateBuyerSession():Promise<Session|null>{if(!base)return getBuyerSession();const existing=getBuyerSession();if(existing)return existing;const r=await req<{token:string;user:Session['user']}>('/auth/guest',{method:'POST'});const session={token:r.token,user:r.user};setBuyerSession(session);return session}
 
 // Perfil de contacto del comprador: se pide UNA sola vez (nunca dentro del

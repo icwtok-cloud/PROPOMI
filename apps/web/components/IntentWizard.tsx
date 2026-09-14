@@ -1,7 +1,7 @@
 ﻿'use client';
 import {useState,useRef,useEffect} from 'react';
 import {Property,Intent,Session} from '../lib/types';
-import {createOffer,createLead,saveIntent,trackEvent,getOrCreateBuyerSession,getBuyerProfile,setBuyerProfile,requestOtp,verifyOtpBuyer,setBuyerSession,linkGoogleIdentity,getOfferOrigin} from '../lib/api';
+import {createOffer,createLead,saveIntent,trackEvent,getOrCreateBuyerSession,getBuyerProfile,setBuyerProfile,requestOtp,verifyOtpBuyer,setBuyerSession,linkGoogleIdentity,getOfferOrigin,clearBuyerIdentity} from '../lib/api';
 import {renderGoogleButton} from '../lib/google';
 
 export type WizardMode='offer'|'question'|'visit';
@@ -168,7 +168,20 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
         onDone(msg);
       }
     }catch(e:any){
-      setError(e?.message||'No se pudo enviar. Intentá de nuevo.');
+      if(e?.status===403&&/celular/i.test(e?.message||'')){
+        // Sesión huérfana: el token local apunta a un usuario que ya no
+        // existe del lado del servidor (ej. la base se reseteó). Limpiamos
+        // el estado local y volvemos a pedir OTP en vez de dejar la
+        // pantalla trabada mostrando "Verificado" sin salida.
+        clearBuyerIdentity();
+        setPhoneVerified(false);
+        setOtpSent(false);
+        setOtpCode('');
+        setGoogleVerified(false);
+        setError('Tu verificación anterior expiró. Volvé a verificar tu celular para continuar.');
+      }else{
+        setError(e?.message||'No se pudo enviar. Intentá de nuevo.');
+      }
     }finally{
       setBusy(false);
     }
