@@ -2224,6 +2224,103 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
         return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": "pay_per_lead"}
 
 
+@app.post("/leads/{lead_id}/reveal")
+def reveal_lead_contact(lead_id: str, session: dict[str, Any] = Depends(require_agent)):
+    """Espejo de POST /offers/{offer_id}/reveal, operando sobre Lead en vez
+    de Offer. Mismas reglas: pertenencia a la agencia (o al listing_group),
+    idempotencia si ya fue revelado, cupo de suscripcion/credito primero,
+    pay-per-lead via PaymentGateway despues — nunca revela gratis por
+    default."""
+    with Session(engine) as db:
+        lead = db.get(Lead, lead_id)
+        if not lead:
+            raise HTTPException(status_code=404, detail="Consulta o visita no encontrada")
+        prop = db.get(Property, lead.property_id)
+        if not prop:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        if not agent_in_listing_group(db, prop, session["agency_id"]):
+            raise HTTPException(status_code=403, detail="Fuera de tu agencia")
+
+        agency = db.get(Agency, session["agency_id"])
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+
+        if lead.contact_revealed:
+            winner = db.scalar(
+                select(RevealTransaction).where(
+                    RevealTransaction.lead_id == lead.id,
+                    RevealTransaction.status == "COMPLETED",
+                )
+            )
+            if winner and winner.agency_id == agency.id:
+                return {
+                    "buyer_name": lead.buyer_name,
+                    "buyer_phone": lead.buyer_phone_raw,
+                    "buyer_email": lead.buyer_email,
+                    "already_revealed": True,
+                }
+            raise HTTPException(
+                status_code=409,
+                detail="Otro agente del grupo ya revelo el contacto de esta consulta/visita.",
+            )
+
+        if agency.verification_status != "VERIFIED":
+            raise HTTPException(
+                status_code=403,
+                detail="Tu agencia todavia no esta verificada. Completa Instagram/link de tu perfil y espera la revision para poder revelar contactos.",
+            )
+
+        now = datetime.now(timezone.utc)
+
+        method = consume_reveal_credit(db, agency)
+        if method is not None:
+            lead.contact_revealed = True
+            lead.contact_revealed_at = now
+            txn_method = "FREE_CREDIT" if method == "free_credit" else RevealMethod.SUBSCRIPTION_QUOTA.value
+            db.add(RevealTransaction(
+                id=f"rt-{uuid.uuid4().hex[:12]}", lead_id=lead.id, agency_id=agency.id,
+                method=txn_method, amount_usd=0.0, status="COMPLETED", completed_at=now,
+            ))
+            db.add(Event(name="contact_revealed", property_id=prop.id, user_id=lead.user_id, agency_id=agency.id, context={"method": method, "lead": True}))
+            db.commit()
+            return {"buyer_name": lead.buyer_name, "buyer_phone": lead.buyer_phone_raw, "buyer_email": lead.buyer_email, "method": method}
+
+        existing_paid = db.scalar(
+            select(RevealTransaction).where(
+                RevealTransaction.lead_id == lead.id,
+                RevealTransaction.status == "COMPLETED",
+            )
+        )
+        if existing_paid:
+            lead.contact_revealed = True
+            lead.contact_revealed_at = now
+            db.commit()
+            return {"buyer_name": lead.buyer_name, "buyer_phone": lead.buyer_phone_raw, "buyer_email": lead.buyer_email, "method": "pay_per_lead"}
+
+        transaction_id = f"rt-{uuid.uuid4().hex[:12]}"
+        charged = payment_gateway.charge(agency_id=agency.id, amount_usd=PAY_PER_LEAD_USD, reference=transaction_id)
+        db.add(RevealTransaction(
+            id=transaction_id, lead_id=lead.id, agency_id=agency.id,
+            method=RevealMethod.PAY_PER_LEAD.value, amount_usd=PAY_PER_LEAD_USD,
+            status="COMPLETED" if charged else "PENDING",
+            completed_at=now if charged else None,
+        ))
+        db.commit()
+
+        if not charged:
+            checkout_url = payment_gateway.create_checkout(agency_id=agency.id, amount_usd=PAY_PER_LEAD_USD, reference=transaction_id)
+            detail: dict[str, Any] = {
+                "message": f"Se requiere pago de USD {PAY_PER_LEAD_USD} para revelar este contacto.",
+                "transaction_id": transaction_id,
+            }
+            if checkout_url:
+                detail["checkout_url"] = checkout_url
+            raise HTTPException(status_code=402, detail=detail)
+        lead.contact_revealed = True
+        lead.contact_revealed_at = now
+        db.commit()
+        return {"buyer_name": lead.buyer_name, "buyer_phone": lead.buyer_phone_raw, "buyer_email": lead.buyer_email, "method": "pay_per_lead"}
+
 @app.get("/payments/{transaction_id}/status")
 def payment_status(transaction_id: str, session: dict[str, Any] = Depends(require_agent)):
     """Etapa 017/018: permite que el frontend pregunte '¿ya se confirmó?'
