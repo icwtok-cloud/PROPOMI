@@ -1361,6 +1361,7 @@ def guest_session():
 def request_otp(payload: OTPRequest):
     phone = normalize_phone(payload.phone)
     if not phone:
+        print(f"[PROPOMI OTP] normalize_phone rechazó el valor crudo recibido: {payload.phone!r}")
         raise HTTPException(status_code=400, detail="Ingresá un teléfono válido")
     now_dt = datetime.now(timezone.utc)
     with Session(engine) as db:
@@ -1406,6 +1407,7 @@ def consume_valid_otp(db: Session, phone: str, code: str) -> None:
 def verify_otp(payload: OTPVerify):
     phone = normalize_phone(payload.phone)
     if not phone:
+        print(f"[PROPOMI OTP] normalize_phone rechazó el valor crudo recibido en /verify: {payload.phone!r}")
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     with Session(engine) as db:
         consume_valid_otp(db, phone, payload.code)
