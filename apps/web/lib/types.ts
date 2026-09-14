@@ -1,4 +1,4 @@
-export type Property={id:string;title:string;type:string;operation:string;price:number;currency:string;zone:string;city:string;country?:string;surface?:number;rooms?:number;bedrooms?:number;bathrooms?:number;parking?:boolean;pool?:boolean;balcony?:boolean;petFriendly?:boolean;credit?:boolean;freshness?:string;source?:string;sourceUrl?:string;image?:string;images?:string[];originPublishedAt?:string;description?:string;agencyId?:string;detectedAt?:string;lastSeenAt?:string;needsReview?:boolean;possibleDuplicateOf?:string|null;listingGroupId?:string|null;priceMin?:number;priceMax?:number;groupMemberCount?:number};
+﻿export type Property={id:string;title:string;type:string;operation:string;price:number;currency:string;zone:string;city:string;country?:string;surface?:number;rooms?:number;bedrooms?:number;bathrooms?:number;parking?:boolean;pool?:boolean;balcony?:boolean;petFriendly?:boolean;credit?:boolean;freshness?:string;source?:string;sourceUrl?:string;image?:string;images?:string[];originPublishedAt?:string;description?:string;agencyId?:string;detectedAt?:string;lastSeenAt?:string;needsReview?:boolean;possibleDuplicateOf?:string|null;listingGroupId?:string|null;priceMin?:number;priceMax?:number;groupMemberCount?:number};
 export type IntentProfile={budget?:number;zones?:string[];types?:string[];operations?:string[];financing?:string;timeframe?:string;notes?:string};
 export type Question={id:string;property_id:string;user_id:string;text:string;created_at:string;answered?:boolean;comment?:string};
 export type EventName='property_view'|'property_save'|'property_compare'|'property_question'|'visit_request'|'offer_created'|'contact_requested'|'contact_shared'|'counter_offer_created'|'negotiation_started'|'operation_advanced'|'search_performed';
@@ -15,4 +15,4 @@ export type ReviewQueueItem={property:Property;candidate:Property|null};
 export type Session={token:string;user:{id:string;phone:string;role:Role;agency_id:string}};
 export type Role='AGENTE'|'COMPRADOR';
 
-export type Intent={offer:boolean;budget:number;capital:number;financing:'YES'|'NO';timeframe:string;alternatives:boolean;comment?:string};
+export type Intent={offer?:boolean;visit?:boolean;budget?:number;capital?:number;financing?:'YES'|'NO';timeframe?:string;alternatives?:boolean;comment?:string};
