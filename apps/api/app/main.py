@@ -1823,7 +1823,7 @@ def upsert_intent(payload: IntentIn, session: dict[str, Any] = Depends(current_s
             for k, v in data.items(): setattr(profile, k, v)
             profile.updated_at = datetime.now(timezone.utc)
         else:
-            profile = IntentProfile(id=f"i-{uuid.uuid4().hex[:12]}", user_id=user_id, **payload.model_dump(exclude={"property_id"}))
+            profile = IntentProfile(id=f"i-{uuid.uuid4().hex[:12]}", user_id=user_id, property_id=payload.property_id, **payload.model_dump(exclude={"property_id"}))
             db.add(profile)
         db.commit()
         return {"id": profile.id, "status": "saved"}
