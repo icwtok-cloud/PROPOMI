@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import { Property } from '../lib/types';
 import { X } from 'lucide-react';
 
@@ -7,11 +7,11 @@ type Row = { key: string; get: (p: Property) => string | number };
 const ROWS: Row[] = [
   { key: 'Precio', get: (p) => `USD ${p.price.toLocaleString('en-US')}` },
   { key: 'Superficie', get: (p) => `${p.surface} m²` },
-  { key: 'Ambientes', get: (p) => p.rooms ?? '�' },
+  { key: 'Ambientes', get: (p) => p.rooms ?? 'N/D' },
   { key: 'Zona', get: (p) => p.zone },
   { key: 'Cochera', get: (p) => (p.parking ? 'Sí' : 'No') },
   { key: 'Crédito', get: (p) => (p.credit ? 'Sí' : 'No') },
-  { key: 'Actualización', get: (p) => p.freshness ?? '�' },
+  { key: 'Actualización', get: (p) => p.freshness ?? 'N/D' },
 ];
 
 export default function ComparePanel({ items, onClose }: { items: Property[]; onClose: () => void }) {
