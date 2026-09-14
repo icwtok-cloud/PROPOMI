@@ -1,4 +1,4 @@
-## 2026-09-13 — Cierre de sesión / punto de retomada
+﻿## 2026-09-13 — Cierre de sesión / punto de retomada
 
 - **Este es un corte de sesión de chat, no una etapa nueva.** El usuario va
   a continuar en una sesión distinta de Claude.ai. Todo lo relevante ya
