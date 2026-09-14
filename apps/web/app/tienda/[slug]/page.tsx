@@ -3,10 +3,9 @@ import {use,useEffect,useState} from 'react';
 import Link from 'next/link';
 import {ShieldCheck} from 'lucide-react';
 import PropertyCard from '../../../components/PropertyCard';
-import OfferModal from '../../../components/OfferModal';
-import BuyerIdentityModal from '../../../components/BuyerIdentityModal';
-import {getAgencyBySlug,getProperties,trackEvent,getBuyerProfile,captureOfferOriginFromUrl} from '../../../lib/api';
-import {Agency,BuyerProfile,Property} from '../../../lib/types';
+import IntentWizard from '../../../components/IntentWizard';
+import {getAgencyBySlug,getProperties,trackEvent,captureOfferOriginFromUrl} from '../../../lib/api';
+import {Agency,Property} from '../../../lib/types';
 
 // Etapa 015 (subdominios por agencia): storefront público mínimo de UNA
 // agencia. Llega acá vía:
@@ -27,7 +26,6 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
   const [detail,setDetail] = useState<Property | null>(null);
   const [photoIdx,setPhotoIdx] = useState(0);
   const [toast,setToast] = useState('');
-  const [pendingAction,setPendingAction] = useState<null | (() => void)>(null);
 
   useEffect(() => {
     // T9.3: el storefront marca origen = slug de la agencia (o ?o= si viene).
@@ -59,11 +57,6 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
 
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 3500); return () => clearTimeout(t); } }, [toast]);
 
-  function withIdentity(action: () => void) {
-    if (getBuyerProfile()) { action(); return; }
-    setPendingAction(() => action);
-  }
-  function onIdentityDone(_: BuyerProfile) { const a = pendingAction; setPendingAction(null); if (a) a(); }
   function toggleSave(p: Property) {
     const next = saved.includes(p.id) ? saved.filter(x => x !== p.id) : [...saved, p.id];
     setSaved(next);
@@ -98,13 +91,13 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
         <div className="grid">{items.map(p =>
           <PropertyCard key={p.id} p={p} saved={saved.includes(p.id)} compared={false}
             onSave={() => toggleSave(p)} onCompare={() => {}}
-            onOffer={() => withIdentity(() => setOffer(p))} onView={() => openDetail(p)}/>)}
+            onOffer={() => setOffer(p)} onView={() => openDetail(p)}/>)}
         </div>
         {agency && items.length === 0 && <div className="empty">Esta agencia todavía no tiene propiedades activas en Propomi.</div>}
       </div></section>
     </main>
 
-    {offer && <OfferModal p={offer} onClose={() => setOffer(null)} onDone={m => { setOffer(null); setToast(m); }}/>}
+    {offer && <IntentWizard p={offer} mode="offer" onClose={() => setOffer(null)} onDone={m => { setOffer(null); setToast(m); }}/>}
 
     {detail && <div className="modalback"><div className="modal wide">
       <div className="modalhead">
@@ -143,14 +136,13 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
           <p>{detail.description}</p>
           <div className="specs large">{detail.surface} m² · {detail.rooms} ambientes · {detail.bedrooms} dormitorios · {detail.bathrooms} baño</div>
           <div className="detailactions">
-            <button className="primary" onClick={() => { setDetail(null); withIdentity(() => setOffer(detail)); }}>Proponer precio</button>
+            <button className="primary" onClick={() => { setDetail(null); setOffer(detail); }}>Proponer precio</button>
           </div>
           <div className="notice"><b>Privacidad:</b> proponer un precio no comparte automáticamente tu teléfono o email.</div>
         </div>
       </div>
     </div></div>}
 
-    {pendingAction && <BuyerIdentityModal onClose={() => setPendingAction(null)} onDone={onIdentityDone}/>}
     {toast && <div className="toast">{toast}</div>}
   </>;
 }
