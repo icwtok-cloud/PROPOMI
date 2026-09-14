@@ -454,3 +454,19 @@ Formato de cada entrada:
   Todavía no se tocó ningún archivo de código.
 - Archivos tocados: `CLAUDE.md` (nuevo), `PROGRESS_LOG.md` (nuevo),
   `docs/PLAN_MAESTRO.md` (nuevo).
+
+## Pendientes sueltos detectados (sesión del 13/09/2026)
+
+**Encoding roto (bug preexistente, no introducido por nosotros):**
+- `components/OfferModal.tsx` tiene varios strings con acentos corrompidos: `Ã©`, `â€“`, `MÃ¡s`, `dÃ­as`, `FinanciaciÃ³n` en vez de é/–/Más/días/Financiación. Se ve mal en producción tal cual está. Pendiente: pasada de limpieza de encoding en ese archivo (mismo tipo de problema que tuvimos al editar `ComparePanel.tsx` con PowerShell — usar `-Encoding UTF8` explícito al tocarlo).
+- Antes de tocar más archivos con `-replace`/`Set-Content` en PowerShell, siempre especificar `-Encoding UTF8` tanto al leer como al escribir, para no repetir el problema que tuvimos con `ComparePanel.tsx` (corrompió "Actualización" y luego el guión largo `—`).
+
+**Google login — ya existe código parcial en el frontend (descubierto sin buscarlo):**
+- `lib/google.ts` existe y exporta `renderGoogleButton`.
+- `lib/api.ts` ya tiene `linkGoogleIdentity`, `requestOtp`, `verifyOtpBuyer`, `setBuyerSession`.
+- `components/OfferModal.tsx` ya importa y usa `renderGoogleButton` y el flujo de OTP para el comprador dentro del modal de oferta.
+- **Implicancia importante para cuando retomemos el tema de Clerk:** puede que ya haya un login con Google implementado "a mano" (sin Clerk) en el flujo de oferta, y/o un OTP de comprador ya conectado a `withIdentity` que no vimos completo todavía. Antes de meter Clerk hay que leer `OfferModal.tsx` completo y `lib/google.ts` para saber qué existe ya, qué falta, y si conviene usar eso en vez de agregar Clerk.
+- También pendiente: confirmar si `BuyerIdentityModal` (el que dispara `withIdentity` en `page.tsx`) es el mismo flujo que el de `OfferModal.tsx`, o si son dos gates de identidad distintos y separados (posible inconsistencia a revisar).
+
+**Falla de fondo en medición de demanda (detectada en esta sesión, ver conversación):**
+- Hoy `BuyerIdentityModal` pedía nombre+celular autodeclarados sin verificar como gate de "identidad" — dato de baja confiabilidad para medir demanda real. Pendiente evaluar si ya está resuelto por el OTP que aparece en `OfferModal.tsx`, o si sigue siendo el gate viejo.
