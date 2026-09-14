@@ -25,6 +25,8 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, create_engine, select, text, inspect, or_
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
+from .sms_vonage import VonageSMSError, send_otp_sms
+
 # --------------------------------------------------------------------------
 # Filtro anti-fuga de contacto (ver doc 05 de la especificación de negocio).
 # Se aplica a cualquier campo de texto libre que llegue del comprador o del
@@ -727,7 +729,26 @@ class MockSmsSender:
             print(f"[PROPOMI OTP MOCK] {phone} -> {code}")
 
 
-sms_sender: SmsSender = MockSmsSender()
+class VonageSmsSender:
+    def send(self, phone: str, code: str) -> None:
+        try:
+            send_otp_sms(phone, code)
+        except VonageSMSError as exc:
+            # Fallo real de Vonage (credenciales, red, rechazo del SMS) debe
+            # llegar al cliente como error — nunca como "ok:true" silencioso.
+            raise HTTPException(status_code=502, detail=f"No pudimos enviar el SMS: {exc}") from exc
+
+
+OTP_SMS_PROVIDER = os.getenv("OTP_SMS_PROVIDER", "dev").strip().lower()
+
+
+def _select_sms_sender() -> SmsSender:
+    if OTP_SMS_PROVIDER == "vonage":
+        return VonageSmsSender()
+    return MockSmsSender()
+
+
+sms_sender: SmsSender = _select_sms_sender()
 OTP_MAX_VERIFY_ATTEMPTS = 5
 
 
@@ -1352,7 +1373,7 @@ def request_otp(payload: OTPRequest):
         db.commit()
     sms_sender.send(phone, code)
     response = {"ok": True, "message": "Te enviamos un código de verificación."}
-    if ENV != "production":
+    if ENV != "production" and OTP_SMS_PROVIDER != "vonage":
         response["dev_code"] = code
     return response
 
