@@ -1159,6 +1159,52 @@ class OfferIn(BaseModel):
         return validate_email_format(v)
 
 
+VALID_VISIT_SLOTS = {"08-12", "12-16", "16-20"}
+
+
+class LeadIn(BaseModel):
+    property_id: str
+    intent_type: str  # QUESTION | VISIT
+    has_proposal: bool = False
+    amount: float | None = None
+    payment_form: str | None = None
+    capital: float | None = None
+    timeframe: str | None = None
+    comment: str | None = Field(default=None, max_length=500)
+    visit_day: str | None = None  # YYYY-MM-DD, solo intent_type=VISIT
+    visit_slot: str | None = None  # "08-12" | "12-16" | "16-20", solo intent_type=VISIT
+    buyer_name: str = Field(min_length=2, max_length=120)
+    buyer_phone: str = Field(min_length=6, max_length=40)
+    buyer_email: str | None = Field(default=None, max_length=160)
+    origin: str | None = Field(default=None, max_length=80)
+
+    @field_validator("intent_type")
+    @classmethod
+    def check_intent_type(cls, v: str) -> str:
+        if v not in ("QUESTION", "VISIT"):
+            raise HTTPException(status_code=400, detail="intent_type debe ser 'QUESTION' o 'VISIT'")
+        return v
+
+    @field_validator("comment")
+    @classmethod
+    def check_comment_leak(cls, v: str | None) -> str | None:
+        return sanitize_free_text(v, campo="comentario")
+
+    @field_validator("origin")
+    @classmethod
+    def check_origin(cls, v: str | None) -> str | None:
+        if v is None or v.strip() == "":
+            return None
+        v = v.strip().lower()
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", v):
+            raise HTTPException(status_code=400, detail="Origen inválido.")
+        return v
+
+    @field_validator("buyer_email")
+    @classmethod
+    def check_email_format(cls, v: str | None) -> str | None:
+        return validate_email_format(v)
+
 class CounterIn(BaseModel):
     amount: float
     comment: str | None = Field(default=None, max_length=500)
@@ -1797,6 +1843,125 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
         db.commit()
         return {"id": offer.id, "status": offer.status}
 
+
+def validate_visit_slot(visit_day: str | None, visit_slot: str | None) -> None:
+    """Backend valida estricto: visit_day dentro de los próximos 7 días
+    (hoy incluido) y visit_slot uno de los tres valores fijos — mismo
+    criterio de rechazo con 400 que ya usa OfferIn con `origin`."""
+    if not visit_day or not visit_slot:
+        raise HTTPException(status_code=400, detail="Elegí un día y una franja horaria para la visita.")
+    if visit_slot not in VALID_VISIT_SLOTS:
+        raise HTTPException(status_code=400, detail="Franja horaria inválida.")
+    try:
+        day = datetime.strptime(visit_day, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Fecha de visita inválida.")
+    today = datetime.now(timezone.utc).date()
+    if day < today or day > today + timedelta(days=6):
+        raise HTTPException(status_code=400, detail="Elegí un día dentro de los próximos 7 días.")
+
+
+@app.post("/leads", status_code=201)
+def create_lead(payload: LeadIn, session: dict[str, Any] = Depends(current_session)):
+    if session.get("role") != Role.COMPRADOR.value:
+        raise HTTPException(status_code=403, detail="Solo un comprador puede crear una consulta o visita")
+    if payload.intent_type == "VISIT":
+        validate_visit_slot(payload.visit_day, payload.visit_slot)
+    if payload.intent_type == "QUESTION" and payload.has_proposal and (payload.amount is None or payload.amount <= 0):
+        raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
+    buyer_phone_normalized = normalize_phone(payload.buyer_phone)
+    if not buyer_phone_normalized:
+        raise HTTPException(status_code=400, detail="Ingresá un teléfono de contacto válido")
+    with Session(engine) as db:
+        buyer_user = db.get(User, session["user_id"])
+        if not buyer_user or not buyer_user.phone_verified_at:
+            raise HTTPException(status_code=403, detail="Verificá tu celular antes de continuar.")
+        if not buyer_user.google_verified_at:
+            raise HTTPException(status_code=403, detail="Confirmá tu cuenta de Google antes de continuar.")
+        p = db.get(Property, payload.property_id)
+        if not p:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        lead_data = payload.model_dump(exclude={"buyer_phone"})
+        lead = Lead(
+            id=f"l-{uuid.uuid4().hex[:12]}",
+            user_id=session["user_id"],
+            buyer_phone_raw=payload.buyer_phone,
+            buyer_phone_normalized=buyer_phone_normalized,
+            **lead_data,
+        )
+        db.add(lead)
+        event_name = "visit_request" if payload.intent_type == "VISIT" else "property_question"
+        event_ctx: dict[str, Any] = {"intent_type": payload.intent_type}
+        if payload.amount:
+            event_ctx["amount"] = payload.amount
+        if payload.origin:
+            event_ctx["origin"] = payload.origin
+        notify_ids = listing_group_member_agency_ids(db, p) or ({p.agency_id} if p.agency_id else set())
+        for aid in notify_ids:
+            db.add(Event(
+                name=event_name,
+                property_id=p.id,
+                user_id=session["user_id"],
+                agency_id=aid,
+                context={**event_ctx, "listing_group_id": p.listing_group_id},
+            ))
+        db.commit()
+        return {"id": lead.id, "status": lead.status}
+
+
+@app.get("/leads")
+def list_leads(session: dict[str, Any] = Depends(current_session)):
+    """Mismo criterio de restricción que GET /offers: agencia no VERIFIED
+    solo ve la cantidad, nunca detalle ni contacto."""
+    with Session(engine) as db:
+        stmt = select(Lead)
+        if session.get("role") == Role.AGENTE.value:
+            own_props = list(db.scalars(select(Property).where(Property.agency_id == session["agency_id"])).all())
+            own_ids = [p.id for p in own_props]
+            group_ids = list({p.listing_group_id for p in own_props if p.listing_group_id})
+            group_prop_ids: list[str] = []
+            if group_ids:
+                group_prop_ids = [
+                    p.id for p in db.scalars(
+                        select(Property).where(Property.listing_group_id.in_(group_ids))
+                    ).all()
+                ]
+            visible_ids = list(set(own_ids + group_prop_ids)) or ["__none__"]
+            stmt = stmt.where(Lead.property_id.in_(visible_ids))
+            agency = db.get(Agency, session["agency_id"]) if session.get("agency_id") else None
+            leads = db.scalars(stmt.order_by(Lead.created_at.desc())).all()
+            if not agency or agency.verification_status != "VERIFIED":
+                return {
+                    "verificationRequired": True,
+                    "verificationStatus": (agency.verification_status if agency else "PENDING"),
+                    "count": len(leads),
+                    "leads": [],
+                }
+        else:
+            stmt = stmt.where(Lead.user_id == session["user_id"])
+            leads = db.scalars(stmt.order_by(Lead.created_at.desc())).all()
+
+        result = []
+        for l in leads:
+            prop = db.get(Property, l.property_id)
+            row = {
+                "id": l.id, "user_id": l.user_id, "property_id": l.property_id,
+                "intent_type": l.intent_type, "has_proposal": l.has_proposal, "amount": l.amount,
+                "currency": l.currency, "payment_form": l.payment_form, "capital": l.capital,
+                "timeframe": l.timeframe, "comment": l.comment,
+                "visit_day": l.visit_day, "visit_slot": l.visit_slot,
+                "status": l.status, "created_at": l.created_at.isoformat(),
+                "contact_revealed": l.contact_revealed, "origin": l.origin,
+                "property_title": prop.title if prop else None,
+                "property_zone": prop.zone if prop else None,
+                "listing_group_id": prop.listing_group_id if prop else None,
+            }
+            if l.contact_revealed:
+                row["buyer_name"] = l.buyer_name
+                row["buyer_phone"] = l.buyer_phone_raw
+                row["buyer_email"] = l.buyer_email
+            result.append(row)
+        return result
 
 @app.get("/offers")
 def list_offers(status: str | None = None, session: dict[str, Any] = Depends(current_session)):
