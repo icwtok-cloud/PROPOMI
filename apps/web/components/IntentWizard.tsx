@@ -33,6 +33,13 @@ const VISIT_SLOTS=[
 const STEP_COUNT=5;
 const fmt=(n:number)=>Math.round(n).toLocaleString('en-US');
 
+function isLikelyValidPhone(raw:string):boolean{
+  const trimmed=raw.trim();
+  if(!/^\+?[\d\s()-]+$/.test(trimmed))return false;
+  const digits=trimmed.replace(/\D/g,'');
+  return digits.length>=8&&digits.length<=15;
+}
+
 function buildVisitDays(){
   const days=[];
   const labels=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
@@ -88,6 +95,7 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
     setIdentityError(null);
     if(buyerName.trim().length<2){setIdentityError('Ingresá tu nombre y apellido.');return}
     if(buyerPhone.trim().length<6){setIdentityError('Ingresá un celular válido.');return}
+    if(!isLikelyValidPhone(buyerPhone)){setIdentityError('Revisá el número: usá solo dígitos, con código de área. Ej: 11 5555 1234.');return}
     setOtpBusy(true);setOtpError(null);
     try{await requestOtp(buyerPhone.trim());setOtpSent(true)}
     catch(e:any){setOtpError(e?.message||'No pudimos enviar el código. Intentá de nuevo.')}
@@ -302,8 +310,9 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
           </div>
           <div className="qlabel" style={{marginTop:14}}>Celular</div>
           <div className="formgrid" style={{gridTemplateColumns:'1fr'}}>
-            <input value={buyerPhone} onChange={e=>setBuyerPhone(e.target.value)} placeholder="Ej: 11 5555 5555" inputMode="tel"/>
+            <input value={buyerPhone} onChange={e=>setBuyerPhone(e.target.value)} placeholder="Ej: 11 5555 1234" inputMode="tel"/>
           </div>
+          <div className="qhelp small" style={{marginTop:4}}>Con código de área, sin el 0 ni el 15. Ej: 11 5555 1234 (o +54 9 11 5555 1234).</div>
           {identityError&&<div className="notice notice-error" style={{marginTop:10}}>{identityError}</div>}
           <div style={{marginTop:12}}>
             {!otpSent
