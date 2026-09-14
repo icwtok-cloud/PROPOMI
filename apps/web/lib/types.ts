@@ -14,3 +14,5 @@ export type ReviewQueueItem={property:Property;candidate:Property|null};
 
 export type Session={token:string;user:{id:string;phone:string;role:Role;agency_id:string}};
 export type Role='AGENTE'|'COMPRADOR';
+
+export type Intent={offer:boolean;budget:number;capital:number;financing:'YES'|'NO';timeframe:string;alternatives:boolean;comment?:string};
