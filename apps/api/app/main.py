@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import hashlib
 import hmac
@@ -372,6 +372,45 @@ class Offer(Base):
     origin: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+
+class Lead(Base):
+    """Etapa (rediseño wizard): pregunta/visita calificadas por el mismo
+    wizard que la oferta, pero sin forzar un monto — a diferencia de Offer,
+    `amount` es opcional (solo existe si el comprador eligió proponer un
+    precio desde el modo 'question'). No reusa la tabla `offers` a propósito:
+    mezclar "sin propuesta de precio" dentro de un modelo pensado para
+    ofertas ensuciaría ese esquema con campos que no le pertenecen. El resto
+    de la calificación (capital, forma de pago, plazo, condicionantes) es
+    igual que en Offer porque son los mismos pasos 2-4 del wizard."""
+    __tablename__ = "leads"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(40))
+    property_id: Mapped[str] = mapped_column(String(40))
+    # QUESTION | VISIT
+    intent_type: Mapped[str] = mapped_column(String(20))
+    # Solo aplica a intent_type=QUESTION cuando el comprador NO tocó
+    # "Todavía no tengo una propuesta" — si la tocó, has_proposal=False y
+    # amount queda None. En VISIT siempre False/None.
+    has_proposal: Mapped[bool] = mapped_column(Boolean, default=False)
+    amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    currency: Mapped[str] = mapped_column(String(8), default="USD")
+    payment_form: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    capital: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Solo aplica a intent_type=VISIT. visit_day: fecha ISO (YYYY-MM-DD).
+    # visit_slot: una de "08-12" | "12-16" | "16-20".
+    visit_day: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    visit_slot: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="SENT")
+    buyer_name: Mapped[str] = mapped_column(String(120))
+    buyer_phone_raw: Mapped[str] = mapped_column(String(40))
+    buyer_phone_normalized: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
+    buyer_email: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    contact_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
+    contact_revealed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    origin: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 class RevealMethod(str, Enum):
     SUBSCRIPTION_QUOTA = "SUBSCRIPTION_QUOTA"
