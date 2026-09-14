@@ -727,7 +727,28 @@ class MockSmsSender:
             print(f"[PROPOMI OTP MOCK] {phone} -> {code}")
 
 
-sms_sender: SmsSender = MockSmsSender()
+class VonageSmsSender:
+    """OTP real vía Vonage SMS API classic (api_key + api_secret)."""
+
+    def send(self, phone: str, code: str) -> None:
+        from .sms_vonage import send_otp_sms, VonageSMSError
+
+        try:
+            send_otp_sms(phone, code)
+        except VonageSMSError as e:
+            raise HTTPException(status_code=502, detail="No se pudo enviar el SMS") from e
+
+
+OTP_SMS_PROVIDER = os.getenv("OTP_SMS_PROVIDER", "dev").lower()
+
+
+def _select_sms_sender() -> SmsSender:
+    if OTP_SMS_PROVIDER == "vonage":
+        return VonageSmsSender()
+    return MockSmsSender()
+
+
+sms_sender: SmsSender = _select_sms_sender()
 OTP_MAX_VERIFY_ATTEMPTS = 5
 
 
@@ -1321,9 +1342,10 @@ def request_otp(payload: OTPRequest):
         db.query(OTPCode).filter(OTPCode.phone == phone, OTPCode.consumed == False).update({"consumed": True})
         db.add(OTPCode(phone=phone, code_hash=hash_otp(code), expires_at=datetime.now(timezone.utc) + timedelta(seconds=OTP_TTL_SECONDS)))
         db.commit()
+    # vonage: SMS real, nunca dev_code. dev/mock: dev_code fuera de production.
     sms_sender.send(phone, code)
-    response = {"ok": True, "message": "Te enviamos un código de verificación."}
-    if ENV != "production":
+    response: dict[str, Any] = {"ok": True, "message": "Te enviamos un código de verificación."}
+    if OTP_SMS_PROVIDER != "vonage" and ENV != "production":
         response["dev_code"] = code
     return response
 
