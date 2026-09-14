@@ -1,9 +1,14 @@
-import type { Metadata } from 'next';
+﻿import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Propomi — Descubrí, decidí, negociá',
   description: 'La capa de intención y decisión inmobiliaria para LATAM.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
