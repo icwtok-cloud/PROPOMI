@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 import {useEffect,useMemo,useState} from 'react';
 import Link from 'next/link';
 import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarChart3,MessageSquare,Lock} from 'lucide-react';
@@ -33,10 +33,13 @@ export default function Home(){
   useEffect(()=>{captureOfferOriginFromUrl()},[]);
   useEffect(()=>{(async()=>{
     try{
-      const s=await getOrCreateBuyerSession();
-      const [items,offersList]=await Promise.all([getPropertiesDeduped(),listOffers(s)]);
+      const items=await getPropertiesDeduped();
       setItems(items);
-      setOffers(isOffersRestricted(offersList)?[]:(Array.isArray(offersList)?offersList:[]));
+      try{
+        const s=await getOrCreateBuyerSession();
+        const offersList=await listOffers(s);
+        setOffers(isOffersRestricted(offersList)?[]:(Array.isArray(offersList)?offersList:[]));
+      }catch{}
       // Deep link de tracking: /?property=<id>&o=<origen> abre el detalle.
       if(typeof window==='undefined')return;
       const pid=new URLSearchParams(window.location.search).get('property');
