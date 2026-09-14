@@ -169,3 +169,137 @@ def test_post_subscription_sets_plan_and_resets_consumido():
     with Session(engine) as db:
         a = db.get(Agency, "sub-a1")
         assert a.subscription_tier == "PLAN_50" and a.leads_used_current_period == 0 and a.plan_lead_quota == 60
+
+
+# --- Lemon Squeezy subscription webhook events ---
+
+def test_ls_webhook_invalid_signature_401():
+    import app.main as main_mod
+    import hmac, hashlib, json
+    original = main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET
+    main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET = "whsec-test"
+    try:
+        r = client.post(
+            "/payments/webhooks/lemonsqueezy",
+            content=b'{"meta":{"event_name":"subscription_created"}}',
+            headers={"Content-Type": "application/json", "X-Signature": "bad"},
+        )
+        assert r.status_code == 401
+    finally:
+        main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET = original
+
+
+def test_ls_webhook_subscription_created():
+    import app.main as main_mod
+    import hmac, hashlib, json
+    from app.main import Subscription, SubscriptionPlan, get_subscription
+
+    secret = "whsec-test"
+    original = main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET
+    main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET = secret
+    # map variant
+    main_mod._LS_VARIANT_TO_PLAN["999001"] = (SubscriptionPlan.PLAN_30.value, 30)
+
+    _reset_agency("sub-ls-1", free=0, plan=SubscriptionPlan.PAY_PER_LEAD.value, used=0, quota=0)
+
+    body = {
+        "meta": {
+            "event_name": "subscription_created",
+            "custom_data": {"agency_id": "sub-ls-1", "kind": "plan_basic"},
+        },
+        "data": {
+            "id": "sub_ls_1",
+            "attributes": {"variant_id": 999001, "status": "active"},
+        },
+    }
+    raw = json.dumps(body).encode()
+    sig = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    try:
+        r = client.post(
+            "/payments/webhooks/lemonsqueezy",
+            content=raw,
+            headers={"Content-Type": "application/json", "X-Signature": sig},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "subscription_upserted"
+        with Session(engine) as db:
+            sub = get_subscription(db, "sub-ls-1")
+            assert sub is not None
+            assert sub.plan == SubscriptionPlan.PLAN_30.value
+            assert sub.cupo_ciclo == 30
+            assert sub.consumido_ciclo == 0
+    finally:
+        main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET = original
+
+
+def test_ls_webhook_subscription_cancelled():
+    import app.main as main_mod
+    import hmac, hashlib, json
+    from app.main import SubscriptionPlan, get_subscription
+
+    secret = "whsec-test"
+    original = main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET
+    main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET = secret
+    _reset_agency("sub-ls-2", free=0, plan=SubscriptionPlan.PLAN_50.value, used=5, quota=60)
+
+    body = {
+        "meta": {
+            "event_name": "subscription_cancelled",
+            "custom_data": {"agency_id": "sub-ls-2"},
+        },
+        "data": {"attributes": {"status": "cancelled"}},
+    }
+    raw = json.dumps(body).encode()
+    sig = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    try:
+        r = client.post(
+            "/payments/webhooks/lemonsqueezy",
+            content=raw,
+            headers={"Content-Type": "application/json", "X-Signature": sig},
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] == "subscription_cancelled"
+        with Session(engine) as db:
+            sub = get_subscription(db, "sub-ls-2")
+            assert sub is not None
+            assert sub.plan == SubscriptionPlan.PAY_PER_LEAD.value
+            assert sub.cupo_ciclo == 0
+    finally:
+        main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET = original
+
+
+def test_ls_webhook_subscription_updated_expired():
+    import app.main as main_mod
+    import hmac, hashlib, json
+    from app.main import SubscriptionPlan, get_subscription
+
+    secret = "whsec-test"
+    original = main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET
+    main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET = secret
+    main_mod._LS_VARIANT_TO_PLAN["999002"] = (SubscriptionPlan.PLAN_99.value, None)
+    _reset_agency("sub-ls-3", free=0, plan=SubscriptionPlan.PLAN_99.value, used=0, quota=None)
+
+    body = {
+        "meta": {
+            "event_name": "subscription_updated",
+            "custom_data": {"agency_id": "sub-ls-3", "kind": "plan_premium"},
+        },
+        "data": {
+            "attributes": {"variant_id": 999002, "status": "expired"},
+        },
+    }
+    raw = json.dumps(body).encode()
+    sig = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest()
+    try:
+        r = client.post(
+            "/payments/webhooks/lemonsqueezy",
+            content=raw,
+            headers={"Content-Type": "application/json", "X-Signature": sig},
+        )
+        assert r.status_code == 200
+        assert r.json()["status"] == "subscription_ended"
+        with Session(engine) as db:
+            sub = get_subscription(db, "sub-ls-3")
+            assert sub.plan == SubscriptionPlan.PAY_PER_LEAD.value
+    finally:
+        main_mod.LEMON_SQUEEZY_WEBHOOK_SECRET = original

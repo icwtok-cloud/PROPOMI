@@ -727,28 +727,7 @@ class MockSmsSender:
             print(f"[PROPOMI OTP MOCK] {phone} -> {code}")
 
 
-class VonageSmsSender:
-    """OTP real vía Vonage SMS API classic (api_key + api_secret)."""
-
-    def send(self, phone: str, code: str) -> None:
-        from .sms_vonage import send_otp_sms, VonageSMSError
-
-        try:
-            send_otp_sms(phone, code)
-        except VonageSMSError as e:
-            raise HTTPException(status_code=502, detail="No se pudo enviar el SMS") from e
-
-
-OTP_SMS_PROVIDER = os.getenv("OTP_SMS_PROVIDER", "dev").lower()
-
-
-def _select_sms_sender() -> SmsSender:
-    if OTP_SMS_PROVIDER == "vonage":
-        return VonageSmsSender()
-    return MockSmsSender()
-
-
-sms_sender: SmsSender = _select_sms_sender()
+sms_sender: SmsSender = MockSmsSender()
 OTP_MAX_VERIFY_ATTEMPTS = 5
 
 
@@ -786,11 +765,32 @@ class MockPaymentGateway:
 # hosteado y confirma el pago vía webhook, en vez de un `charge()` síncrono
 # como asumía el diseño original del Protocol (por eso se agregó
 # `create_checkout` arriba, sin romper `charge()` para el mock/tests).
-LEMON_SQUEEZY_API_KEY = os.getenv("LEMON_SQUEEZY_API_KEY")
-LEMON_SQUEEZY_STORE_ID = os.getenv("LEMON_SQUEEZY_STORE_ID")
-LEMON_SQUEEZY_VARIANT_ID = os.getenv("LEMON_SQUEEZY_VARIANT_ID")  # variant = "revelar 1 contacto"
-LEMON_SQUEEZY_WEBHOOK_SECRET = os.getenv("LEMON_SQUEEZY_WEBHOOK_SECRET")
+LEMON_SQUEEZY_API_KEY = os.getenv("LEMON_SQUEEZY_API_KEY") or os.getenv("LEMONSQUEEZY_API_KEY")
+LEMON_SQUEEZY_STORE_ID = os.getenv("LEMON_SQUEEZY_STORE_ID") or os.getenv("LEMONSQUEEZY_STORE_ID")
+# Reveal (pay-per-lead) — compat con LEMON_SQUEEZY_VARIANT_ID legacy
+LEMON_SQUEEZY_VARIANT_ID = (
+    os.getenv("LS_VARIANT_REVEAL")
+    or os.getenv("LEMON_SQUEEZY_VARIANT_ID")
+)
+# Planes de suscripción (env names del brief + alias)
+LS_VARIANT_PLAN_BASIC = os.getenv("LS_VARIANT_PLAN_BASIC") or os.getenv("LS_VARIANT_SUB_30")
+LS_VARIANT_PLAN_PRO = os.getenv("LS_VARIANT_PLAN_PRO") or os.getenv("LS_VARIANT_SUB_60")
+LS_VARIANT_PLAN_PREMIUM = os.getenv("LS_VARIANT_PLAN_PREMIUM") or os.getenv("LS_VARIANT_SUB_UNLIMITED")
+LEMON_SQUEEZY_WEBHOOK_SECRET = (
+    os.getenv("LEMON_SQUEEZY_WEBHOOK_SECRET")
+    or os.getenv("LEMONSQUEEZY_WEBHOOK_SECRET")
+    or os.getenv("LS_WEBHOOK_SECRET")
+)
 LEMON_SQUEEZY_API_BASE = "https://api.lemonsqueezy.com/v1"
+
+# variant_id str -> (plan SubscriptionPlan value, cupo)
+_LS_VARIANT_TO_PLAN: dict[str, tuple[str, int | None]] = {}
+if LS_VARIANT_PLAN_BASIC:
+    _LS_VARIANT_TO_PLAN[str(LS_VARIANT_PLAN_BASIC)] = (SubscriptionPlan.PLAN_30.value, 30)
+if LS_VARIANT_PLAN_PRO:
+    _LS_VARIANT_TO_PLAN[str(LS_VARIANT_PLAN_PRO)] = (SubscriptionPlan.PLAN_50.value, 60)
+if LS_VARIANT_PLAN_PREMIUM:
+    _LS_VARIANT_TO_PLAN[str(LS_VARIANT_PLAN_PREMIUM)] = (SubscriptionPlan.PLAN_99.value, None)
 
 
 class LemonSqueezyPaymentGateway:
@@ -815,7 +815,7 @@ class LemonSqueezyPaymentGateway:
                     "checkout_data": {
                         # transaction_id viaja en custom_data para poder
                         # identificar la RevealTransaction cuando llegue el webhook.
-                        "custom": {"transaction_id": reference, "agency_id": agency_id},
+                        "custom": {"transaction_id": reference, "agency_id": agency_id, "kind": "reveal"},
                     },
                     "product_options": {"redirect_url": "https://propomi.lat/mi-cuenta?payment=ok"},
                 },
@@ -1273,8 +1273,16 @@ class OTPVerify(BaseModel):
 
 
 class SubscriptionIn(BaseModel):
-    """Registro/cambio de plan (sin cobro real — Lemon fuera de alcance)."""
+    """Registro/cambio de plan (dev/mock). En prod preferir checkout Lemon."""
     plan: str
+
+
+class CheckoutRequestIn(BaseModel):
+    """Checkout Lemon: reveal | plan_basic | plan_pro | plan_premium."""
+    kind: str
+    offer_id: str | None = None
+    lead_id: str | None = None
+    email: str | None = None
 
 
 class AgencyUpdate(BaseModel):
@@ -1342,10 +1350,9 @@ def request_otp(payload: OTPRequest):
         db.query(OTPCode).filter(OTPCode.phone == phone, OTPCode.consumed == False).update({"consumed": True})
         db.add(OTPCode(phone=phone, code_hash=hash_otp(code), expires_at=datetime.now(timezone.utc) + timedelta(seconds=OTP_TTL_SECONDS)))
         db.commit()
-    # vonage: SMS real, nunca dev_code. dev/mock: dev_code fuera de production.
     sms_sender.send(phone, code)
-    response: dict[str, Any] = {"ok": True, "message": "Te enviamos un código de verificación."}
-    if OTP_SMS_PROVIDER != "vonage" and ENV != "production":
+    response = {"ok": True, "message": "Te enviamos un código de verificación."}
+    if ENV != "production":
         response["dev_code"] = code
     return response
 
@@ -2380,17 +2387,124 @@ if ENV != "production":
             return {"status": "COMPLETED", "buyer_name": offer.buyer_name if offer else None, "buyer_phone": offer.buyer_phone_raw if offer else None, "buyer_email": offer.buyer_email if offer else None}
 
 
+def _ls_create_checkout_url(variant_id: str, agency_id: str, custom: dict[str, str], email: str | None = None) -> str | None:
+    if not (LEMON_SQUEEZY_API_KEY and LEMON_SQUEEZY_STORE_ID and variant_id):
+        return None
+    checkout_data: dict[str, Any] = {"custom": custom}
+    if email:
+        checkout_data["email"] = email
+    payload = {
+        "data": {
+            "type": "checkouts",
+            "attributes": {
+                "checkout_data": checkout_data,
+                "product_options": {"redirect_url": "https://propomi.lat/mi-cuenta?payment=ok"},
+            },
+            "relationships": {
+                "store": {"data": {"type": "stores", "id": str(LEMON_SQUEEZY_STORE_ID)}},
+                "variant": {"data": {"type": "variants", "id": str(variant_id)}},
+            },
+        }
+    }
+    req = urllib.request.Request(
+        f"{LEMON_SQUEEZY_API_BASE}/checkouts",
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Accept": "application/vnd.api+json",
+            "Content-Type": "application/vnd.api+json",
+            "Authorization": f"Bearer {LEMON_SQUEEZY_API_KEY}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+            return body["data"]["attributes"]["url"]
+    except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError) as exc:
+        print(f"[PROPOMI LEMON SQUEEZY] Error checkout: {exc}")
+        return None
+
+
+def _upsert_subscription_from_ls(db: Session, agency_id: str, plan: str, cupo: int | None) -> Subscription:
+    now = datetime.now(timezone.utc)
+    sub = get_subscription(db, agency_id)
+    if sub is None:
+        sub = Subscription(
+            id=f"sub-{uuid.uuid4().hex[:12]}",
+            agency_id=agency_id,
+            plan=plan,
+            cupo_ciclo=cupo,
+            consumido_ciclo=0,
+            fecha_renovacion=now + timedelta(days=30),
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(sub)
+    else:
+        sub.plan = plan
+        sub.cupo_ciclo = cupo
+        sub.consumido_ciclo = 0
+        sub.fecha_renovacion = now + timedelta(days=30)
+        sub.updated_at = now
+    agency = db.get(Agency, agency_id)
+    if agency:
+        agency.subscription_tier = plan if plan != SubscriptionPlan.PAY_PER_LEAD.value else None
+        agency.plan_lead_quota = cupo
+        agency.leads_used_current_period = 0
+        agency.subscription_started_at = now
+        agency.current_period_start = now
+    return sub
+
+
+@app.post("/payments/checkout")
+def create_payment_checkout(payload: CheckoutRequestIn, session: dict[str, Any] = Depends(require_agent)):
+    """Checkout Lemon: kind=reveal|plan_basic|plan_pro|plan_premium."""
+    agency_id = session["agency_id"]
+    kind = (payload.kind or "").strip().lower()
+    variant_map = {
+        "reveal": LEMON_SQUEEZY_VARIANT_ID,
+        "plan_basic": LS_VARIANT_PLAN_BASIC,
+        "plan_pro": LS_VARIANT_PLAN_PRO,
+        "plan_premium": LS_VARIANT_PLAN_PREMIUM,
+        "sub_30": LS_VARIANT_PLAN_BASIC,
+        "sub_60": LS_VARIANT_PLAN_PRO,
+        "sub_unlimited": LS_VARIANT_PLAN_PREMIUM,
+    }
+    variant_id = variant_map.get(kind)
+    if not variant_id:
+        raise HTTPException(status_code=400, detail="Plan inválido o variant no configurado")
+    if kind == "reveal":
+        transaction_id = f"rt-{uuid.uuid4().hex[:12]}"
+        with Session(engine) as db:
+            db.add(RevealTransaction(
+                id=transaction_id, offer_id=payload.offer_id, lead_id=payload.lead_id,
+                agency_id=agency_id, method=RevealMethod.PAY_PER_LEAD.value,
+                amount_usd=PAY_PER_LEAD_USD, status="PENDING",
+            ))
+            db.commit()
+        custom = {
+            "transaction_id": transaction_id, "agency_id": agency_id, "kind": "reveal",
+            "offer_id": payload.offer_id or "", "lead_id": payload.lead_id or "",
+        }
+        url = _ls_create_checkout_url(str(variant_id), agency_id, custom, payload.email)
+        if not url:
+            raise HTTPException(status_code=502, detail="No se pudo crear el checkout")
+        return {"checkout_url": url, "transaction_id": transaction_id}
+    custom = {"agency_id": agency_id, "kind": kind}
+    url = _ls_create_checkout_url(str(variant_id), agency_id, custom, payload.email)
+    if not url:
+        raise HTTPException(status_code=502, detail="No se pudo crear el checkout")
+    return {"checkout_url": url}
+
+
 @app.post("/payments/webhooks/lemonsqueezy")
-async def lemonsqueezy_webhook(request: Request, x_signature: str | None = Header(default=None, alias="X-Signature")):
-    """Confirma un pago real de Lemon Squeezy (etapa 017). Lemon Squeezy manda
-    la firma HMAC-SHA256 del body crudo en `X-Signature`; sin
-    LEMON_SQUEEZY_WEBHOOK_SECRET configurado, se rechaza todo (nunca se
-    confía en un webhook sin poder verificar su firma). Solo se completa la
-    RevealTransaction cuyo `transaction_id` viaja en
-    `meta.custom_data.transaction_id` (el mismo que se mandó en
-    `create_checkout`); cualquier otro evento se ignora con 200 (Lemon
-    Squeezy reintenta si no responde 2xx, así que un evento no relevante para
-    Propomi no debe hacerlo reintentar)."""
+async def lemonsqueezy_webhook(
+    request: Request,
+    x_signature: str | None = Header(default=None, alias="X-Signature"),
+):
+    """Webhook Lemon Squeezy — firma HMAC obligatoria.
+    Eventos: order_created (reveal), subscription_created/updated/cancelled.
+    """
     raw_body = await request.body()
     if not LEMON_SQUEEZY_WEBHOOK_SECRET:
         raise HTTPException(status_code=503, detail="Webhook no configurado (falta LEMON_SQUEEZY_WEBHOOK_SECRET)")
@@ -2403,36 +2517,96 @@ async def lemonsqueezy_webhook(request: Request, x_signature: str | None = Heade
     payload = json.loads(raw_body.decode("utf-8"))
     event_name = payload.get("meta", {}).get("event_name")
     custom_data = payload.get("meta", {}).get("custom_data", {}) or {}
-    transaction_id = custom_data.get("transaction_id")
+    data = payload.get("data") or {}
+    attrs = data.get("attributes") or {}
 
-    # Solo nos importa la confirmación de la orden asociada al checkout de
-    # pay-per-lead; cualquier otro evento (ej. de suscripciones futuras) se
-    # ignora acá a propósito hasta que exista esa feature.
-    if event_name != "order_created" or not transaction_id:
-        return {"status": "ignored"}
-
-    order_status = payload.get("data", {}).get("attributes", {}).get("status")
     with Session(engine) as db:
-        txn = db.get(RevealTransaction, transaction_id)
-        if not txn:
-            # Idempotencia/seguridad: nunca crear una transacción nueva desde
-            # un webhook — si el id no existe, no hay nada que completar.
-            return {"status": "ignored"}
-        if txn.status == "COMPLETED":
-            return {"status": "already_completed"}
-        if order_status != "paid":
-            return {"status": "ignored"}
+        if event_name == "order_created":
+            transaction_id = custom_data.get("transaction_id")
+            order_status = attrs.get("status")
+            if not transaction_id or order_status != "paid":
+                return {"status": "ignored"}
+            txn = db.get(RevealTransaction, transaction_id)
+            if not txn:
+                return {"status": "ignored"}
+            if txn.status == "COMPLETED":
+                return {"status": "already_completed"}
+            now = datetime.now(timezone.utc)
+            txn.status = "COMPLETED"
+            txn.completed_at = now
+            if txn.offer_id:
+                offer = db.get(Offer, txn.offer_id)
+                if offer and not offer.contact_revealed:
+                    offer.contact_revealed = True
+                    offer.contact_revealed_at = now
+                    db.add(Event(name="contact_revealed", property_id=offer.property_id, user_id=offer.user_id, agency_id=txn.agency_id, context={"method": "pay_per_lead_lemonsqueezy"}))
+            if txn.lead_id:
+                lead = db.get(Lead, txn.lead_id)
+                if lead and not lead.contact_revealed:
+                    lead.contact_revealed = True
+                    lead.contact_revealed_at = now
+            db.commit()
+            return {"status": "COMPLETED"}
 
-        now = datetime.now(timezone.utc)
-        txn.status = "COMPLETED"
-        txn.completed_at = now
-        offer = db.get(Offer, txn.offer_id)
-        if offer:
-            offer.contact_revealed = True
-            offer.contact_revealed_at = now
-            db.add(Event(name="contact_revealed", property_id=offer.property_id, user_id=offer.user_id, agency_id=txn.agency_id, context={"method": "pay_per_lead_lemonsqueezy"}))
-        db.commit()
-        return {"status": "COMPLETED"}
+        if event_name in ("subscription_created", "subscription_updated"):
+            agency_id = custom_data.get("agency_id")
+            if not agency_id:
+                return {"status": "ignored"}
+            variant_id = str(
+                attrs.get("variant_id")
+                or (data.get("relationships") or {}).get("variant", {}).get("data", {}).get("id")
+                or ""
+            )
+            plan_info = _LS_VARIANT_TO_PLAN.get(variant_id)
+            if not plan_info:
+                kind = (custom_data.get("kind") or "").lower()
+                kind_map = {
+                    "plan_basic": (SubscriptionPlan.PLAN_30.value, 30),
+                    "plan_pro": (SubscriptionPlan.PLAN_50.value, 60),
+                    "plan_premium": (SubscriptionPlan.PLAN_99.value, None),
+                    "sub_30": (SubscriptionPlan.PLAN_30.value, 30),
+                    "sub_60": (SubscriptionPlan.PLAN_50.value, 60),
+                    "sub_unlimited": (SubscriptionPlan.PLAN_99.value, None),
+                }
+                plan_info = kind_map.get(kind)
+            if not plan_info:
+                return {"status": "ignored"}
+            plan, cupo = plan_info
+            status = (attrs.get("status") or "active").lower()
+            if status in ("cancelled", "expired", "unpaid"):
+                sub = get_subscription(db, agency_id)
+                if sub:
+                    sub.plan = SubscriptionPlan.PAY_PER_LEAD.value
+                    sub.cupo_ciclo = 0
+                    sub.updated_at = datetime.now(timezone.utc)
+                    agency = db.get(Agency, agency_id)
+                    if agency:
+                        agency.subscription_tier = None
+                        agency.plan_lead_quota = 0
+                    db.commit()
+                return {"status": "subscription_ended"}
+            _upsert_subscription_from_ls(db, agency_id, plan, cupo)
+            db.commit()
+            return {"status": "subscription_upserted"}
+
+        if event_name == "subscription_cancelled":
+            agency_id = custom_data.get("agency_id")
+            if not agency_id:
+                return {"status": "ignored"}
+            sub = get_subscription(db, agency_id)
+            if sub:
+                sub.plan = SubscriptionPlan.PAY_PER_LEAD.value
+                sub.cupo_ciclo = 0
+                sub.updated_at = datetime.now(timezone.utc)
+                agency = db.get(Agency, agency_id)
+                if agency:
+                    agency.subscription_tier = None
+                    agency.plan_lead_quota = 0
+                db.commit()
+            return {"status": "subscription_cancelled"}
+
+    return {"status": "ignored"}
+
 
 
 @app.post("/offers/{offer_id}/{action}")
@@ -2700,6 +2874,60 @@ def analytics(session: dict[str, Any] = Depends(require_agent)):
         counts: dict[str, int] = {}
         for name in rows: counts[name] = counts.get(name, 0) + 1
         return {"properties": db.query(Property).count(), "events": db.query(Event).count(), "offers": db.query(Offer).count(), "funnel": counts}
+
+
+class SearchPerformedIn(BaseModel):
+    """Filtros anónimos de búsqueda — sin PII."""
+    model_config = {"extra": "forbid"}
+
+    zone: str | None = None
+    precio_min: float | None = None
+    precio_max: float | None = None
+    tipo: str | None = None
+    ambientes: int | None = None
+    type: str | None = None
+    rooms: int | None = None
+    max_price: float | None = None
+    min_price: float | None = None
+
+
+_PII_KEY_HINTS = ("phone", "telefono", "teléfono", "email", "mail", "nombre", "name", "dni", "buyer_")
+
+
+@app.post("/events/search_performed", status_code=201)
+async def post_search_performed(request: Request):
+    """Registra búsqueda agregada anónima. Rechaza campos que parezcan PII."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="JSON inválido")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="Body debe ser objeto")
+    for k in body.keys():
+        kl = str(k).lower()
+        if any(h in kl for h in _PII_KEY_HINTS):
+            raise HTTPException(status_code=400, detail=f"Campo no permitido (PII): {k}")
+    try:
+        payload = SearchPerformedIn(**body)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Filtros inválidos: {exc}") from exc
+    zone = payload.zone
+    tipo = payload.tipo or payload.type
+    ambientes = payload.ambientes if payload.ambientes is not None else payload.rooms
+    precio_max = payload.precio_max if payload.precio_max is not None else payload.max_price
+    precio_min = payload.precio_min if payload.precio_min is not None else payload.min_price
+    filters = {k: v for k, v in {
+        "zone": zone, "type": tipo, "rooms": ambientes,
+        "min_price": precio_min, "max_price": precio_max,
+    }.items() if v is not None}
+    with Session(engine) as db:
+        db.add(Event(
+            name="search_performed",
+            session_id=request.headers.get("x-session-id"),
+            context={"filters": filters, "source": "explicit"},
+        ))
+        db.commit()
+    return {"ok": True}
 
 
 @app.get("/analytics/demand")
@@ -3152,3 +3380,19 @@ def complete_onboarding(
             "message": "Perfil reclamado. Completá la verificación desde el panel de agencia si todavía está pendiente.",
         }
 
+
+
+@app.post("/admin/crawler/run")
+def admin_run_crawler(
+    request: Request,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+    sources: str | None = None,
+):
+    """Disparo manual del crawler (protegido por ADMIN_KEY). sources=zonaprop,argenprop"""
+    if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
+        raise HTTPException(status_code=401, detail="Admin key inválida")
+    from .crawler import run_crawl
+    source_ids = [s.strip() for s in (sources or "").split(",") if s.strip()] or None
+    with Session(engine) as db:
+        report = run_crawl(db, source_ids)
+    return report

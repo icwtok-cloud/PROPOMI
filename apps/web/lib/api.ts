@@ -327,3 +327,19 @@ export async function reopenAgency(id:string,adminKey:string,notes?:string):Prom
     body:notes?JSON.stringify({notes}):undefined,
   });
 }
+
+
+/** Tanda 4: evento de búsqueda anónimo (sin PII). */
+export async function trackSearchPerformed(filters:{
+  zone?:string; tipo?:string; type?:string; ambientes?:number; rooms?:number;
+  precio_min?:number; precio_max?:number; min_price?:number; max_price?:number;
+}){
+  if(!base)return;
+  try{
+    await fetch(`${base}/events/search_performed`,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(filters),
+    });
+  }catch{/* no bloquear UI */}
+}

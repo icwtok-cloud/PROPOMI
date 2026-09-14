@@ -73,6 +73,7 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
   const [buyerPhone,setBuyerPhone]=useState(initialProfile?.phone||'');
   const [phoneVerified,setPhoneVerified]=useState(!!initialProfile?.phoneVerified);
   const [googleVerified,setGoogleVerified]=useState(!!initialProfile?.googleVerified);
+  const [googleSkipped,setGoogleSkipped]=useState(false);
   const [otpSent,setOtpSent]=useState(false);
   const [otpCode,setOtpCode]=useState('');
   const [otpBusy,setOtpBusy]=useState(false);
@@ -118,11 +119,11 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
   }
 
   useEffect(()=>{
-    if(step!==5||!phoneVerified||googleVerified)return;
+    if(step!==5||!phoneVerified||googleVerified||googleSkipped)return;
     if(!googleBtnRef.current)return;
     renderGoogleButton(googleBtnRef.current,onGoogleToken).catch(e=>setGoogleError(e?.message||'Google Sign-In no está disponible.'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[step,phoneVerified,googleVerified]);
+  },[step,phoneVerified,googleVerified,googleSkipped]);
 
   const hasAmount=mode!=='visit'&&!(mode==='question'&&skipProposal);
   const amount=Math.round(p.price*(1-pct/100));
@@ -309,21 +310,22 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
           </div>
         </div>}
 
-        {phoneVerified&&<div className="summarycard" style={{marginTop:12}}>
+        {phoneVerified&&!googleSkipped&&<div className="summarycard" style={{marginTop:12}}>
           <div className="summaryrow">
-            <span>Cuenta de Google</span>
+            <span>Cuenta de Google (opcional)</span>
             <b>{googleVerified?'✅ Confirmada':''}</b>
           </div>
           {!googleVerified&&<div style={{marginTop:10}}>
             <div ref={googleBtnRef}/>
             {googleError&&<div className="notice notice-error" style={{marginTop:8}}>{googleError}</div>}
+            <button className="secondary" style={{marginTop:10}} onClick={()=>setGoogleSkipped(true)}>Omitir, ya verifiqué por SMS</button>
           </div>}
         </div>}
 
         {error && <div className="notice notice-error" style={{marginTop:12}}>{error}</div>}
         <div className="wizactions modalactions">
           <button className="secondary" onClick={()=>setStep(4)}>Volver</button>
-          <button className="primary" disabled={busy||!phoneVerified||!googleVerified} onClick={send}>{busy?'Enviando…':(mode==='offer'?'Enviar oferta':mode==='visit'?'Enviar solicitud':'Enviar consulta')}</button>
+          <button className="primary" disabled={busy||!(phoneVerified||googleVerified)} onClick={send}>{busy?'Enviando…':(mode==='offer'?'Enviar oferta':mode==='visit'?'Enviar solicitud':'Enviar consulta')}</button>
         </div>
       </div>}
     </div>

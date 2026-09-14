@@ -8,7 +8,6 @@ os.environ.setdefault("JWT_SECRET", "test-secret")
 os.environ.setdefault("ENV", "test")
 
 from fastapi.testclient import TestClient
-from fastapi import HTTPException
 from datetime import datetime, timezone
 from app.main import app, engine, Base, Session, User, Agency, AgencyPhone, Role, create_token
 
@@ -196,87 +195,25 @@ def test_cannot_add_phone_to_agency_that_is_not_yours():
     assert r.status_code == 403
 
 
-def test_otp_request_vonage_hides_dev_code(monkeypatch):
-    """Con OTP_SMS_PROVIDER=vonage la respuesta no incluye dev_code."""
-    import app.main as main_mod
-
-    monkeypatch.setattr(main_mod, "OTP_SMS_PROVIDER", "vonage")
-
-    class FakeVonage:
-        def send(self, phone, code):
-            pass
-
-    monkeypatch.setattr(main_mod, "sms_sender", FakeVonage())
-    r = client.post("/auth/otp/request", json={"phone": "+5491155550101"})
-    assert r.status_code == 200
-    assert r.json().get("ok") is True
-    assert "dev_code" not in r.json()
+def test_search_performed_accepts_anonymous_filters():
+    r = client.post("/events/search_performed", json={
+        "zone": "Caballito", "tipo": "departamento", "ambientes": 3,
+        "precio_min": 80000, "precio_max": 150000,
+    })
+    assert r.status_code == 201, r.text
+    assert r.json()["ok"] is True
 
 
-def test_otp_request_vonage_failure_returns_502(monkeypatch):
-    """Fallo de envío → 502 explícito."""
-    import app.main as main_mod
-
-    monkeypatch.setattr(main_mod, "OTP_SMS_PROVIDER", "vonage")
-
-    class FailingVonage:
-        def send(self, phone, code):
-            raise HTTPException(status_code=502, detail="No se pudo enviar el SMS")
-
-    monkeypatch.setattr(main_mod, "sms_sender", FailingVonage())
-    r = client.post("/auth/otp/request", json={"phone": "+5491155550101"})
-    assert r.status_code == 502
+def test_search_performed_rejects_pii_phone():
+    r = client.post("/events/search_performed", json={
+        "zone": "Caballito", "phone": "+5491155550000",
+    })
+    assert r.status_code == 400
+    assert "PII" in r.json()["detail"]
 
 
-def test_vonage_send_otp_sms_posts_classic_api(monkeypatch):
-    """send_otp_sms llama rest.nexmo.com con api_key, from=Propomi y to sin +."""
-    import app.sms_vonage as vonage_mod
-
-    monkeypatch.setattr(vonage_mod, "VONAGE_API_KEY", "test-key")
-    monkeypatch.setattr(vonage_mod, "VONAGE_API_SECRET", "test-secret")
-    monkeypatch.setattr(vonage_mod, "VONAGE_SMS_FROM", "Propomi")
-
-    captured = {}
-
-    class FakeResp:
-        status_code = 200
-
-        def json(self):
-            return {"message-count": "1", "messages": [{"status": "0", "to": "5491155550101"}]}
-
-    def fake_post(url, data=None, timeout=None):
-        captured["url"] = url
-        captured["data"] = dict(data or {})
-        captured["timeout"] = timeout
-        return FakeResp()
-
-    monkeypatch.setattr(vonage_mod.requests, "post", fake_post)
-    body = vonage_mod.send_otp_sms("+5491155550101", "123456")
-    assert captured["url"] == "https://rest.nexmo.com/sms/json"
-    assert captured["data"]["api_key"] == "test-key"
-    assert captured["data"]["api_secret"] == "test-secret"
-    assert captured["data"]["from"] == "Propomi"
-    assert captured["data"]["to"] == "5491155550101"
-    assert "123456" in captured["data"]["text"]
-    assert body["messages"][0]["status"] == "0"
-
-
-def test_vonage_send_otp_sms_raises_on_nonzero_status(monkeypatch):
-    import app.sms_vonage as vonage_mod
-    from app.sms_vonage import VonageSMSError
-
-    monkeypatch.setattr(vonage_mod, "VONAGE_API_KEY", "k")
-    monkeypatch.setattr(vonage_mod, "VONAGE_API_SECRET", "s")
-
-    class FakeResp:
-        status_code = 200
-
-        def json(self):
-            return {"messages": [{"status": "15", "error-text": "Invalid sender"}]}
-
-    monkeypatch.setattr(vonage_mod.requests, "post", lambda *a, **k: FakeResp())
-    try:
-        vonage_mod.send_otp_sms("5491155550101", "999999")
-        assert False, "expected VonageSMSError"
-    except VonageSMSError as e:
-        assert "15" in str(e)
+def test_search_performed_rejects_pii_email():
+    r = client.post("/events/search_performed", json={
+        "zone": "Palermo", "email": "x@y.com",
+    })
+    assert r.status_code == 400

@@ -5,7 +5,7 @@ import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarC
 import PropertyCard from '../components/PropertyCard';
 import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
-import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl} from '../lib/api';
+import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed} from '../lib/api';
 import {Property,Offer} from '../lib/types';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
@@ -61,6 +61,18 @@ export default function Home(){
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
 
   const filtered=useMemo(()=>items.filter(p=>(!zone||p.zone===zone)&&(ptype==='Todos'||p.type===ptype)&&(!rooms||rooms==='Todos'||p.rooms===Number(rooms))&&p.price<=Number(budget||Infinity)&&(!parking||p.parking)&&(!credit||p.credit)),[items,zone,ptype,rooms,budget,parking,credit]);
+  useEffect(()=>{
+    const t=setTimeout(()=>{
+      trackSearchPerformed({
+        zone:zone||undefined,
+        tipo:ptype!=='Todos'?ptype:undefined,
+        ambientes:rooms&&rooms!=='Todos'?Number(rooms):undefined,
+        precio_max:budget?Number(budget):undefined,
+      });
+    },600);
+    return ()=>clearTimeout(t);
+  },[zone,ptype,rooms,budget,parking,credit]);
+
   const compareItems=items.filter(p=>compared.includes(p.id));
 
   function ev(name:any,id:string){trackEvent(name,id)}
