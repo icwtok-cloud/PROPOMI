@@ -1,4 +1,4 @@
-import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Offer,Opportunity,PendingAgency,Property,ReviewQueueItem,Role,Session} from './types';
+﻿import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Lead,Offer,Opportunity,PendingAgency,Property,ReviewQueueItem,Role,Session} from './types';
 
 import {PROPERTIES} from './data';
 const base=process.env.NEXT_PUBLIC_API_URL;
@@ -34,6 +34,21 @@ export async function listOffers(session?:Session|null):Promise<OffersListRespon
 export function isOffersRestricted(r:OffersListResponse):r is {verificationRequired:true;verificationStatus:string;count:number;offers:[]}{
   return !!r && !Array.isArray(r) && (r as any).verificationRequired===true;
 }
+
+// Espejo de createOffer/listOffers/isOffersRestricted, para pregunta/visita
+// calificadas (mismo wizard, mismos pasos 2-4, sin monto obligatorio).
+export async function createLead(payload:{property_id:string;intent_type:'QUESTION'|'VISIT';has_proposal?:boolean;amount?:number;payment_form?:string;capital?:number;timeframe?:string;comment?:string;visit_day?:string;visit_slot?:string;buyer_name:string;buyer_phone:string;buyer_email?:string;origin?:string},session?:Session|null){if(!base)return {id:`demo-lead-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/leads',{method:'POST',body:JSON.stringify(payload)},s.token)}
+export type LeadsListResponse=Lead[]|{verificationRequired:true;verificationStatus:string;count:number;leads:[]};
+export async function listLeads(session?:Session|null):Promise<LeadsListResponse>{
+  if(!base)return [];
+  const s=session||await getOrCreateBuyerSession();
+  if(!s)throw new Error('Sesión requerida');
+  return req<LeadsListResponse>('/leads',undefined,s.token);
+}
+export function isLeadsRestricted(r:LeadsListResponse):r is {verificationRequired:true;verificationStatus:string;count:number;leads:[]}{
+  return !!r && !Array.isArray(r) && (r as any).verificationRequired===true;
+}
+export async function revealLeadContact(leadId:string,session?:Session|null){if(!base)return {buyer_name:'Comprador demo',buyer_phone:'+5491100000000',buyer_email:undefined,method:'demo'};return req<{buyer_name:string;buyer_phone:string;buyer_email?:string;method?:string;already_revealed?:boolean}>(`/leads/${leadId}/reveal`,{method:'POST'},session?.token)}
 
 export async function counterOffer(id:string,amount:number,comment?:string,session?:Session|null){if(!base)return {status:'SENT'};return req(`/offers/${id}/counter`,{method:'POST',body:JSON.stringify({amount,comment})},session?.token)}
 export async function offerAction(id:string,action:'accept'|'reject'|'negotiate',session?:Session|null){if(!base)return {status:action};return req(`/offers/${id}/${action}`,{method:'POST'},session?.token)}
