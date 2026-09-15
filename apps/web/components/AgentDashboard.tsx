@@ -89,9 +89,10 @@ export default function AgentDashboard(){
   const [instagramDraft,setInstagramDraft]=useState('');
   const [websiteDraft,setWebsiteDraft]=useState('');
   const [busy,setBusy]=useState(false);
+  const [loadError,setLoadError]=useState<string|null>(null);
 
   useEffect(()=>{const s=getAgentSession();setSession(s);setReady(true)},[]);
-  useEffect(()=>{if(!session)return;(async()=>{
+  useEffect(()=>{if(!session)return;setLoadError(null);(async()=>{
     const [a,o,opp,an,props]=await Promise.all([
       getAgency(session.user.agency_id,session),
       listOffers(session),
@@ -103,7 +104,7 @@ export default function AgentDashboard(){
     if(isOffersRestricted(o)){setOffers([]);setOffersRestrictedCount(o.count)}
     else{setOffers(o);setOffersRestrictedCount(null)}
     setOpps(opp as OppData);setAnalytics(an as any);setMyProperties(props);
-  })().catch((e:any)=>{setError(e?.message||'No pudimos cargar el panel de agencia.')})},[session]);
+  })().catch((e:any)=>{setLoadError(e?.message||'No pudimos cargar el panel de agencia.')})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
 
@@ -220,6 +221,8 @@ export default function AgentDashboard(){
       </div>
       <button className="secondary" onClick={logout}><LogOut size={15}/> Salir</button>
     </div>
+
+    {loadError && <div className="notice notice-error">{loadError}</div>}
 
     <div className="agentmetrics">
       <div><b>{offersRestrictedCount!==null?offersRestrictedCount:offers.filter(o=>o.status==='SENT').length}</b><span>Ofertas nuevas</span></div>
