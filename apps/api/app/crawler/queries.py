@@ -37,12 +37,27 @@ def argenprop_list_urls(zonas: list[str] | None = None, max_page: int = 5) -> It
 
 
 def cordobaprop_list_urls(tipos: list[int] | None = None, max_page: int = 10) -> Iterator[str]:
-    # operaciones=1 venta, tipos=1 casa, 2 depto
+    # operaciones=1 venta, tipos=1 casa, 2 depto.
+    # Confirmado 2026-09-14 contra HTML real:
+    # - Requiere viewtype=list: sin este parámetro, las tarjetas de propiedad
+    #   se renderizan sin <a href> navegable en el HTML servido (van por JS),
+    #   por eso discover_detail_urls() encontraba 0 fichas.
+    # - Requiere dominio www.cordobaprop.com (el listado sin viewtype=list
+    #   en cordobaprop.com sin www a veces cayó en 0 resultados / tipo por
+    #   defecto incorrecto en pruebas manuales).
+    # - La paginación real es por offset (24 resultados por página), no por
+    #   un parámetro "page" (que el sitio ignora silenciosamente).
+    PAGE_SIZE = 24
     tipos = tipos or [1, 2]
     for t in tipos:
-        for page in range(1, max_page + 1):
-            q = urlencode({"operaciones": 1, "tipos": t, "page": page})
-            yield f"https://cordobaprop.com/propiedades/?{q}"
+        for page in range(max_page):
+            q = urlencode({
+                "operaciones": 1,
+                "tipos": t,
+                "viewtype": "list",
+                "offset": page * PAGE_SIZE,
+            })
+            yield f"https://www.cordobaprop.com/propiedades/?{q}"
 
 
 def mendozaprop_list_urls(regions: list[str] | None = None) -> Iterator[str]:
