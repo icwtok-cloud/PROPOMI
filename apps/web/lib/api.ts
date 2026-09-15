@@ -1,4 +1,5 @@
 ﻿import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Lead,Offer,Opportunity,PendingAgency,Property,ReviewQueueItem,Role,Session} from './types';
+export type {PendingAgency,ReviewQueueItem} from './types';
 
 import {PROPERTIES} from './data';
 const base=process.env.NEXT_PUBLIC_API_URL;
