@@ -6,6 +6,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
       - key: DATABASE_URL
         sync: false
       - key: CORS_ORIGINS
@@ -30,6 +32,8 @@ services:
     startCommand: >
       python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL'].rstrip('/')+'/admin/properties/expire-stale', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r, timeout=120)"
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
       - key: ADMIN_KEY
         sync: false
       - key: API_URL
@@ -44,6 +48,8 @@ services:
     startCommand: >
       python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL'].rstrip('/')+'/admin/crawler/run', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r, timeout=600)"
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
       - key: ADMIN_KEY
         sync: false
       - key: API_URL
