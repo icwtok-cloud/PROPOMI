@@ -1,11 +1,15 @@
-"""Selectores por fuente. Verificar contra HTML real antes de producción.
+"""Configuración por fuente: dominio, generador de URLs de listado, y si
+el robots.txt ya fue verificado manualmente (curl) antes de habilitarla.
 
-Caballito / CABA — placeholders basados en patrones típicos de portales AR.
-No scrapean detrás de login ni usan credenciales.
+IMPORTANTE: `enabled=False` hasta confirmar robots.txt con curl manual
+(ver tarea 4 del roadmap). run_crawl() salta las fuentes no habilitadas.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable, Iterator
+
+from . import queries
 
 
 @dataclass
@@ -13,34 +17,66 @@ class SourceConfig:
     id: str
     name: str
     base_url: str
-    list_path: str
-    # CSS / patrones — ajustar tras test_parsers con HTML real
-    card: str = "div.postingCard, article.card, div.listing-card"
-    title: str = "h2, h3, .postingCard-title, .card-title"
-    price: str = ".price, .postingCard-price, [data-qa='POSTING_CARD_PRICE']"
-    location: str = ".location, .postingCard-location, [data-qa='POSTING_CARD_LOCATION']"
-    link: str = "a[href]"
-    surface: str = ".surface, [data-qa='POSTING_CARD_DESCRIPTION']"
-    rooms: str = ".rooms"
-    image: str = "img"
-    # Query de zona piloto
-    default_query: str = "caballito"
-    notes: str = ""
+    list_urls_fn: Callable[[], Iterator[str]]
+    enabled: bool = False
+    robots_note: str = ""
 
 
 SOURCES: dict[str, SourceConfig] = {
+    "cordobaprop": SourceConfig(
+        id="cordobaprop",
+        name="CordobaProp",
+        base_url="https://cordobaprop.com",
+        list_urls_fn=queries.cordobaprop_list_urls,
+        enabled=True,
+        robots_note="Confirmado 2026-09-14: Allow: / (solo bloquea /admin/ /api/ /sdk/ /content/). Sitemap disponible.",
+    ),
     "zonaprop": SourceConfig(
         id="zonaprop",
         name="ZonaProp",
         base_url="https://www.zonaprop.com.ar",
-        list_path="/departamentos-venta-caballito.html",
-        notes="Selectores orientativos — validar con HTML real antes de cron prod.",
+        list_urls_fn=queries.zonaprop_list_urls,
+        enabled=False,
+        robots_note="Pendiente: confirmar robots.txt con curl manual antes de habilitar.",
     ),
     "argenprop": SourceConfig(
         id="argenprop",
         name="Argenprop",
         base_url="https://www.argenprop.com",
-        list_path="/departamento-venta-barrio-caballito",
-        notes="Selectores orientativos — validar con HTML real antes de cron prod.",
+        list_urls_fn=queries.argenprop_list_urls,
+        enabled=False,
+        robots_note="Pendiente: confirmar robots.txt con curl manual antes de habilitar.",
+    ),
+    "mendozaprop": SourceConfig(
+        id="mendozaprop",
+        name="MendozaProp",
+        base_url="https://www.mendozaprop.com",
+        list_urls_fn=queries.mendozaprop_list_urls,
+        enabled=False,
+        robots_note="Pendiente: confirmar robots.txt con curl manual antes de habilitar.",
+    ),
+    "mercado_unico": SourceConfig(
+        id="mercado_unico",
+        name="Mercado Único",
+        base_url="https://www.mercado-unico.com",
+        list_urls_fn=queries.mercado_unico_list_urls,
+        enabled=False,
+        robots_note="Dominio corregido a mercado-unico.com (con guión, sin .ar) — pendiente confirmar robots.txt.",
+    ),
+    "mercadolibre": SourceConfig(
+        id="mercadolibre",
+        name="Mercado Libre Inmuebles",
+        base_url="https://inmuebles.mercadolibre.com.ar",
+        list_urls_fn=lambda: iter([]),  # TODO: agregar generador de listado en queries.py
+        enabled=False,
+        robots_note="Pendiente: ML suele tener robots.txt restrictivo y anti-bot fuerte — validar antes de invertir tiempo acá.",
+    ),
+    "properati": SourceConfig(
+        id="properati",
+        name="Properati",
+        base_url="https://www.properati.com.ar",
+        list_urls_fn=lambda: iter([]),  # TODO: agregar generador de listado en queries.py
+        enabled=False,
+        robots_note="Pendiente: confirmar robots.txt con curl manual antes de habilitar.",
     ),
 }
