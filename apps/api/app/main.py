@@ -205,6 +205,9 @@ class Property(Base):
     # sin borrar la fila. El crawler puede resetear a None si el aviso
     # reaparece en el portal de origen (upsert idempotente).
     hidden_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
+    # Score de prioridad de rotación (encargo #2). Se recalcula en cada upsert.
+    # Fórmula documentada en crawler/normalize.py::priority_score.
+    priority_score: Mapped[float] = mapped_column(Float, default=0.0)
 
 
 class Event(Base):
@@ -545,6 +548,7 @@ def ensure_schema_columns() -> None:
             "possible_duplicate_of": "VARCHAR(40)",
             "listing_group_id": "VARCHAR(40)",
             "hidden_at": "TIMESTAMP",
+            "priority_score": "FLOAT DEFAULT 0",
         },
         "agencies": {
             "phone": "VARCHAR(30)",
@@ -1578,6 +1582,7 @@ def prop_dict(p: Property) -> dict[str, Any]:
         "needsReview": p.needs_review, "possibleDuplicateOf": p.possible_duplicate_of,
         "listingGroupId": p.listing_group_id,
         "hiddenAt": p.hidden_at.isoformat() if p.hidden_at else None,
+        "priorityScore": p.priority_score if p.priority_score is not None else 0.0,
     }
 
 
@@ -1779,6 +1784,8 @@ def properties(
         if not agency_id:
             freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
             stmt = stmt.where(Property.last_seen_at >= freshness_cutoff)
+        # Default: mayor probabilidad de rotación primero (encargo #2).
+        stmt = stmt.order_by(Property.priority_score.desc(), Property.detected_at.desc())
         results = db.scalars(stmt).all()
 
         # Etapa 3: evento agregado y anónimo por cada búsqueda — insumo para

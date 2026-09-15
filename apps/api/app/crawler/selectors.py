@@ -120,4 +120,13 @@ SOURCES: dict[str, SourceConfig] = {
         # llegar a la app. No confirmable con curl simple.
         robots_note="2026-09-15: 403 Forbidden (AWS ELB) incluso para /robots.txt — bot protection en el borde, no confirmable con curl simple. No habilitar por ahora.",
     ),
+    "inmoup": SourceConfig(
+        id="inmoup",
+        name="InmoUp",
+        base_url="https://inmoup.com.ar",
+        list_urls_fn=queries.inmoup_list_urls,
+        enabled=True,
+        robots_note="Confirmado 2026-09-15: Allow general (bloquea /panel/ /json/ maps de ficha). HTML real 200 sin challenge; JSON-LD schema.org RealEstateListing. Foco Mendoza/Cuyo (~25k avisos).",
+    ),
+    
 }

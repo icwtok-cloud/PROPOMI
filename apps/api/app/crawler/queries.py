@@ -71,3 +71,17 @@ def mendozaprop_list_urls(regions: list[str] | None = None) -> Iterator[str]:
 def mercado_unico_list_urls() -> Iterator[str]:
     yield "https://www.mercado-unico.com/propiedades"
     # ampliar con filtros de ciudad cuando se confirme robots
+
+
+def inmoup_list_urls(provincias: list[str] | None = None, tipos: list[str] | None = None, max_page: int = 5) -> Iterator[str]:
+    """InmoUp — listados de venta por provincia (Mendoza foco piloto Cuyo).
+    Patrón real confirmado 2026-09-15: /departamentos-en-venta-en-mendoza
+    Paginación: ?page=N (1-based). Solo venta, nunca alquiler.
+    """
+    provincias = provincias or ["mendoza"]
+    tipos = tipos or ["departamentos", "casas"]
+    max_page = min(max_page, 5)
+    for prov, tipo in product(provincias, tipos):
+        base = f"https://inmoup.com.ar/{tipo}-en-venta-en-{prov}"
+        for page in range(1, max_page + 1):
+            yield base if page == 1 else f"{base}?page={page}"

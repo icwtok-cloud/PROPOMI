@@ -76,6 +76,12 @@ def _mercadolibre(html: str, base_url: str) -> list[str]:
     return _dedupe(hrefs)
 
 
+def _inmoup(html: str, base_url: str) -> list[str]:
+    # Patrón real: /{agency-id}-{slug}/inmuebles/{n}/ficha/{slug-detalle}
+    hrefs = re.findall(r'href="([^"]+/inmuebles/\d+/ficha/[^"]+)"', html)
+    return _dedupe([urljoin(base_url, h) for h in hrefs])
+
+
 def _properati(html: str, base_url: str) -> list[str]:
     hrefs = re.findall(r'href="([^"]*/detalle/[^"]+)"', html)
     return _dedupe([urljoin(base_url, h) for h in hrefs])
@@ -89,6 +95,7 @@ EXTRACTORS = {
     "mercado_unico": _mercado_unico,
     "mercadolibre": _mercadolibre,
     "properati": _properati,
+    "inmoup": _inmoup,
 }
 
 

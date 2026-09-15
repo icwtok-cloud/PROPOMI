@@ -117,3 +117,14 @@ def test_admin_expire_endpoint():
     body = r.json()
     assert "hidden" in body
     assert body["hidden"] >= 1
+
+
+def test_expire_hides_65_day_old():
+    """Con MAX_AGE_DAYS=60, 65 días debe ocultarse (con 90 no lo hacía)."""
+    _make_prop("exp-65", days_ago_detected=65)
+    with Session(engine) as db:
+        report = expire_stale_properties(db)
+    assert report["max_age_days"] == 60
+    with Session(engine) as db:
+        p = db.get(Property, "exp-65")
+        assert p.hidden_at is not None

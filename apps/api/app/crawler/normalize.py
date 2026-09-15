@@ -8,6 +8,82 @@ from .base import RawListing
 
 MAX_IMAGES = 5
 
+# --- Priority score (encargo #2, default reversible) ---
+# Fórmula (pesos suman ~1.0; score final 0–100 aprox.):
+#   recencia (0–40): origin_published_at ISO reciente o, si no hay, score medio
+#   precio vs mediana zona+tipo (0–25): precio <= mediana → más puntos
+#   tipología 2–3 amb / superficie media (0–20)
+#   fotos >= 3 (0–15)
+# No inventa datos: si falta una señal, esa componente aporta 0.
+# El dueño del producto puede retocar pesos sin tocar el resto del pipeline.
+
+
+def compute_priority_score(payload: dict, zone_median_price: float | None = None) -> float:
+    """Calcula priority_score a partir del payload normalizado + mediana opcional."""
+    from datetime import datetime, timezone, timedelta
+    score = 0.0
+
+    # 1) Recencia (hasta 40 pts)
+    origin = payload.get("origin_published_at")
+    recent = False
+    if origin:
+        try:
+            s = str(origin).replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            age_days = (datetime.now(timezone.utc) - dt).total_seconds() / 86400
+            if age_days <= 7:
+                score += 40
+                recent = True
+            elif age_days <= 30:
+                score += 25
+            elif age_days <= 60:
+                score += 10
+        except (ValueError, TypeError):
+            score += 15  # desconocido: puntaje neutro-bajo
+    else:
+        score += 15
+
+    # 2) Precio vs mediana de zona+tipo (hasta 25)
+    price = float(payload.get("price") or 0)
+    if zone_median_price and zone_median_price > 0 and price > 0:
+        ratio = price / zone_median_price
+        if ratio <= 0.85:
+            score += 25
+        elif ratio <= 1.0:
+            score += 18
+        elif ratio <= 1.2:
+            score += 8
+        # muy por encima: 0
+    elif price > 0:
+        score += 10  # sin mediana, aporte neutro
+
+    # 3) Tipología de alta rotación AR: 2–3 amb, superficie 40–90 m² (hasta 20)
+    rooms = int(payload.get("rooms") or payload.get("bedrooms") or 0)
+    surface = float(payload.get("surface") or 0)
+    if rooms in (2, 3):
+        score += 12
+    elif rooms == 4:
+        score += 6
+    if 40 <= surface <= 90:
+        score += 8
+    elif 30 <= surface <= 120:
+        score += 4
+
+    # 4) Fotos suficientes (hasta 15)
+    images = payload.get("images") or []
+    n_img = len(images) if isinstance(images, list) else 0
+    if n_img >= 5:
+        score += 15
+    elif n_img >= 3:
+        score += 10
+    elif n_img >= 1:
+        score += 4
+
+    return round(score, 2)
+
+
 
 def strip_description(text: str | None) -> str:
     """Segunda pasada de sanitización, reusando el sanitizer canónico de
@@ -75,4 +151,12 @@ def to_property_payload(raw: RawListing | dict[str, Any], source_id: str | None 
         "contact_phone_raw": None,
         "agency_hint": d.get("agency_name") or None,
         "external_id": d.get("external_id"),
+        "priority_score": compute_priority_score({
+            "origin_published_at": d.get("origin_published_at"),
+            "price": d.get("price"),
+            "rooms": d.get("rooms") or d.get("bedrooms"),
+            "bedrooms": d.get("bedrooms"),
+            "surface": d.get("surface") or d.get("surface_covered"),
+            "images": images,
+        }),
     }

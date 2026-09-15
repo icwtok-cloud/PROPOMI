@@ -1,3 +1,49 @@
+## 2026-09-15 — Encargo #2: InmoUp, antigüedad 60d, priority_score, volumen, fuentes
+
+**Qué se hizo**
+
+1. Investigación de portales por provincia → `docs/FUENTES_CANDIDATAS.md`
+   (tablas BA/CBA/SF/MZA). Solo **2 fuentes habilitables** sin anti-bot:
+   `cordobaprop` (ya live) e `inmoup` (nuevo).
+2. **InmoUp** integrado de punta a punta: `parsers/inmoup.py` (JSON-LD),
+   `queries.inmoup_list_urls`, `links._inmoup`, `SourceConfig enabled=True`,
+   fixture real + test.
+3. `MAX_AGE_DAYS = 60` (antes 90); test de 65 días agregado.
+4. `Property.priority_score` + `compute_priority_score` (recencia, precio
+   vs mediana, 2–3 amb, fotos). Default `ORDER BY priority_score DESC` en
+   `GET /properties`.
+5. Volumen: `MAX_DETAILS_PER_SOURCE=80`, `MAX_LIST_PAGES=5`, delay 1.0.
+6. Cron semanal crawler documentado en `render.yaml` (comentado: plan
+   Render). Motivo 7 días: ~8–9 pases antes de expirar a 60d.
+
+**Fuentes evaluadas y descartadas — no reintentar sin novedad**
+
+- ZonaProp / Argenprop / ML / Properati: challenge o 403 de borde.
+- Propia (Santa Fe): HTML 200 pero Nuxt SPA sin hrefs de ficha.
+- MendozaProp / Mercado Único: sin links estáticos en listado.
+- Roomix/BuscadorProp: meta/agregadores, bajo valor o ToS.
+
+**Qué se validó**
+
+- `pytest` (ver README_ENTREGA): tests previos + inmoup + priority +
+  expiry 65d.
+- Corrida live completa de crawler **no medida end-to-end** en este
+  entorno (tiempo de red hacia portales + dyno); InmoUp list+detail
+  verificados manualmente con curl 200.
+
+**Datos existentes:** `priority_score` se agrega con default 0; filas
+viejas quedan en 0 hasta el próximo upsert. `hidden_at` sin cambio de
+semántica (solo el umbral bajó a 60).
+
+**Variables de entorno:** sin nuevas obligatorias. Crons externos:
+`API_URL` + `ADMIN_KEY`.
+
+**Archivos tocados:** crawler (runner, normalize, queries, links,
+selectors, parsers/inmoup), main.py, render.yaml, tests, fixtures,
+docs/FUENTES_CANDIDATAS.md, PROGRESS_LOG.md.
+
+---
+
 ## 2026-09-15 — Encargo one-pass (Grok): antigüedad, cursores, limpieza debug, ZonaProp bloqueado
 
 **Qué se hizo**

@@ -31,13 +31,13 @@ from .selectors import SOURCES, SourceConfig
 
 logger = logging.getLogger("propomi.crawler")
 
-MAX_AGE_DAYS = 90
+MAX_AGE_DAYS = 60
 USER_AGENT = "PropomiBot/0.1 (+https://propomi.lat; research)"
 
 # Límites de cortesía — evitar hammering de portales de terceros y del
 # propio dyno free de Render. Ajustar cuando haya cron real + colas.
-MAX_LIST_PAGES_PER_SOURCE = 3
-MAX_DETAILS_PER_SOURCE = 40
+MAX_LIST_PAGES_PER_SOURCE = 5
+MAX_DETAILS_PER_SOURCE = 80
 REQUEST_DELAY_SECONDS = 1.0
 
 # Tope de paginación por fuente (robots.txt / cortesía). Al llegar se reinicia.
@@ -45,6 +45,7 @@ SOURCE_MAX_PAGE: dict[str, int] = {
     "zonaprop": 5,  # robots.txt: solo páginas 1-5
     "argenprop": 5,
     "cordobaprop": 10,
+    "inmoup": 5,
 }
 
 
@@ -182,6 +183,8 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         existing.last_seen_at = now
         # Si el aviso reaparece en el portal, re-mostrar (plan maestro secc. 7)
         existing.hidden_at = None
+        if payload.get("priority_score") is not None:
+            existing.priority_score = float(payload["priority_score"])
         if payload.get("origin_published_at"):
             existing.origin_published_at = payload["origin_published_at"]
         return "updated"
@@ -210,6 +213,7 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         detected_at=now,
         last_seen_at=now,
         hidden_at=None,
+        priority_score=float(payload.get("priority_score") or 0),
     )
     db.add(prop)
     return "created"
