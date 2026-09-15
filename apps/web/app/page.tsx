@@ -35,6 +35,7 @@ export default function Home(){
   const [photoIdx,setPhotoIdx]=useState(0);
   const [offers,setOffers]=useState<Offer[]>([]);
   const [toast,setToast]=useState('');
+  const [loadError,setLoadError]=useState<string|null>(null);
 
   useEffect(()=>{captureOfferOriginFromUrl()},[]);
   useEffect(()=>{(async()=>{
@@ -48,7 +49,7 @@ export default function Home(){
       if(f.cities.length){
         setCity(prev=>prev||f.cities[0]);
       }
-    }catch{}
+    }catch(e:any){console.warn('filters',e?.message||e)}
   })()},[]);
   useEffect(()=>{
     const zonesForCity=zonesByCity[city]||[];
@@ -64,7 +65,7 @@ export default function Home(){
         const s=await getOrCreateBuyerSession();
         const offersList=await listOffers(s);
         setOffers(isOffersRestricted(offersList)?[]:(Array.isArray(offersList)?offersList:[]));
-      }catch{}
+      }catch(e:any){console.warn('offers',e?.message||e)}
       // Deep link de tracking: /?property=<id>&o=<origen> abre el detalle.
       if(typeof window==='undefined')return;
       const pid=new URLSearchParams(window.location.search).get('property');
@@ -83,7 +84,10 @@ export default function Home(){
         setDetail(found);setPhotoIdx(0);
         trackEvent('property_view',found.id,{source:'share_link'});
       }
-    }catch{}
+    }catch(e:any){
+      setLoadError(e?.message||'No pudimos cargar las propiedades. Probá recargar.');
+      setItems([]);
+    }
   })()},[]);
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
 
@@ -319,6 +323,7 @@ export default function Home(){
       </div>
     </div></div>}
 
+    {loadError&&<div className="notice" role="alert" style={{margin:'12px 0'}}>{loadError}</div>}
     {toast&&<div className="toast"><Check size={17}/>{toast}</div>}
     <footer className="footer"><div className="container">
       <div className="brand">prop<span className="omiWord">omi</span></div>

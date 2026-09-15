@@ -103,7 +103,7 @@ export default function AgentDashboard(){
     if(isOffersRestricted(o)){setOffers([]);setOffersRestrictedCount(o.count)}
     else{setOffers(o);setOffersRestrictedCount(null)}
     setOpps(opp as OppData);setAnalytics(an as any);setMyProperties(props);
-  })().catch(()=>{})},[session]);
+  })().catch((e:any)=>{setError(e?.message||'No pudimos cargar el panel de agencia.')})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
 

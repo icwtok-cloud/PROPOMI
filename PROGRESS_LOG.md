@@ -1,3 +1,17 @@
+## 2026-09-15 — Auditoría frontend + research anti-bot
+
+**Etapa 1:** docs/ANTIBOT_PROPUESTA.md — proxy vs Playwright vs acuerdos
+colegios/Tokko (costos, plazos, ToS, volumen). Sin código.
+
+**Etapa 2:** docs/FRONTEND_AUDIT.md — encoding OK; inline styles listados;
+AgentLeadActions sin imports; tsc no completó (npm sandbox).
+Fixes severidad alta: page.tsx loadError; AgentDashboard setError en catch.
+
+**Validado:** grep encoding/inline/imports; lectura api.ts req().
+**No:** tsc --noEmit limpio; pytest (sin cambios backend).
+
+---
+
 ## 2026-09-15 — Reaplicar panel admin sobre main.py post-deuda
 
 **Contexto:** el main.py con rate-limit + AdminAuditLog + aislamiento
