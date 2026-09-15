@@ -101,7 +101,10 @@ export default function Home(){
   })()},[]);
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
   useEffect(()=>{
-    const onScroll=()=>setSearchSticky(window.scrollY>320);
+    const onScroll=()=>{
+      const s=window.scrollY>320;
+      setSearchSticky(prev=>{if(s&&!prev)setOpenSeg(null);return s});
+    };
     window.addEventListener('scroll',onScroll,{passive:true});
     return ()=>window.removeEventListener('scroll',onScroll);
   },[]);
@@ -247,7 +250,7 @@ export default function Home(){
             </div>
           )}
 
-          <div className="search-meta">
+          {!searchSticky&&<div className="search-meta">
             <div className="filterrow pill-chips">
               <button type="button" className={parking?'chip active':'chip'} onClick={()=>setParking(!parking)}>Cochera</button>
               <button type="button" className={credit?'chip active':'chip'} onClick={()=>setCredit(!credit)}>Apto crédito</button>
@@ -267,8 +270,8 @@ export default function Home(){
                 </select>
               </label>
             </div>
-          </div>
-          {moreFilters&&(
+          </div>}
+          {!searchSticky&&moreFilters&&(
             <div className="more-filters-panel muted small">
               Zona y ambientes también están en la barra de arriba. Los chips activan filtros booleanos del listado (cochera, crédito, balcón).
             </div>

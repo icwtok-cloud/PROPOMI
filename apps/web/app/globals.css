@@ -84,8 +84,13 @@
 .demand-rank-count{font-size:12px;color:#9a9a9a;width:20px;text-align:right}
 
 /* ========== Buscador estilo pill (rediseño 2026-09-15) ========== */
-.search-pill-wrap{position:relative;z-index:25;margin-top:22px}
-.search-pill-wrap.sticky{position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(920px,calc(100% - 24px));margin:0;z-index:70}
+.search-pill-wrap{position:relative;z-index:25;margin-top:22px;transition:all .2s ease}
+.search-pill-wrap.sticky{position:fixed;top:82px;left:50%;transform:translateX(-50%);width:min(560px,calc(100% - 24px));margin:0;z-index:70}
+.search-pill-wrap.sticky .search-pill{padding:4px;box-shadow:0 12px 30px rgba(0,0,0,.22)}
+.search-pill-wrap.sticky .pill-seg{padding:8px 14px}
+.search-pill-wrap.sticky .pill-label{display:none}
+.search-pill-wrap.sticky .pill-value{font-size:13px}
+.search-pill-wrap.sticky .pill-icon{width:34px;height:34px}
 .search-pill{
   display:flex;align-items:stretch;background:#fff;border:1px solid #dde3ea;
   border-radius:999px;box-shadow:0 8px 28px rgba(16,32,51,.10);overflow:hidden;
@@ -168,5 +173,7 @@
   .pill-seg{flex:1 1 45%}
   .pill-divider{display:none}
   .type-chip-grid{grid-template-columns:1fr 1fr}
-  .search-pill-wrap.sticky{top:8px}
+  .search-pill-wrap.sticky{top:78px;width:calc(100% - 24px)}
+  .search-pill-wrap.sticky .search-pill{flex-wrap:nowrap}
+  .search-pill-wrap.sticky .pill-seg{flex:1}
 }
