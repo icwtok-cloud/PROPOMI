@@ -89,10 +89,9 @@ export default function AgentDashboard(){
   const [instagramDraft,setInstagramDraft]=useState('');
   const [websiteDraft,setWebsiteDraft]=useState('');
   const [busy,setBusy]=useState(false);
-  const [loadError,setLoadError]=useState<string|null>(null);
 
   useEffect(()=>{const s=getAgentSession();setSession(s);setReady(true)},[]);
-  useEffect(()=>{if(!session)return;setLoadError(null);(async()=>{
+  useEffect(()=>{if(!session)return;(async()=>{
     const [a,o,opp,an,props]=await Promise.all([
       getAgency(session.user.agency_id,session),
       listOffers(session),
@@ -104,7 +103,7 @@ export default function AgentDashboard(){
     if(isOffersRestricted(o)){setOffers([]);setOffersRestrictedCount(o.count)}
     else{setOffers(o);setOffersRestrictedCount(null)}
     setOpps(opp as OppData);setAnalytics(an as any);setMyProperties(props);
-  })().catch((e:any)=>{setLoadError(e?.message||'No pudimos cargar el panel de agencia.')})},[session]);
+  })().catch((e:any)=>{setError(e?.message||'No pudimos cargar el panel de agencia.')})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
 
@@ -221,8 +220,6 @@ export default function AgentDashboard(){
       </div>
       <button className="secondary" onClick={logout}><LogOut size={15}/> Salir</button>
     </div>
-
-    {loadError && <div className="notice notice-error">{loadError}</div>}
 
     <div className="agentmetrics">
       <div><b>{offersRestrictedCount!==null?offersRestrictedCount:offers.filter(o=>o.status==='SENT').length}</b><span>Ofertas nuevas</span></div>
@@ -348,52 +345,165 @@ export default function AgentDashboard(){
       <p className="muted small">La descripción no puede incluir teléfonos, emails ni links — Propomi protege el contacto de ambas partes.</p>
     </div>}
 
-    {section==='cuenta' && <div className="agentdashpane">
-      <label>Nombre de la agencia<input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}/></label>
-      <label>Instagram (requerido para verificarte)<input value={instagramDraft} onChange={e=>setInstagramDraft(e.target.value)} placeholder="@tuagencia"/></label>
-      <label>Sitio web (opcional)<input value={websiteDraft} onChange={e=>setWebsiteDraft(e.target.value)} placeholder="https://tuagencia.com"/></label>
+    {section==='cuenta' && <div className="agentdashpane account-layout">
 
-      {agency?.verificationStatus!=='VERIFIED' && (
-        <div className="notice">
-          Completá Instagram (y opcionalmente tu sitio) y guardá los cambios: eso es lo que revisa el equipo de Propomi para pasarte a <strong>Verificada</strong> y poder revelar contactos.
+      {/* ——— Datos de la agencia ——— */}
+      <div className="summarycard account-block">
+        <div className="account-block-head">
+          <Building2 size={18}/>
+          <div>
+            <h3 className="account-block-title">Datos de la agencia</h3>
+            <p className="muted small" style={{margin:0}}>Estos datos se muestran en tu perfil y en la revisión de verificación.</p>
+          </div>
         </div>
-      )}
-
-      <div className="modalactions" style={{justifyContent:'flex-start'}}>
-        <button className="primary" disabled={busy} onClick={saveAccount}><Check size={15}/> Guardar</button>
-        <button className="secondary" disabled={busy} onClick={relink}><Building2 size={15}/> Vincular publicaciones por teléfono</button>
+        <div className="account-form-grid">
+          <label>Nombre de la agencia<input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}/></label>
+          <label>Instagram (requerido para verificarte)<input value={instagramDraft} onChange={e=>setInstagramDraft(e.target.value)} placeholder="@tuagencia"/></label>
+          <label className="account-span-2">Sitio web (opcional)<input value={websiteDraft} onChange={e=>setWebsiteDraft(e.target.value)} placeholder="https://tuagencia.com"/></label>
+        </div>
+        {agency?.verificationStatus!=='VERIFIED' && (
+          <div className="notice" style={{marginTop:12}}>
+            Completá Instagram (y opcionalmente tu sitio) y guardá los cambios: eso es lo que revisa el equipo de Propomi para pasarte a <strong>Verificada</strong> y poder revelar contactos.
+          </div>
+        )}
+        <div className="modalactions account-actions">
+          <button className="primary" disabled={busy} onClick={saveAccount}><Check size={15}/> Guardar</button>
+          <button className="secondary" disabled={busy} onClick={relink}><Building2 size={15}/> Vincular publicaciones por teléfono</button>
+        </div>
+        <p className="muted small" style={{marginTop:10,marginBottom:0}}>Tu teléfono de acceso es el mismo que usan tus publicaciones para identificarte automáticamente como dueño.</p>
       </div>
 
-      {agency?.instagram && (
-        <p className="muted small"><Instagram size={13}/> {agency.instagram}</p>
-      )}
-
-      {storefrontPath && (
-        <p className="muted small">
-          Tu vidriera pública: <a href={storefrontPath} target="_blank" rel="noopener noreferrer">{storefrontPath} <ExternalLink size={12}/></a>
-        </p>
-      )}
-
-      <div className="summarycard" style={{marginTop:8}}>
-        <strong>Tu plan (solo lectura)</strong>
-        <p className="muted small" style={{margin:'6px 0'}}>
-          {(agency?.subscription?.plan || agency?.subscriptionTier)
-            ? <>Plan: <b>{agency?.subscription?.plan || agency?.subscriptionTier}</b>
-                {(agency?.subscription?.cupoCiclo ?? agency?.planLeadQuota) == null
-                  ? ' · cupo ilimitado este período'
-                  : ` · ${agency?.subscription?.consumidoCiclo ?? agency?.leadsUsedCurrentPeriod ?? 0} / ${agency?.subscription?.cupoCiclo ?? agency?.planLeadQuota} reveals del plan`}
-              </>
-            : <>Sin suscripción activa — los reveals van por créditos gratis o pago por lead.</>}
-        </p>
-        <p className="muted small" style={{margin:0}}>
-          Créditos gratis restantes: <b>{agency?.leadCredit?.available ?? agency?.freeLeadsRemaining ?? 0}</b>
-          {' · Cupo total disponible: '}<b>{agency?.availableCredit ?? agency?.freeLeadsRemaining ?? 0}</b>
-          {agency?.subscriptionStartedAt ? ` · desde ${new Date(agency.subscriptionStartedAt).toLocaleDateString('es-AR')}` : ''}
-        </p>
-        <p className="muted small">La contratación/cambio de plan se habilita cuando Lemon esté verificado (endpoint POST listo).</p>
+      {/* ——— Verificación ——— */}
+      <div className="summarycard account-block">
+        <div className="account-block-head">
+          <ShieldCheck size={18}/>
+          <div>
+            <h3 className="account-block-title">Verificación</h3>
+            <p className="muted small" style={{margin:0}}>Estado de revisión de tu cuenta y vidriera pública.</p>
+          </div>
+        </div>
+        <div className="account-verify-row">
+          <VerificationBadge status={agency?.verificationStatus}/>
+          {agency?.instagram && (
+            <span className="muted small"><Instagram size={13}/> {agency.instagram}</span>
+          )}
+        </div>
+        {storefrontPath && (
+          <p className="muted small" style={{marginTop:12,marginBottom:0}}>
+            Tu vidriera pública:{' '}
+            <a href={storefrontPath} target="_blank" rel="noopener noreferrer">{storefrontPath} <ExternalLink size={12}/></a>
+          </p>
+        )}
       </div>
 
-      <p className="muted small">Tu teléfono de acceso es el mismo que usan tus publicaciones para identificarte automáticamente como dueño.</p>
+      {/* ——— Tu plan + pricing ——— */}
+      <div className="summarycard account-block">
+        <div className="account-block-head">
+          <Sparkles size={18}/>
+          <div>
+            <h3 className="account-block-title">Tu plan</h3>
+            <p className="muted small" style={{margin:0}}>Uso actual de créditos y comparación de planes (contratación próximamente).</p>
+          </div>
+        </div>
+
+        <div className="account-usage-metrics">
+          <div>
+            <span>Créditos gratis</span>
+            <b>{agency?.leadCredit?.available ?? agency?.freeLeadsRemaining ?? 0}</b>
+          </div>
+          <div>
+            <span>Cupo disponible</span>
+            <b>{agency?.availableCredit ?? agency?.freeLeadsRemaining ?? 0}</b>
+          </div>
+          <div>
+            <span>Reveals del plan</span>
+            <b>
+              {(agency?.subscription?.cupoCiclo ?? agency?.planLeadQuota) == null
+                ? '—'
+                : `${agency?.subscription?.consumidoCiclo ?? agency?.leadsUsedCurrentPeriod ?? 0} / ${agency?.subscription?.cupoCiclo ?? agency?.planLeadQuota}`}
+            </b>
+          </div>
+        </div>
+        {(agency?.subscription?.plan || agency?.subscriptionTier) && (
+          <p className="muted small" style={{margin:'4px 0 12px'}}>
+            Plan en sistema: <b>{agency?.subscription?.plan || agency?.subscriptionTier}</b>
+            {agency?.subscriptionStartedAt ? ` · desde ${new Date(agency.subscriptionStartedAt).toLocaleDateString('es-AR')}` : ''}
+          </p>
+        )}
+
+        {(() => {
+          // Solo presentación: plan activo = el de la API, o Gratis si no hay suscripción.
+          const raw = String(agency?.subscription?.plan || agency?.subscriptionTier || '').toLowerCase();
+          const activeKey = !raw ? 'gratis'
+            : (raw.includes('plus') || raw.includes('agencia')) ? 'plus'
+            : (raw.includes('pro') || raw.includes('profesional')) ? 'pro'
+            : 'gratis';
+          const tiers = [
+            {
+              key: 'gratis',
+              name: 'Gratis',
+              price: 'USD 0',
+              tagline: 'Para empezar a probar Propomi.',
+              bullets: [
+                'Cupo limitado de reveals con créditos gratis',
+                'Publicar propiedades una vez verificada la cuenta',
+                'Panel de ofertas y oportunidades',
+              ],
+            },
+            {
+              key: 'pro',
+              name: 'Profesional',
+              price: 'Próximamente',
+              tagline: 'Para agencias con flujo constante de leads.',
+              bullets: [
+                'Cupo mensual de reveals ampliado',
+                'Prioridad de visibilidad en resultados',
+                'Panel de demanda por zona',
+              ],
+              recommended: true,
+            },
+            {
+              key: 'plus',
+              name: 'Agencia Plus',
+              price: 'Próximamente',
+              tagline: 'Para inmobiliarias con varios agentes.',
+              bullets: [
+                'Cupo de reveals más alto o ilimitado',
+                'Soporte prioritario',
+                'Próximamente multi-usuario',
+              ],
+            },
+          ];
+          return (
+            <div className="pricing-grid">
+              {tiers.map(tier => {
+                const isCurrent = activeKey === tier.key;
+                return (
+                  <div
+                    key={tier.key}
+                    className={`pricing-card${isCurrent ? ' current' : ''}${tier.recommended ? ' recommended' : ''}`}
+                  >
+                    {isCurrent && <span className="pricing-badge current-badge">Tu plan actual</span>}
+                    {!isCurrent && tier.recommended && <span className="pricing-badge rec-badge">Recomendado</span>}
+                    <div className="pricing-icon">{tier.key === 'gratis' ? <User size={22}/> : tier.key === 'pro' ? <TrendingUp size={22}/> : <Building2 size={22}/>}</div>
+                    <h4 className="pricing-name">{tier.name}</h4>
+                    <div className="pricing-price">{tier.price}</div>
+                    <p className="pricing-tagline">{tier.tagline}</p>
+                    <ul className="pricing-bullets">
+                      {tier.bullets.map(b => <li key={b}>{b}</li>)}
+                    </ul>
+                    <button type="button" className="secondary pricing-cta" disabled>Próximamente</button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        <p className="muted small pricing-footnote">
+          La contratación/cambio de plan se habilita cuando Lemon esté verificado (endpoint POST listo).
+        </p>
+      </div>
     </div>}
 
     {toast && <div className="toast"><Check size={17}/>{toast}</div>}

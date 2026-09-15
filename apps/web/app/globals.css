@@ -84,49 +84,36 @@
 .demand-rank-count{font-size:12px;color:#9a9a9a;width:20px;text-align:right}
 
 /* ========== Buscador estilo pill (rediseño 2026-09-15) ========== */
-.search-pill-wrap{position:relative;z-index:25;margin-top:22px;transition:all .2s ease}
-.search-pill-wrap.sticky{position:fixed;top:82px;left:50%;transform:translateX(-50%);width:min(560px,calc(100% - 24px));margin:0;z-index:32}
-.search-pill-wrap.sticky .search-pill{padding:4px;box-shadow:0 12px 30px rgba(0,0,0,.22)}
-.search-pill-wrap.sticky .pill-seg{padding:8px 14px}
-.search-pill-wrap.sticky .pill-label{display:none}
-.search-pill-wrap.sticky .pill-value{font-size:13px}
-.search-pill-wrap.sticky .pill-icon{width:34px;height:34px}
+.search-pill-wrap{position:relative;z-index:25;margin-top:22px}
+.search-pill-wrap.sticky{position:fixed;top:12px;left:50%;transform:translateX(-50%);width:min(920px,calc(100% - 24px));margin:0;z-index:70}
 .search-pill{
-  display:flex;align-items:stretch;background:#fff;border:1px solid #eef1f5;
-  border-radius:999px;box-shadow:0 14px 40px rgba(16,32,51,.14);overflow:hidden;
-  transition:box-shadow .2s ease;padding-right:4px;
+  display:flex;align-items:stretch;background:#fff;border:1px solid #dde3ea;
+  border-radius:999px;box-shadow:0 8px 28px rgba(16,32,51,.10);overflow:hidden;
 }
-.search-pill:hover{box-shadow:0 18px 48px rgba(16,32,51,.18)}
 .pill-seg{
   flex:1;min-width:0;border:0;background:transparent;text-align:left;
-  padding:14px 22px;cursor:pointer;display:flex;flex-direction:column;gap:3px;
+  padding:12px 18px;cursor:pointer;display:flex;flex-direction:column;gap:2px;
 }
-.pill-seg:hover,.pill-seg.active{background:#faf6f3}
-.pill-label{font-size:11px;font-weight:750;color:#8a97a8;letter-spacing:.03em;text-transform:uppercase}
-.pill-value{font-size:14.5px;font-weight:500;color:#2c3a4d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pill-seg.active .pill-value{font-weight:650;color:#102033}
-.pill-divider{width:1px;background:#eef1f5;margin:12px 0;flex-shrink:0}
+.pill-seg:hover,.pill-seg.active{background:#f5f7fa}
+.pill-label{font-size:11px;font-weight:750;color:#536174;letter-spacing:.02em}
+.pill-value{font-size:14px;font-weight:650;color:#102033;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill-divider{width:1px;background:#e3e8ee;margin:10px 0;flex-shrink:0}
 .pill-icon{
   display:flex;align-items:center;justify-content:center;
-  width:50px;height:50px;margin:5px 5px 5px 0;flex-shrink:0;color:#fff;
-  background:#BF4E32;border-radius:50%;pointer-events:none;
-  box-shadow:0 6px 16px rgba(191,78,50,.35);
+  width:48px;flex-shrink:0;color:#BF4E32;pointer-events:none;
 }
 .pill-popover{
-  position:absolute;left:0;right:0;top:calc(100% + 12px);
-  background:#fff;border:1px solid #eef1f5;border-radius:22px;
-  box-shadow:0 24px 60px rgba(16,32,51,.16);padding:22px 24px;z-index:30;
+  position:absolute;left:0;right:0;top:calc(100% + 10px);
+  background:#fff;border:1px solid #e3e8ee;border-radius:18px;
+  box-shadow:0 20px 50px rgba(16,32,51,.18);padding:18px 20px;z-index:30;
 }
-.pill-pop-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
-.pill-pop-head strong{font-size:16px;letter-spacing:-.2px}
-.type-chip-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.pill-pop-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.type-chip-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .type-chip{
-  border:1.5px solid #eef1f5;background:#faf9f8;border-radius:16px;padding:14px 8px;
-  display:flex;flex-direction:column;align-items:center;gap:7px;font-size:12px;font-weight:650;color:#102033;cursor:pointer;
-  transition:border-color .15s,background .15s;
+  border:1.5px solid #d9e1e9;background:#fff;border-radius:14px;padding:12px 8px;
+  display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12px;font-weight:650;color:#102033;cursor:pointer;
 }
-.type-chip:hover{border-color:#e4d5cd}
-.type-chip.selected{border-color:#BF4E32;background:#F7EAE4;color:#9E3F28}
+.type-chip.selected{border-color:#BF4E32;background:#fff0f1;color:#9E3F28}
 .rooms-row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .budget-big{font-size:14px}
 .budget-big input{font-size:22px;font-weight:750;padding:14px}
@@ -181,13 +168,52 @@
   .pill-seg{flex:1 1 45%}
   .pill-divider{display:none}
   .type-chip-grid{grid-template-columns:1fr 1fr}
-  .search-pill-wrap.sticky{top:78px;width:calc(100% - 24px)}
-  .search-pill-wrap.sticky .search-pill{flex-wrap:nowrap}
-  .search-pill-wrap.sticky .pill-seg{flex:1}
+  .search-pill-wrap.sticky{top:8px}
 }
 
-/* fix: popover con scroll interno propio, no depende del scroll de la pagina */
-.pill-popover{max-height:min(70vh,480px);overflow-y:auto;-webkit-overflow-scrolling:touch}
-@media(max-width:700px){
-  .pill-popover{max-height:min(60vh,420px)}
+/* ========== Mi cuenta — bloques + pricing (solo presentación) ========== */
+.account-layout{display:flex;flex-direction:column;gap:18px}
+.account-block{padding:20px 22px !important;margin-bottom:0 !important;border-radius:16px;box-shadow:0 6px 20px rgba(16,32,51,.04)}
+.account-block-head{display:flex;gap:12px;align-items:flex-start;margin-bottom:16px;color:#102033}
+.account-block-title{margin:0 0 2px;font-size:17px;font-weight:750;color:#102033}
+.account-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.account-form-grid .account-span-2{grid-column:1/-1}
+.account-actions{justify-content:flex-start;margin-top:14px;padding:0}
+.account-verify-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.account-usage-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px}
+.account-usage-metrics div{background:#f5f7fa;border:1px solid #e2e7ed;border-radius:12px;padding:14px 16px}
+.account-usage-metrics span{display:block;font-size:11px;font-weight:700;color:#728096;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px}
+.account-usage-metrics b{display:block;font-size:24px;color:#102033;font-weight:800}
+
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px}
+.pricing-card{
+  position:relative;background:#fff;border:1.5px solid #e2e7ed;border-radius:18px;
+  padding:22px 18px 18px;display:flex;flex-direction:column;gap:8px;
+  box-shadow:0 8px 24px rgba(16,32,51,.05);
+}
+.pricing-card.recommended{border-color:#dfe5ec}
+.pricing-card.current{border-color:#BF4E32;box-shadow:0 10px 28px rgba(191,78,50,.12)}
+.pricing-badge{
+  position:absolute;top:12px;right:12px;font-size:10px;font-weight:750;
+  padding:4px 8px;border-radius:999px;letter-spacing:.02em;
+}
+.current-badge{background:#BF4E32;color:#fff}
+.rec-badge{background:#fff0f1;color:#9E3F28;border:1px solid #f0c9c0}
+.pricing-icon{width:40px;height:40px;border-radius:12px;background:#f5f7fa;color:#BF4E32;display:grid;place-items:center;margin-bottom:4px}
+.pricing-name{margin:0;font-size:18px;font-weight:750;color:#102033}
+.pricing-price{font-size:22px;font-weight:800;color:#102033}
+.pricing-tagline{margin:0;font-size:13px;color:#536174;line-height:1.4;min-height:2.6em}
+.pricing-bullets{margin:4px 0 12px;padding-left:18px;flex:1}
+.pricing-bullets li{font-size:13px;color:#536174;margin:6px 0;line-height:1.35}
+.pricing-cta{width:100%;justify-content:center;opacity:.75;cursor:not-allowed}
+.pricing-footnote{margin:14px 0 0;text-align:center}
+
+@media(max-width:900px){
+  .pricing-grid{grid-template-columns:1fr 1fr}
+  .account-usage-metrics{grid-template-columns:1fr 1fr}
+}
+@media(max-width:640px){
+  .pricing-grid{grid-template-columns:1fr}
+  .account-form-grid{grid-template-columns:1fr}
+  .account-usage-metrics{grid-template-columns:1fr}
 }
