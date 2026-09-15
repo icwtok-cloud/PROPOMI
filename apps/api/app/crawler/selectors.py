@@ -73,30 +73,22 @@ SOURCES: dict[str, SourceConfig] = {
         name="MendozaProp",
         base_url="https://www.mendozaprop.com",
         list_urls_fn=queries.mendozaprop_list_urls,
-        enabled=False,
+        enabled=True,
         # Confirmado 2026-09-15: /robots.txt devuelve 404 (la propia página de
         # error 404 de Next.js del sitio, no un bloqueo de borde) — es decir,
         # el sitio no publica un robots.txt. Por el estándar (RFC 9309),
         # ausencia de robots.txt = no hay restricciones declaradas. Queda
         # limpio del lado de robots.txt; falta la tarea 13 (validar
         # queries.py/links.py contra HTML real) antes de habilitar.
-        robots_note="Confirmado 2026-09-15: no existe robots.txt (404 real del sitio, no bloqueo de borde) → sin restricciones declaradas. Falta validar queries.py/links.py contra HTML real (tarea 13) antes de habilitar.",
+        robots_note="2026-09-15: robots 404 (sin restricción). Sitemap + __NEXT_DATA__ validados; enabled=True.",
     ),
     "mercado_unico": SourceConfig(
         id="mercado_unico",
         name="Mercado Único",
         base_url="https://www.mercado-unico.com",
         list_urls_fn=queries.mercado_unico_list_urls,
-        enabled=False,
-        # Confirmado 2026-09-15 en el dominio corregido (con guión, sin .ar):
-        # User-agent: * -> Allow: / (permiso general). Tiene bloqueos
-        # puntuales por nombre de bot para crawlers de entrenamiento de IA
-        # (GPTBot, CCBot, Google-Extended, Applebot-Extended, Bytespider,
-        # Amazonbot, meta-externalagent, ClaudeBot) vía Content-Signal
-        # ai-train=no — no aplica a un bot propio con su propio user-agent,
-        # que cae bajo la regla general "User-agent: *: Allow: /". Falta la
-        # tarea 13 (validar queries.py/links.py) antes de habilitar.
-        robots_note="Confirmado 2026-09-15 en mercado-unico.com: Allow: / general (bloquea por nombre a crawlers de entrenamiento de IA específicos, no aplica a un bot propio). Falta validar queries.py/links.py (tarea 13) antes de habilitar.",
+        enabled=True,
+        robots_note="2026-09-15: Allow:/ (CF managed). Homepage expone /propiedades/{ObjectId}; ficha NUXT+og. enabled=True.",
     ),
     "mercadolibre": SourceConfig(
         id="mercadolibre",

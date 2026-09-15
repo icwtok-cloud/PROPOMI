@@ -12,37 +12,39 @@ services:
         sync: false
       - key: ADMIN_KEY
         sync: false
+      - key: API_URL
+        sync: false
 
-  # Cron diario de antigüedad (barato). Si el plan no soporta cron, comentar
-  # y usar scheduler externo (cron-job.org) con X-Admin-Key.
-  # - type: cron
-  #   name: propomi-expire-stale
-  #   env: python
-  #   rootDir: apps/api
-  #   schedule: "0 4 * * *"
-  #   buildCommand: pip install -r requirements.txt
-  #   startCommand: >
-  #     python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL']+'/admin/properties/expire-stale', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r)"
-  #   envVars:
-  #     - key: ADMIN_KEY
-  #       sync: false
-  #     - key: API_URL
-  #       sync: false
+  # --- Crons ---
+  # Render solo habilita cron jobs en planes pagos. Si el deploy falla al
+  # aplicar este Blueprint por "cron not available", comentar los dos
+  # bloques siguientes y usar cron-job.org (instrucciones exactas en
+  # docs/CRON_EXTERNO.md).
 
-  # Crawler semanal (lunes 5 AM UTC = 2 AM AR). 7 días ≈ 8-9 oportunidades
-  # de ver un aviso antes de que expire a los 60 días. Comentado si el plan
-  # de Render no soporta cron; alternativa: cron-job.org → POST /admin/crawler/run
-  # con header X-Admin-Key.
-  # - type: cron
-  #   name: propomi-crawler-weekly
-  #   env: python
-  #   rootDir: apps/api
-  #   schedule: "0 5 * * 1"
-  #   buildCommand: pip install -r requirements.txt
-  #   startCommand: >
-  #     python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL']+'/admin/crawler/run', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r)"
-  #   envVars:
-  #     - key: ADMIN_KEY
-  #       sync: false
-  #     - key: API_URL
-  #       sync: false
+  - type: cron
+    name: propomi-expire-stale
+    env: python
+    rootDir: apps/api
+    schedule: "0 4 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL'].rstrip('/')+'/admin/properties/expire-stale', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r, timeout=120)"
+    envVars:
+      - key: ADMIN_KEY
+        sync: false
+      - key: API_URL
+        sync: false
+
+  - type: cron
+    name: propomi-crawler-weekly
+    env: python
+    rootDir: apps/api
+    schedule: "0 5 * * 1"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL'].rstrip('/')+'/admin/crawler/run', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r, timeout=600)"
+    envVars:
+      - key: ADMIN_KEY
+        sync: false
+      - key: API_URL
+        sync: false

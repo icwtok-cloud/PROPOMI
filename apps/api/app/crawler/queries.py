@@ -63,14 +63,19 @@ def cordobaprop_list_urls(tipos: list[int] | None = None, max_page: int = 10) ->
 
 
 def mendozaprop_list_urls(regions: list[str] | None = None) -> Iterator[str]:
-    regions = regions or ["mendoza", "guaymallen", "godoycruz", "maipu", "lujandecuyo"]
-    for r in regions:
-        yield f"https://www.mendozaprop.com/propiedades?region={r}"
+    """Discovery vía sitemap oficial (listado SPA no expone hrefs estáticos).
+    Solo se indexan URLs de venta; alquiler se filtra en links.py.
+    Confirmado 2026-09-15: sitemap.xml ~11k locs, HTML de ficha con __NEXT_DATA__.
+    """
+    yield "https://www.mendozaprop.com/sitemap.xml"
 
 
 def mercado_unico_list_urls() -> Iterator[str]:
+    """Homepage expone fichas en HTML (el listado /propiedades es SPA vacío).
+    Confirmado 2026-09-15: href /propiedades/{ObjectId 24 hex}.
+    """
+    yield "https://www.mercado-unico.com/"
     yield "https://www.mercado-unico.com/propiedades"
-    # ampliar con filtros de ciudad cuando se confirme robots
 
 
 def inmoup_list_urls(provincias: list[str] | None = None, tipos: list[str] | None = None, max_page: int = 5) -> Iterator[str]:

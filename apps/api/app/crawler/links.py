@@ -61,13 +61,25 @@ def _cordobaprop(html: str, base_url: str) -> list[str]:
 
 
 def _mendozaprop(html: str, base_url: str) -> list[str]:
-    hrefs = re.findall(r'href="(/propiedades/\d+[^"]*)"', html)
+    # Sitemap XML: solo venta (prefijo /venta-). Alquiler y home se descartan.
+    if "<urlset" in html or "<sitemapindex" in html or html.lstrip().startswith("<?xml"):
+        locs = re.findall(r"<loc>\s*([^<]+?)\s*</loc>", html)
+        out = []
+        for loc in locs:
+            loc = loc.strip()
+            if "/venta-" in loc:
+                out.append(loc)
+        return _dedupe(out)
+    # Fallback HTML (raro): /venta-.../ID
+    hrefs = re.findall(r'href="([^"]*/venta-[^"]+/\d+)"', html)
+    hrefs += re.findall(r'href="(/propiedades/\d+[^"]*)"', html)
     return _dedupe([urljoin(base_url, h) for h in hrefs])
 
 
 def _mercado_unico(html: str, base_url: str) -> list[str]:
-    # IDs tipo ObjectId de Mongo (24 hex chars)
+    # IDs tipo ObjectId de Mongo (24 hex chars) — aparecen en homepage
     hrefs = re.findall(r'href="(/propiedades/[a-f0-9]{24})"', html)
+    hrefs += re.findall(r'href="(https://www\.mercado-unico\.com/propiedades/[a-f0-9]{24})"', html)
     return _dedupe([urljoin(base_url, h) for h in hrefs])
 
 

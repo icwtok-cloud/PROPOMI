@@ -8,13 +8,15 @@ basado en robots.txt + HTML real (no solo robots). Los 7 portales ya en
 
 | Veredicto | Fuentes |
 |---|---|
-| **HABILITAR (enabled=True)** | `cordobaprop`, `inmoup` |
-| **PENDIENTE** (robots OK / parser existe, HTML listado SPA o sin prueba completa) | `mendozaprop`, `mercado_unico`, `propia` |
-| **DESCARTADO / bloqueado borde** | `zonaprop`, `argenprop`, `mercadolibre`, `properati` + la mayoría de nacionales grandes |
+| **HABILITAR (enabled=True)** | `cordobaprop`, `inmoup`, **`mendozaprop`**, **`mercado_unico`** |
+| **PENDIENTE** | `propia` (Nuxt SPA sin hrefs de ficha en listado) |
+| **DESCARTADO / bloqueado borde** | `zonaprop`, `argenprop`, `mercadolibre`, `properati` |
 
-**Señal de producto:** entre ~40 dominios evaluados, solo 2 fuentes
-habilitables sin anti-bot. Ampliar catálogo nacional requiere proxy/anti-bot
-o aceptar foco regional (Córdoba + Mendoza/Cuyo).
+**Actualización 2026-09-15 (encargo #3):** mendozaprop habilitado vía
+sitemap.xml (solo `/venta-*`) + `__NEXT_DATA__`. mercado_unico habilitado
+vía homepage (links `/propiedades/{ObjectId}`) + NUXT/og. Crons de antigüedad
+y crawler activos en `render.yaml`; fallback documentado en
+`docs/CRON_EXTERNO.md`.
 
 ---
 
@@ -38,7 +40,7 @@ o aceptar foco regional (Córdoba + Mendoza/Cuyo).
 |---|---|---|---|---|---|
 | CordobaProp | cordobaprop.com | provincia (CPI) | Allow:/ (admin/api bloqueados) | JSON embebido | **HABILITAR** — ya enabled=True, único live del piloto previo |
 | ZonaProp / Argenprop / ML | (nacional) | — | ver BA | — | **DESCARTADO** (mismo bloqueo) |
-| Mercado Único | mercado-unico.com | regional | Allow:/ | SPA; links ficha no en HTML listado | **PENDIENTE** — parser existe; listado no expone hrefs estáticos |
+| Mercado Único | mercado-unico.com | regional (Santa Fe fuerte) | Allow:/ | homepage + NUXT/og | **HABILITAR** — enabled=True 2026-09-15 (discovery por homepage) |
 | La Voz clasificados | lavoz.com.ar | medio local | no medido | clasificados | **PENDIENTE** — no es portal inmobiliario puro |
 | InmoRadar | inmoradar.tech | analytics CBA | — | no listados públicos | **DESCARTADO** — producto B2B analytics, no stock scrapeable |
 | Portales de inmobiliarias sueltas | proactiva, caffaratti, etc. | 1 agencia | — | — | **DESCARTADO** — volumen insuficiente |
@@ -56,7 +58,7 @@ o aceptar foco regional (Córdoba + Mendoza/Cuyo).
 | Nombre | URL base | Alcance | robots.txt | Estructura | Veredicto |
 |---|---|---|---|---|---|
 | InmoUp | inmoup.com.ar | Cuyo (Mza/SJ/SL), ~25k avisos | Allow general; bloquea /panel /json maps | JSON-LD schema.org RealEstateListing | **HABILITAR** — HTML 200 real, parser + fixture + test (2026-09-15) |
-| MendozaProp | mendozaprop.com | provincia (CCPIM) | 404 (sin robots = sin restricción declarada) | SPA; listado sin hrefs estáticos | **PENDIENTE** — parser previo existe; falta extractor de links real |
+| MendozaProp | mendozaprop.com | provincia (CCPIM) | 404 (sin restricción) | sitemap + `__NEXT_DATA__` | **HABILITAR** — enabled=True 2026-09-15 |
 | ZonaProp / etc. | nacional | — | bloqueados | — | **DESCARTADO** |
 | Portal by Alanna | (Valle de Uco) | local chico | no medido | — | **DESCARTADO** — volumen bajo |
 

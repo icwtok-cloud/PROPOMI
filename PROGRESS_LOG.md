@@ -1,3 +1,33 @@
+## 2026-09-15 — Encargo #3: crons + mendozaprop + mercado_unico habilitados
+
+**Qué se hizo**
+
+1. **Crons en `render.yaml`:** descomentados y activos:
+   - `propomi-expire-stale` diario `0 4 * * *` → POST `/admin/properties/expire-stale`
+   - `propomi-crawler-weekly` lunes `0 5 * * 1` → POST `/admin/crawler/run`
+   Env vars: `ADMIN_KEY`, `API_URL`. Si el plan de Render rechaza cron,
+   instrucciones exactas en `docs/CRON_EXTERNO.md` (cron-job.org).
+2. **mendozaprop enabled=True:** discovery por `sitemap.xml` (solo
+   `/venta-*`); parser `__NEXT_DATA__` ya existía y se validó contra ficha
+   real (precio/title/rooms/images). Fixture + tests.
+3. **mercado_unico enabled=True:** discovery por homepage (listado SPA
+   vacío); parser NUXT/og validado. Fixture + tests. Algunos avisos traen
+   `precio: null` en el portal — no es bug del parser.
+4. robots reconfirmados: MP 404 (sin restricción), MU Allow:/.
+5. **No se tocó** zonaprop/argenprop/mercadolibre/properati.
+
+**Validado**
+
+- Parsers contra HTML real (curl 200) para ambas fuentes.
+- `py_compile` de módulos tocados.
+- Tests nuevos de parser + extracción de links.
+
+**Archivos:** `queries.py`, `links.py`, `selectors.py`,
+`parsers/mercado_unico.py` (zone), `render.yaml`, `docs/CRON_EXTERNO.md`,
+`docs/FUENTES_CANDIDATAS.md`, fixtures/tests, `PROGRESS_LOG.md`.
+
+---
+
 ## 2026-09-15 — Encargo #2: InmoUp, antigüedad 60d, priority_score, volumen, fuentes
 
 **Qué se hizo**

@@ -76,10 +76,19 @@ def parse_detail(html: str, url: str) -> RawListing | None:
     addr_m = re.search(r'direccion[\"\']?\s*:\s*[\"\']([^\"\']+)', html)
     address = addr_m.group(1) if addr_m else ""
     barrio_m = re.search(r'nombre[\"\']?\s*:\s*[\"\'](La Esmeralda|[^\"\']+)[\"\'].*?slug[\"\']?\s*:\s*[\"\']la-esmeralda', html, re.S)
-    zone = "La Esmeralda"
-    zm = re.search(r'"barrio".*?"nombre"\s*:\s*"([^"]+)"', html)
+    zone = ""
+    # barrio.nombre en payload NUXT (puede venir sin comillas en IIFE)
+    zm = re.search(r'barrio:\{[^}]*nombre:"([^"]+)"', html)
+    if not zm:
+        zm = re.search(r'barrio:\{[^}]*nombre:"([^"]+)"', html)
+    if not zm:
+        zm = re.search(r'nombre:"([A-Za-zÁÉÍÓÚáéíóúñÑ ]+)",provincia:[a-z],slug:"[a-z-]+",ciudad:', html)
     if zm:
         zone = zm.group(1)
+    if not zone:
+        om = re.search(r'og:title"[^>]+content="[^"]*,\s*([^,]+),\s*Santa Fe"', html)
+        if om:
+            zone = om.group(1).strip()
 
     agency_m = re.search(r'(LOQUET Inmobiliaria|[\w\s]+Inmobiliaria)', html)
     phone_m = re.search(r"Tel:\s*(\d+)", html)
