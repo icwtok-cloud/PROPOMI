@@ -45,6 +45,13 @@ def _get(url: str, timeout: int = 20) -> str:
         timeout=timeout,
     )
     resp.raise_for_status()
+    # Bug encontrado 2026-09-14: sin esto, requests cae al default HTTP
+    # (ISO-8859-1) cuando el servidor no declara charset explícito en
+    # Content-Type. La mayoría de estos portales sirven HTML en UTF-8 real
+    # pero sin declararlo, lo que producía mojibake (ej. "CÃ³rdoba" en vez
+    # de "Córdoba") en campos de texto libre como Property.zone.
+    if resp.encoding is None or resp.encoding.lower() == "iso-8859-1":
+        resp.encoding = resp.apparent_encoding or "utf-8"
     return resp.text
 
 
@@ -92,6 +99,24 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         existing.title = payload["title"]
         existing.price = payload["price"] or existing.price
         existing.description = payload["description"] or existing.description
+        # Bug encontrado 2026-09-14: antes esta rama solo tocaba title/price/
+        # description/images, así que una vez creado un registro, zone/city/
+        # type/etc. quedaban congelados para siempre — un re-crawl nunca
+        # podía corregir datos malos (ej. el mojibake de encoding) ni
+        # reflejar cambios reales del portal de origen.
+        existing.type = payload["type"] or existing.type
+        existing.operation = payload["operation"] or existing.operation
+        existing.currency = payload["currency"] or existing.currency
+        existing.zone = payload["zone"] or existing.zone
+        existing.city = payload["city"] or existing.city
+        if payload.get("surface"):
+            existing.surface = payload["surface"]
+        if payload.get("rooms"):
+            existing.rooms = payload["rooms"]
+        if payload.get("bedrooms"):
+            existing.bedrooms = payload["bedrooms"]
+        if payload.get("bathrooms"):
+            existing.bathrooms = payload["bathrooms"]
         if payload["images"]:
             existing.images = payload["images"][:MAX_PROPERTY_IMAGES]
             existing.image = payload["images"][0]
