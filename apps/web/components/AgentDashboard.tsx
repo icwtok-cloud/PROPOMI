@@ -440,7 +440,6 @@ export default function AgentDashboard(){
             </b>
           </div>
         </div>
-        {(agency?.subscription?.plan || agency?.subscriptionTier) && (
 
         <div className="reveal-single-card" style={{margin:'12px 0'}}>
           <div>
@@ -457,6 +456,7 @@ export default function AgentDashboard(){
           </button>
         </div>
 
+        {(agency?.subscription?.plan || agency?.subscriptionTier) && (
           <p className="muted small" style={{margin:'4px 0 12px'}}>
             Plan en sistema: <b>{agency?.subscription?.plan || agency?.subscriptionTier}</b>
             {agency?.subscriptionStartedAt ? ` · desde ${new Date(agency.subscriptionStartedAt).toLocaleDateString('es-AR')}` : ''}
