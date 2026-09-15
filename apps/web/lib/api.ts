@@ -1,4 +1,4 @@
-ï»¿import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Lead,Offer,Opportunity,PendingAgency,Property,ReviewQueueItem,Role,Session} from './types';
+import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Lead,Offer,Opportunity,PendingAgency,Property,ReviewQueueItem,Role,Session} from './types';
 export type {PendingAgency,ReviewQueueItem} from './types';
 
 import {PROPERTIES} from './data';
@@ -15,7 +15,7 @@ export function clearBuyerIdentity(){localStorage.removeItem(BUYER_KEY);localSto
 export async function getOrCreateBuyerSession():Promise<Session|null>{if(!base)return getBuyerSession();const existing=getBuyerSession();if(existing)return existing;const r=await req<{token:string;user:Session['user']}>('/auth/guest',{method:'POST'});const session={token:r.token,user:r.user};setBuyerSession(session);return session}
 
 // Perfil de contacto del comprador: se pide UNA sola vez (nunca dentro del
-// wizard de oferta) y se reutiliza en todas las acciones de alta intenciÃ³n
+// wizard de oferta) y se reutiliza en todas las acciones de alta intención
 // (oferta, visita, consulta). Nunca se expone a la agencia hasta el reveal.
 const BUYER_PROFILE_KEY='propomi-buyer-profile';
 export function getBuyerProfile():BuyerProfile|null{try{const raw=localStorage.getItem(BUYER_PROFILE_KEY);return raw?JSON.parse(raw):null}catch{return null}}
@@ -25,13 +25,13 @@ const AGENT_KEY='propomi-agent-session';
 export function getAgentSession():Session|null{try{const raw=localStorage.getItem(AGENT_KEY);return raw?JSON.parse(raw):null}catch{return null}}
 export function setAgentSession(session:Session){localStorage.setItem(AGENT_KEY,JSON.stringify(session))}
 export function clearAgentSession(){localStorage.removeItem(AGENT_KEY)}
-export async function saveIntent(property_id:string,intent:string,level:number,data:Intent,session?:Session|null){if(!base)return;const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('SesiÃ³n requerida');return req('/intents',{method:'POST',body:JSON.stringify({property_id,intent,level,...data})},s.token)}
-export async function createOffer(payload:{property_id:string;amount:number;payment_form:string;capital?:number;timeframe?:string;comment?:string;buyer_name:string;buyer_phone:string;buyer_email?:string;origin?:string},session?:Session|null){if(!base)return {id:`demo-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('SesiÃ³n requerida');return req('/offers',{method:'POST',body:JSON.stringify(payload)},s.token)}
+export async function saveIntent(property_id:string,intent:string,level:number,data:Intent,session?:Session|null){if(!base)return;const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/intents',{method:'POST',body:JSON.stringify({property_id,intent,level,...data})},s.token)}
+export async function createOffer(payload:{property_id:string;amount:number;payment_form:string;capital?:number;timeframe?:string;comment?:string;buyer_name:string;buyer_phone:string;buyer_email?:string;origin?:string},session?:Session|null){if(!base)return {id:`demo-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/offers',{method:'POST',body:JSON.stringify(payload)},s.token)}
 export type OffersListResponse=Offer[]|{verificationRequired:true;verificationStatus:string;count:number;offers:[]};
 export async function listOffers(session?:Session|null):Promise<OffersListResponse>{
   if(!base)return [];
   const s=session||await getOrCreateBuyerSession();
-  if(!s)throw new Error('SesiÃ³n requerida');
+  if(!s)throw new Error('Sesión requerida');
   return req<OffersListResponse>('/offers',undefined,s.token);
 }
 export function isOffersRestricted(r:OffersListResponse):r is {verificationRequired:true;verificationStatus:string;count:number;offers:[]}{
@@ -40,12 +40,12 @@ export function isOffersRestricted(r:OffersListResponse):r is {verificationRequi
 
 // Espejo de createOffer/listOffers/isOffersRestricted, para pregunta/visita
 // calificadas (mismo wizard, mismos pasos 2-4, sin monto obligatorio).
-export async function createLead(payload:{property_id:string;intent_type:'QUESTION'|'VISIT';has_proposal?:boolean;amount?:number;payment_form?:string;capital?:number;timeframe?:string;comment?:string;visit_day?:string;visit_slot?:string;buyer_name:string;buyer_phone:string;buyer_email?:string;origin?:string},session?:Session|null){if(!base)return {id:`demo-lead-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('SesiÃ³n requerida');return req('/leads',{method:'POST',body:JSON.stringify(payload)},s.token)}
+export async function createLead(payload:{property_id:string;intent_type:'QUESTION'|'VISIT';has_proposal?:boolean;amount?:number;payment_form?:string;capital?:number;timeframe?:string;comment?:string;visit_day?:string;visit_slot?:string;buyer_name:string;buyer_phone:string;buyer_email?:string;origin?:string},session?:Session|null){if(!base)return {id:`demo-lead-${Date.now()}`,status:'SENT'};const s=session||await getOrCreateBuyerSession();if(!s)throw new Error('Sesión requerida');return req('/leads',{method:'POST',body:JSON.stringify(payload)},s.token)}
 export type LeadsListResponse=Lead[]|{verificationRequired:true;verificationStatus:string;count:number;leads:[]};
 export async function listLeads(session?:Session|null):Promise<LeadsListResponse>{
   if(!base)return [];
   const s=session||await getOrCreateBuyerSession();
-  if(!s)throw new Error('SesiÃ³n requerida');
+  if(!s)throw new Error('Sesión requerida');
   return req<LeadsListResponse>('/leads',undefined,s.token);
 }
 export function isLeadsRestricted(r:LeadsListResponse):r is {verificationRequired:true;verificationStatus:string;count:number;leads:[]}{
@@ -58,17 +58,18 @@ export async function offerAction(id:string,action:'accept'|'reject'|'negotiate'
 export async function revealContact(offerId:string,session?:Session|null){if(!base)return {buyer_name:'Comprador demo',buyer_phone:'+5491100000000',buyer_email:undefined,method:'demo'};return req<{buyer_name:string;buyer_phone:string;buyer_email?:string;method?:string;already_revealed?:boolean}>(`/offers/${offerId}/reveal`,{method:'POST'},session?.token)}
 export async function mockCompletePayment(transactionId:string,session?:Session|null){if(!base)return {status:'COMPLETED'};return req<{status:string;buyer_name?:string;buyer_phone?:string;buyer_email?:string}>(`/payments/${transactionId}/mock-complete`,{method:'POST'},session?.token)}
 export async function paymentStatus(transactionId:string,session?:Session|null){if(!base)return {status:'PENDING'};return req<{status:string}>(`/payments/${transactionId}/status`,{method:'GET'},session?.token)}
-export async function requestContact(property_id:string,agency_id:string,session?:Session|null){const s=session||await getOrCreateBuyerSession();const role:Role=s?.user.role==='AGENTE'?'AGENTE':'COMPRADOR';if(!base)return {id:`demo-contact-${Date.now()}`,status:role==='AGENTE'?'SHARED':'REQUESTED',billable:role==='COMPRADOR'};if(!s)throw new Error('SesiÃ³n requerida');return req('/contact-requests',{method:'POST',body:JSON.stringify({property_id,agency_id})},s.token)}
+export async function createCheckout(kind:string,session?:Session|null){if(!base)return {checkout_url:'#demo-checkout'};if(!session)throw new Error('Sesión requerida');return req<{checkout_url:string}>('/payments/checkout',{method:'POST',body:JSON.stringify({kind})},session.token)}
+export async function requestContact(property_id:string,agency_id:string,session?:Session|null){const s=session||await getOrCreateBuyerSession();const role:Role=s?.user.role==='AGENTE'?'AGENTE':'COMPRADOR';if(!base)return {id:`demo-contact-${Date.now()}`,status:role==='AGENTE'?'SHARED':'REQUESTED',billable:role==='COMPRADOR'};if(!s)throw new Error('Sesión requerida');return req('/contact-requests',{method:'POST',body:JSON.stringify({property_id,agency_id})},s.token)}
 export async function shareContact(id:string,session?:Session|null){if(!base)return {status:'SHARED'};return req(`/contact-requests/${id}/share`,{method:'POST'},session?.token)}
 export async function getAgencyOpportunities(id:string,session?:Session|null){if(!base)return {active:0,opportunities:[] as Opportunity[],eventCount:0,propertyIds:[] as string[]};return req<{active:number;opportunities:Opportunity[];eventCount:number;propertyIds:string[]}>(`/agencies/${id}/opportunities`,undefined,session?.token)}
 export async function getAgency(id:string,session?:Session|null){if(!base)return {id,name:'Agencia demo',city:'Buenos Aires',verified:true,claimed:true,phone:'+5491155550101',verificationStatus:'VERIFIED',instagram:'@agenciademo',websiteLink:null,freeLeadsRemaining:10} as Agency;return req<Agency>(`/agencies/${id}`,undefined,session?.token)}
-// Fix etapa 004: antes solo mandaba {name} y el backend soporta tambiÃ©n
+// Fix etapa 004: antes solo mandaba {name} y el backend soporta también
 // instagram / website_link (requeridos para pasar de PENDING a VERIFIED,
-// doc 06.2.8) â€” sin esto, una agencia no tenÃ­a forma de completar su
-// verificaciÃ³n desde la web. `data` acepta los tres campos, todos opcionales
+// doc 06.2.8) — sin esto, una agencia no tenía forma de completar su
+// verificación desde la web. `data` acepta los tres campos, todos opcionales
 // salvo name que el backend exige siempre.
 export async function updateAgency(id:string,data:{name:string;instagram?:string;website_link?:string},session:Session){if(!base)return {id,name:data.name,verified:true,claimed:true,verificationStatus:'VERIFIED',instagram:data.instagram??null,websiteLink:data.website_link??null} as Agency;return req<Agency>(`/agencies/${id}`,{method:'PATCH',body:JSON.stringify(data)},session.token)}
-/** POST /agencies/{id}/subscription â€” registro/cambio de plan (sin cobro real). */
+/** POST /agencies/{id}/subscription — registro/cambio de plan (sin cobro real). */
 export async function setAgencySubscription(id:string,plan:string,session:Session){
   if(!base)return {id:'demo',agencyId:id,plan,cupoCiclo:plan==='PLAN_99'?null:plan==='PLAN_50'?60:30,consumidoCiclo:0};
   return req<{id:string;agencyId:string;plan:string;cupoCiclo:number|null;consumidoCiclo:number;fechaRenovacion?:string|null;availableCredit?:number}>(`/agencies/${id}/subscription`,{method:'POST',body:JSON.stringify({plan})},session.token)
@@ -83,7 +84,7 @@ export type PropertyCreatePayload={
   description?:string;
 };
 // T7.2: alta manual de propiedad (POST /properties). Solo funciona con
-// agencia VERIFIED; el backend fuerza agency_id desde la sesiÃ³n.
+// agencia VERIFIED; el backend fuerza agency_id desde la sesión.
 export async function createProperty(payload:PropertyCreatePayload,session:Session):Promise<Property>{
   if(!base){
     return {
@@ -101,34 +102,34 @@ export async function createProperty(payload:PropertyCreatePayload,session:Sessi
   return req<Property>('/properties',{method:'POST',body:JSON.stringify(payload)},session.token);
 }
 
-export async function requestOtp(phone:string){if(!base)return {ok:true,message:'CÃ³digo demo generado.',dev_code:'123456'};return req<{ok:boolean;message:string;dev_code?:string}>('/auth/otp/request',{method:'POST',body:JSON.stringify({phone})})}
+export async function requestOtp(phone:string){if(!base)return {ok:true,message:'Código demo generado.',dev_code:'123456'};return req<{ok:boolean;message:string;dev_code?:string}>('/auth/otp/request',{method:'POST',body:JSON.stringify({phone})})}
 export async function verifyOtp(phone:string,code:string){if(!base)return {token:'demo-token',user:{id:'demo-agent',phone,role:'AGENTE' as const,agency_id:'a1'},relinked_count:2};return req<{token:string;user:Session['user'];relinked_count:number}>('/auth/otp/verify',{method:'POST',body:JSON.stringify({phone,code})})}
 
-// Etapa 2 (secciÃ³n 6.2.1): verificaciÃ³n de celular del COMPRADOR â€” mismo
-// sistema de cÃ³digos que requestOtp ya usa para agentes, pero el endpoint de
-// verificaciÃ³n es distinto (/auth/otp/verify-buyer) porque no exige que el
-// telÃ©fono estÃ© asociado a una agencia. Reemplaza la sesiÃ³n guest anÃ³nima
-// por una sesiÃ³n atada al celular real ya verificado.
+// Etapa 2 (sección 6.2.1): verificación de celular del COMPRADOR — mismo
+// sistema de códigos que requestOtp ya usa para agentes, pero el endpoint de
+// verificación es distinto (/auth/otp/verify-buyer) porque no exige que el
+// teléfono esté asociado a una agencia. Reemplaza la sesión guest anónima
+// por una sesión atada al celular real ya verificado.
 export async function verifyOtpBuyer(phone:string,code:string){if(!base)return {token:'demo-buyer-token',user:{id:'demo-buyer',phone,role:'COMPRADOR' as const,agency_id:''},phone_verified:true};return req<{token:string;user:Session['user'];phone_verified:boolean}>('/auth/otp/verify-buyer',{method:'POST',body:JSON.stringify({phone,code})})}
 
-// Vincula la cuenta de Google (segunda prueba de identidad, ademÃ¡s del
-// celular) a la sesiÃ³n de comprador YA verificada por OTP. `session` tiene
-// que ser la sesiÃ³n devuelta por verifyOtpBuyer, no la guest original.
+// Vincula la cuenta de Google (segunda prueba de identidad, además del
+// celular) a la sesión de comprador YA verificada por OTP. `session` tiene
+// que ser la sesión devuelta por verifyOtpBuyer, no la guest original.
 export async function linkGoogleIdentity(idToken:string,session:Session){if(!base)return {email:'demo@propomi.lat',google_verified:true};return req<{email:string;google_verified:boolean}>('/auth/google',{method:'POST',body:JSON.stringify({id_token:idToken})},session.token)}
-export async function getAnalytics(session?:Session|null){if(!base)return {properties:PROPERTIES.length,events:0,offers:0,funnel:{}};if(!session)throw new Error('SesiÃ³n de agente requerida');return req('/analytics/summary',undefined,session.token)}
+export async function getAnalytics(session?:Session|null){if(!base)return {properties:PROPERTIES.length,events:0,offers:0,funnel:{}};if(!session)throw new Error('Sesión de agente requerida');return req('/analytics/summary',undefined,session.token)}
 
-// Etapa 3 v2: lee el ranking de demanda (zonas/tipos/operaciones mÃ¡s
+// Etapa 3 v2: lee el ranking de demanda (zonas/tipos/operaciones más
 // buscados) calculado por el backend sobre los eventos search_performed
 // que ya se vienen guardando desde GET /properties (Etapa 3 v1). En modo
-// demo (sin NEXT_PUBLIC_API_URL) devuelve un shape vacÃ­o pero vÃ¡lido para
+// demo (sin NEXT_PUBLIC_API_URL) devuelve un shape vacío pero válido para
 // no romper el panel mientras no hay backend real conectado.
-export async function getAnalyticsDemand(session?:Session|null){if(!base)return {sampleSize:0,topZones:[],topTypes:[],topOperations:[],avgResultCount:null} as DemandSummary;if(!session)throw new Error('SesiÃ³n de agente requerida');return req<DemandSummary>('/analytics/demand',undefined,session.token)}
+export async function getAnalyticsDemand(session?:Session|null){if(!base)return {sampleSize:0,topZones:[],topTypes:[],topOperations:[],avgResultCount:null} as DemandSummary;if(!session)throw new Error('Sesión de agente requerida');return req<DemandSummary>('/analytics/demand',undefined,session.token)}
 
-// Etapa 013: panel de administraciÃ³n interno. Usa X-Admin-Key en vez del
-// Bearer token de sesiÃ³n (agente/comprador) â€” es un mecanismo separado a
-// propÃ³sito, ver require_admin() en main.py. La clave nunca viaja en la URL.
+// Etapa 013: panel de administración interno. Usa X-Admin-Key en vez del
+// Bearer token de sesión (agente/comprador) — es un mecanismo separado a
+// propósito, ver require_admin() en main.py. La clave nunca viaja en la URL.
 async function adminReq<T>(path:string,credential:string,init?:RequestInit):Promise<T>{
-  // JWT (3 segmentos) â†’ Bearer; si no, X-Admin-Key (crons/legacy)
+  // JWT (3 segmentos) ? Bearer; si no, X-Admin-Key (crons/legacy)
   const isJwt = credential.split(".").length === 3;
   const headers: Record<string,string> = {
     "Content-Type": "application/json",
@@ -141,7 +142,7 @@ async function adminReq<T>(path:string,credential:string,init?:RequestInit):Prom
   return r.json();
 }
 
-// --- Admin panel: login + OTP â†’ JWT (sessionStorage en el front) ---
+// --- Admin panel: login + OTP ? JWT (sessionStorage en el front) ---
 export type AdminSession = { token: string; username: string };
 
 export async function adminAuthLogin(username: string, password: string) {
@@ -168,11 +169,11 @@ export async function rejectAgency(id:string,adminKey:string,notes?:string):Prom
 export async function getReviewQueue(adminKey:string):Promise<{count:number;items:ReviewQueueItem[]}>{if(!base)return {count:0,items:[]};return adminReq('/properties/review-queue',adminKey)}
 export async function resolveReviewItem(id:string,action:'confirm_duplicate'|'not_duplicate',adminKey:string){if(!base)return {id,status:action,needsReview:false};return adminReq(`/properties/${id}/review`,adminKey,{method:'POST',body:JSON.stringify({action})})}
 
-// Etapa 015 (subdominios por agencia): resuelve el storefront pÃºblico
+// Etapa 015 (subdominios por agencia): resuelve el storefront público
 // `/tienda/[slug]` (a su vez destino del rewrite de middleware.ts para
 // `{slug}.propomi.lat`). Sin auth, a diferencia de getAgency() que exige
-// que el agente estÃ© logueado como dueÃ±o de esa agencia â€” este endpoint
-// solo expone lo que ya es pÃºblico en otras pantallas. En modo demo (sin
+// que el agente esté logueado como dueño de esa agencia — este endpoint
+// solo expone lo que ya es público en otras pantallas. En modo demo (sin
 // NEXT_PUBLIC_API_URL) resuelve contra las 3 agencias semilla del backend
 // para poder probar el flujo sin backend real conectado.
 const DEMO_AGENCIES_BY_SLUG:Record<string,Agency>={
@@ -198,7 +199,7 @@ export type OnboardingInfo={
   message?:string;
 };
 
-// T6.2: resumen pÃºblico del cold-start (sin telÃ©fonos ni datos de comprador).
+// T6.2: resumen público del cold-start (sin teléfonos ni datos de comprador).
 export async function getOnboarding(token:string):Promise<OnboardingInfo>{
   if(!base){
     return {
@@ -254,7 +255,7 @@ export type MarketOpportunityZone={
 };
 export type MarketOpportunities={days:number;sampleSize:number;zones:MarketOpportunityZone[]};
 
-// T5.7: demanda solo en zonas donde la agencia tiene catÃ¡logo (agregado/anÃ³nimo).
+// T5.7: demanda solo en zonas donde la agencia tiene catálogo (agregado/anónimo).
 export async function getMarketOpportunities(agencyId:string,session:Session,days=30):Promise<MarketOpportunities>{
   if(!base)return {days,sampleSize:0,zones:[]};
   return req<MarketOpportunities>(`/agencies/${agencyId}/market-opportunities?days=${days}`,undefined,session.token);
@@ -362,7 +363,7 @@ export async function reopenAgency(id:string,adminKey:string,notes?:string):Prom
 }
 
 
-/** Tanda 4: evento de bÃºsqueda anÃ³nimo (sin PII). */
+/** Tanda 4: evento de búsqueda anónimo (sin PII). */
 export async function trackSearchPerformed(filters:{
   zone?:string; tipo?:string; type?:string; ambientes?:number; rooms?:number;
   precio_min?:number; precio_max?:number; min_price?:number; max_price?:number;

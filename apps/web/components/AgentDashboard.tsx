@@ -1,8 +1,8 @@
-'use client';
+﻿'use client';
 import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -153,6 +153,19 @@ export default function AgentDashboard(){
     setBusy(true);
     try{const r=await relinkAgency(session.user.agency_id,session);notify(r.message)}
     finally{setBusy(false)}
+  }
+
+  const [checkoutLoadingKey,setCheckoutLoadingKey]=useState<string|null>(null);
+  async function handleCheckout(kind:string){
+    if(!session)return;
+    setCheckoutLoadingKey(kind);
+    try{
+      const r=await createCheckout(kind,session);
+      window.location.href=r.checkout_url;
+    }catch(e:any){
+      notify(e?.message||'No pudimos iniciar el checkout.');
+      setCheckoutLoadingKey(null);
+    }
   }
 
   async function submitProperty(){
@@ -428,6 +441,22 @@ export default function AgentDashboard(){
           </div>
         </div>
         {(agency?.subscription?.plan || agency?.subscriptionTier) && (
+
+        <div className="reveal-single-card" style={{margin:'12px 0'}}>
+          <div>
+            <b>Revelar 1 lead suelto</b>
+            <p className="muted small" style={{margin:'2px 0 0'}}>Pagá un solo contacto sin contratar un plan mensual.</p>
+          </div>
+          <button
+            type="button"
+            className="secondary pricing-cta"
+            disabled={checkoutLoadingKey === 'reveal'}
+            onClick={() => handleCheckout('reveal')}
+          >
+            {checkoutLoadingKey === 'reveal' ? 'Redirigiendo…' : 'Comprar por USD 4,99'}
+          </button>
+        </div>
+
           <p className="muted small" style={{margin:'4px 0 12px'}}>
             Plan en sistema: <b>{agency?.subscription?.plan || agency?.subscriptionTier}</b>
             {agency?.subscriptionStartedAt ? ` · desde ${new Date(agency.subscriptionStartedAt).toLocaleDateString('es-AR')}` : ''}
@@ -438,8 +467,9 @@ export default function AgentDashboard(){
           // Solo presentación: plan activo = el de la API, o Gratis si no hay suscripción.
           const raw = String(agency?.subscription?.plan || agency?.subscriptionTier || '').toLowerCase();
           const activeKey = !raw ? 'gratis'
-            : (raw.includes('plus') || raw.includes('agencia')) ? 'plus'
-            : (raw.includes('pro') || raw.includes('profesional')) ? 'pro'
+            : raw === 'plan_99' ? 'premium'
+            : raw === 'plan_50' ? 'pro'
+            : raw === 'plan_30' ? 'basic'
             : 'gratis';
           const tiers = [
             {
@@ -454,26 +484,40 @@ export default function AgentDashboard(){
               ],
             },
             {
+              key: 'basic',
+              name: 'Basic',
+              price: 'USD 29,99',
+              kind: 'plan_basic',
+              tagline: 'Para agencias que están arrancando.',
+              bullets: [
+                '30 leads revelados por mes',
+                'Publicar propiedades',
+                'Panel de ofertas y oportunidades',
+              ],
+            },
+            {
               key: 'pro',
-              name: 'Profesional',
-              price: 'Próximamente',
+              name: 'Pro',
+              price: 'USD 59,99',
+              kind: 'plan_pro',
               tagline: 'Para agencias con flujo constante de leads.',
               bullets: [
-                'Cupo mensual de reveals ampliado',
+                '70 leads revelados por mes',
                 'Prioridad de visibilidad en resultados',
                 'Panel de demanda por zona',
               ],
               recommended: true,
             },
             {
-              key: 'plus',
-              name: 'Agencia Plus',
-              price: 'Próximamente',
-              tagline: 'Para inmobiliarias con varios agentes.',
+              key: 'premium',
+              name: 'Premium',
+              price: 'USD 99,99',
+              kind: 'plan_premium',
+              tagline: 'Para inmobiliarias con volumen alto.',
               bullets: [
-                'Cupo de reveals más alto o ilimitado',
+                'Reveals ilimitados',
                 'Soporte prioritario',
-                'Próximamente multi-usuario',
+                'Máxima visibilidad en resultados',
               ],
             },
           ];
@@ -488,14 +532,23 @@ export default function AgentDashboard(){
                   >
                     {isCurrent && <span className="pricing-badge current-badge">Tu plan actual</span>}
                     {!isCurrent && tier.recommended && <span className="pricing-badge rec-badge">Recomendado</span>}
-                    <div className="pricing-icon">{tier.key === 'gratis' ? <User size={22}/> : tier.key === 'pro' ? <TrendingUp size={22}/> : <Building2 size={22}/>}</div>
+                    <div className="pricing-icon">{tier.key === 'gratis' ? <User size={22}/> : tier.key === 'basic' ? <TrendingUp size={22}/> : tier.key === 'pro' ? <TrendingUp size={22}/> : <Building2 size={22}/>}</div>
                     <h4 className="pricing-name">{tier.name}</h4>
                     <div className="pricing-price">{tier.price}</div>
                     <p className="pricing-tagline">{tier.tagline}</p>
                     <ul className="pricing-bullets">
                       {tier.bullets.map(b => <li key={b}>{b}</li>)}
                     </ul>
-                    <button type="button" className="secondary pricing-cta" disabled>Próximamente</button>
+                    {tier.key === 'gratis'
+                      ? <button type="button" className="secondary pricing-cta" disabled>{isCurrent ? 'Tu plan actual' : 'Plan gratis'}</button>
+                      : <button
+                          type="button"
+                          className="secondary pricing-cta"
+                          disabled={checkoutLoadingKey === tier.kind}
+                          onClick={() => handleCheckout(tier.kind)}
+                        >
+                          {checkoutLoadingKey === tier.kind ? 'Redirigiendo…' : 'Contratar'}
+                        </button>}
                   </div>
                 );
               })}
@@ -504,7 +557,7 @@ export default function AgentDashboard(){
         })()}
 
         <p className="muted small pricing-footnote">
-          La contratación/cambio de plan se habilita cuando Lemon esté verificado (endpoint POST listo).
+          Los reveals no usados no se acumulan de un mes a otro. Podés cambiar de plan cuando quieras.
         </p>
       </div>
     </div>}
