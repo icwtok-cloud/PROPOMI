@@ -3157,6 +3157,24 @@ def agency_admin_dict(a: "Agency") -> dict[str, Any]:
     }
 
 
+@app.get("/admin/debug/agency-by-id/{agency_id}")
+def admin_debug_agency_by_id(agency_id: str, _: None = Depends(require_admin)):
+    """DEBUG TEMPORAL — borrar después de resolver el test de Lemon Squeezy
+    (tarea 5). Devuelve el teléfono tal cual está guardado en DB (repr
+    incluye comillas para detectar espacios/caracteres invisibles a simple
+    vista)."""
+    with Session(engine) as db:
+        agency = db.get(Agency, agency_id)
+        if not agency:
+            raise HTTPException(status_code=404, detail="No existe esa agencia")
+        return {
+            "id": agency.id,
+            "phone_repr": repr(agency.phone),
+            "verified": agency.verified,
+            "claimed": agency.claimed,
+        }
+
+
 @app.get("/admin/agencies/pending")
 def admin_pending_agencies(_: None = Depends(require_admin)):
     """Etapa 4: cola de agencias pendientes de revisión manual, ordenada
