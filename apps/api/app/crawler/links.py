@@ -37,12 +37,12 @@ def _argenprop(html: str, base_url: str) -> list[str]:
 
 
 def _cordobaprop(html: str, base_url: str) -> list[str]:
-    # Patrón real confirmado 2026-09-15 (vía índice de Google, no fue posible
-    # curlear el sitio directo desde acá): /propiedad-id-<N>-titulo-<slug>.html
-    # — el patrón anterior (/propiedad/<N>-<slug>) era una suposición
-    # incorrecta y por eso discover_detail_urls() devolvía 0 fichas en la
-    # primera corrida real (2026-09-15) contra Render.
-    hrefs = re.findall(r'href="([^"]*/propiedad-id-\d+-titulo-[^"]*\.html)"', html)
+    # Patrón real confirmado 2026-09-14 contra HTML en vivo de
+    # www.cordobaprop.com/propiedades/?operaciones=1&tipos=1:
+    # https://www.cordobaprop.com/propiedad/<id>-<slug>
+    # (el patrón "/propiedad-id-<N>-titulo-<slug>.html" pusheado antes
+    # era incorrecto y por eso discover_detail_urls() devolvía 0 fichas)
+    hrefs = re.findall(r'href="([^"]*/propiedad/\d+-[^"]*)"', html)
     return _dedupe([urljoin(base_url, h) for h in hrefs])
 
 
