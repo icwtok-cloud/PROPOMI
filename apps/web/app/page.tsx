@@ -103,7 +103,7 @@ export default function Home(){
   useEffect(()=>{
     const onScroll=()=>{
       const s=window.scrollY>320;
-      setSearchSticky(prev=>{if(s&&!prev)setOpenSeg(null);return s});
+      setSearchSticky(s);
     };
     window.addEventListener('scroll',onScroll,{passive:true});
     return ()=>window.removeEventListener('scroll',onScroll);
