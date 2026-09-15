@@ -34,6 +34,13 @@ def send_otp_sms(to_e164: str, code: str) -> dict[str, Any]:
         raise VonageSMSError("Vonage no está configurado (faltan VONAGE_API_KEY / VONAGE_API_SECRET)")
 
     to_clean = to_e164.lstrip("+").replace(" ", "")
+    if to_clean.startswith("549"):
+        # Vonage rechaza (AR-UNKNOWN / status "rejected") los móviles argentinos
+        # cuando se les manda el "9" de E.164. Confirmado en el dashboard de
+        # Vonage: mismo número, con "9" -> rejected; sin "9" -> delivered.
+        # Solo afecta el envío a Vonage; el resto de la app sigue usando el
+        # E.164 completo con "9" (normalize_phone, DB, rate-limit, etc.).
+        to_clean = "54" + to_clean[3:]
     payload = {
         "api_key": VONAGE_API_KEY,
         "api_secret": VONAGE_API_SECRET,
