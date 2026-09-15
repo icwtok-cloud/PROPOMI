@@ -1,3 +1,50 @@
+## 2026-09-15 — Deuda técnica Etapa C: intelligence
+
+**Qué se hizo**
+- `GET /analytics/supply-demand`: cruza search_performed con oferta
+  (priority_score) → suggestions por zona (gap demanda/oferta).
+- `GET /analytics/pricing-hint?zone=&rooms=&property_type=`: mediana/p25/p75
+  del catálogo (research MVP).
+- Docs: `docs/PRICING_INTELLIGENCE_RESEARCH.md`.
+
+**Validado:** py_compile main.py. pytest suite seguridad + parsers (ver README).
+
+---
+
+## 2026-09-15 — Deuda técnica Etapa B: frontend
+
+**Qué se hizo**
+1. **OfferModal / encoding:** no existe `OfferModal.tsx` en el repo actual.
+   El gate de identidad está **unificado** en `IntentWizard.tsx` (OTP+Google
+   al final del wizard). No hay segundo modal inconsistente. No se halló
+   mojibake (Ã©/â€) en apps/web.
+2. **DemandPanel:** estilos inline migrados a clases `demand-*` en
+   `globals.css`. Look equivalente (label uppercase, barras #c2632f).
+3. **Image storage:** research en `docs/IMAGE_STORAGE_PROPUESTA.md` (R2
+   recomendado; no implementado).
+
+**Validado:** lectura de archivos; no se corrió `tsc --noEmit` (sin toolchain
+Node completo en este entorno).
+
+---
+
+## 2026-09-15 — Deuda técnica Etapa A: seguridad backend
+
+**Qué se hizo**
+1. Rate limiting in-memory: OTP por phone+IP, auth/google por IP, admin por IP
+   (env `RATE_OTP_PER_PHONE`, `RATE_OTP_PER_IP`, `RATE_AUTH_PER_IP`,
+   `RATE_ADMIN_PER_IP`; ventana 15 min).
+2. Tabla `AdminAuditLog` + `log_admin_action` en approve/reject/reopen,
+   expire-stale, crawler/run.
+3. Aislamiento: fix `GET /events/funnel` y `GET /analytics/summary` (antes
+   globales). Auditoría completa en `docs/ISOLATION_AUDIT.md`.
+4. Alembic baseline `0001_baseline` (NO-OP + stamp head). `ensure_schema_columns`
+   convive. `alembic==1.14.0` en requirements.
+
+**Validado:** py_compile; pytest tests/test_security.py + parsers.
+
+---
+
 ## 2026-09-15 — Encargo 60 fuentes: Etapa 5 — infra cron
 
 **Qué se hizo:** revisado tiempo de crawl con 6 fuentes activas.

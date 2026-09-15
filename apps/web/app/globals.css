@@ -68,3 +68,17 @@
 
 
 
+
+/* DemandPanel — migrado de inline styles */
+.demand-stack{display:flex;flex-direction:column;gap:20px}
+.demand-label{font-size:12px;font-weight:600;color:#6b6b6b;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px}
+.demand-lead{margin-bottom:12px}
+.demand-sample{margin-top:8px}
+.demand-rank{margin-top:12px}
+.demand-rank-title{font-size:12px;font-weight:600;color:#6b6b6b;margin-bottom:8px}
+.demand-rank-list{display:flex;flex-direction:column;gap:6px}
+.demand-rank-row{display:flex;align-items:center;gap:8px}
+.demand-rank-label{font-size:14px;width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.demand-bar-track{flex:1;height:8px;border-radius:999px;background:#f0ebe6;overflow:hidden}
+.demand-bar-fill{height:100%;border-radius:999px;background:#c2632f}
+.demand-rank-count{font-size:12px;color:#9a9a9a;width:20px;text-align:right}

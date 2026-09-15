@@ -6,6 +6,8 @@ import json
 import os
 import re
 import secrets
+import time
+from collections import defaultdict, deque
 import unicodedata
 import urllib.error
 import urllib.request
@@ -106,6 +108,48 @@ ADMIN_KEY = os.getenv("ADMIN_KEY")
 if ENV == "production" and not ADMIN_KEY:
     raise RuntimeError("ADMIN_KEY must be configured in production")
 ADMIN_KEY = ADMIN_KEY or "dev-only-admin-key"
+
+
+# ---------------------------------------------------------------------------
+# Rate limiting (in-memory). Suficiente para un solo dyno; en multi-instancia
+# conviene Redis. Ventanas configurables por env.
+# ---------------------------------------------------------------------------
+RATE_OTP_PER_PHONE = int(os.getenv("RATE_OTP_PER_PHONE", "5"))   # /15 min
+RATE_OTP_PER_IP = int(os.getenv("RATE_OTP_PER_IP", "20"))         # /15 min
+RATE_AUTH_PER_IP = int(os.getenv("RATE_AUTH_PER_IP", "30"))       # /15 min
+RATE_ADMIN_PER_IP = int(os.getenv("RATE_ADMIN_PER_IP", "60"))     # /15 min
+_RATE_WINDOW_SEC = 15 * 60
+
+
+class _RateLimiter:
+    """Sliding window por clave (IP o phone)."""
+
+    def __init__(self) -> None:
+        self._hits: dict[str, deque[float]] = defaultdict(deque)
+
+    def check(self, key: str, limit: int, window: int = _RATE_WINDOW_SEC) -> None:
+        now = time.time()
+        q = self._hits[key]
+        while q and q[0] < now - window:
+            q.popleft()
+        if len(q) >= limit:
+            raise HTTPException(status_code=429, detail="Demasiados intentos. Probá más tarde.")
+        q.append(now)
+
+
+_rate = _RateLimiter()
+
+
+def _client_ip(request: Request) -> str:
+    # Render / Cloudflare: X-Forwarded-For
+    xff = request.headers.get("x-forwarded-for") or request.headers.get("x-real-ip")
+    if xff:
+        return xff.split(",")[0].strip()
+    if request.client:
+        return request.client.host or "unknown"
+    return "unknown"
+
+
 OTP_TTL_SECONDS = 5 * 60
 OTP_RATE_WINDOW = 10 * 60
 OTP_MAX_REQUESTS = 3
@@ -468,6 +512,19 @@ class ColdStartTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+
+
+class AdminAuditLog(Base):
+    """Rastro de acciones admin (approve/reject, expire-stale, crawler run)."""
+    __tablename__ = "admin_audit_logs"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    endpoint: Mapped[str] = mapped_column(String(160))
+    target_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class CrawlCursor(Base):
@@ -985,12 +1042,34 @@ def require_agent(session: dict[str, Any] = Depends(current_session)) -> dict[st
     return session
 
 
-def require_admin(x_admin_key: str | None = Header(default=None, alias="X-Admin-Key")) -> None:
-    """Etapa 4: clave fija de administración para el panel interno de
-    revisión de agencias. Va en el header `X-Admin-Key`, nunca en la URL
-    (para no quedar en logs de acceso ni en el historial del navegador)."""
+def require_admin(
+    request: Request,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+) -> None:
+    """Clave admin + rate limit por IP. Header `X-Admin-Key`, nunca en la URL."""
     if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
         raise HTTPException(status_code=401, detail="Clave de administración inválida")
+    _rate.check(f"admin:ip:{_client_ip(request)}", RATE_ADMIN_PER_IP)
+
+
+
+def log_admin_action(action: str, endpoint: str, target_id: str | None = None, detail: dict | None = None, ip: str | None = None) -> None:
+    """Persiste auditoría admin. Best-effort: no rompe la request si falla el insert."""
+    try:
+        with Session(engine) as db:
+            db.add(AdminAuditLog(
+                id=f"aal-{uuid.uuid4().hex[:12]}",
+                action=action,
+                endpoint=endpoint,
+                target_id=target_id,
+                detail=detail or {},
+                ip=ip,
+            ))
+            db.commit()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[admin_audit] failed: {exc}")
+
+
 
 
 # --------------------------------------------------------------------------
@@ -1378,8 +1457,12 @@ def guest_session():
 
 
 @app.post("/auth/otp/request")
-def request_otp(payload: OTPRequest):
+def request_otp(payload: OTPRequest, request: Request):
     phone = normalize_phone(payload.phone)
+    ip = _client_ip(request)
+    _rate.check(f"otp:ip:{ip}", RATE_OTP_PER_IP)
+    if phone:
+        _rate.check(f"otp:phone:{phone}", RATE_OTP_PER_PHONE)
     if not phone:
         print(f"[PROPOMI OTP] normalize_phone rechazó el valor crudo recibido: {payload.phone!r}")
         raise HTTPException(status_code=400, detail="Ingresá un teléfono válido")
@@ -1424,7 +1507,8 @@ def consume_valid_otp(db: Session, phone: str, code: str) -> None:
 
 
 @app.post("/auth/otp/verify")
-def verify_otp(payload: OTPVerify):
+def verify_otp(payload: OTPVerify, request: Request):
+    _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
     phone = normalize_phone(payload.phone)
     if not phone:
         print(f"[PROPOMI OTP] normalize_phone rechazó el valor crudo recibido en /verify: {payload.phone!r}")
@@ -1459,7 +1543,8 @@ def verify_otp(payload: OTPVerify):
 
 
 @app.post("/auth/otp/verify-buyer")
-def verify_otp_buyer(payload: OTPVerify):
+def verify_otp_buyer(payload: OTPVerify, request: Request):
+    _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
     """Etapa 2 / sección 6.2.1: verificación de celular del COMPRADOR,
     reutilizando el mismo sistema de OTP que ya usa el agente (misma tabla,
     mismo hash, mismo rate limit, mismo TTL — ver `consume_valid_otp`), pero
@@ -1499,7 +1584,8 @@ class GoogleAuthIn(BaseModel):
 
 
 @app.post("/auth/google")
-def link_google_identity(payload: GoogleAuthIn, session: dict[str, Any] = Depends(current_session)):
+def link_google_identity(payload: GoogleAuthIn, request: Request, session: dict[str, Any] = Depends(current_session)):
+    _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
     """Etapa 2 / sección 6.2.1: segunda prueba de identidad del comprador,
     pedida recién en el último paso del wizard de oferta, ADEMÁS del celular
     verificado por OTP (nunca en su lugar). Requiere una sesión ya vigente
@@ -1921,10 +2007,15 @@ def create_event(payload: EventIn, authorization: str | None = Header(default=No
 
 @app.get("/events/funnel")
 def funnel(session: dict[str, Any] = Depends(require_agent)):
+    """Solo eventos de la agencia de la sesión (aislamiento multi-tenant)."""
     with Session(engine) as db:
-        rows = db.execute(select(Event.name, Event.id)).all()
+        agency_id = session["agency_id"]
+        rows = db.execute(
+            select(Event.name, Event.id).where(Event.agency_id == agency_id)
+        ).all()
         counts: dict[str, int] = {}
-        for name, _ in rows: counts[name] = counts.get(name, 0) + 1
+        for name, _ in rows:
+            counts[name] = counts.get(name, 0) + 1
         return counts
 
 
@@ -3004,12 +3095,28 @@ def claim_agency(agency_id: str, session: dict[str, Any] = Depends(require_agent
 
 @app.get("/analytics/summary")
 def analytics(session: dict[str, Any] = Depends(require_agent)):
+    """Resumen acotado a la agencia de la sesión (no datos globales)."""
     with Session(engine) as db:
         ensure_seed(db)
-        rows = db.execute(select(Event.name)).scalars().all()
+        agency_id = session["agency_id"]
+        prop_ids = [
+            p.id for p in db.scalars(select(Property).where(Property.agency_id == agency_id)).all()
+        ]
+        rows = db.execute(
+            select(Event.name).where(Event.agency_id == agency_id)
+        ).scalars().all()
         counts: dict[str, int] = {}
-        for name in rows: counts[name] = counts.get(name, 0) + 1
-        return {"properties": db.query(Property).count(), "events": db.query(Event).count(), "offers": db.query(Offer).count(), "funnel": counts}
+        for name in rows:
+            counts[name] = counts.get(name, 0) + 1
+        offers_n = 0
+        if prop_ids:
+            offers_n = len(list(db.scalars(select(Offer).where(Offer.property_id.in_(prop_ids))).all()))
+        return {
+            "properties": len(prop_ids),
+            "events": sum(counts.values()),
+            "offers": offers_n,
+            "funnel": counts,
+        }
 
 
 class SearchPerformedIn(BaseModel):
@@ -3237,6 +3344,128 @@ def agency_admin_dict(a: "Agency") -> dict[str, Any]:
     }
 
 
+
+
+@app.get("/analytics/supply-demand")
+def supply_demand_suggestions(
+    days: int = 30,
+    limit: int = 20,
+    session: dict[str, Any] = Depends(require_agent),
+):
+    """Cruza demanda (search_performed agregados) con oferta del catálogo
+    visible (priority_score). Sugiere a la agencia qué perfiles conviene
+    priorizar. No filtra por agency_id en demanda (es señal de mercado
+    anónima global); la oferta sí puede filtrarse a propiedades propias
+    si se pasa own_only=1 en el futuro.
+    """
+    from collections import Counter
+    since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 90)))
+    with Session(engine) as db:
+        events = db.scalars(
+            select(Event).where(
+                Event.name == "search_performed",
+                Event.created_at >= since,
+            )
+        ).all()
+        zone_counts: Counter[str] = Counter()
+        type_counts: Counter[str] = Counter()
+        rooms_counts: Counter[str] = Counter()
+        for e in events:
+            ctx = e.context or {}
+            filters = ctx.get("filters") or ctx
+            z = filters.get("zone")
+            if z:
+                zone_counts[str(z).strip()] += 1
+            ty = filters.get("type") or filters.get("tipo")
+            if ty:
+                type_counts[str(ty).strip()] += 1
+            r = filters.get("rooms") or filters.get("ambientes")
+            if r is not None:
+                rooms_counts[str(r)] += 1
+
+        # Oferta disponible (no oculta), top por priority_score
+        props = db.scalars(
+            select(Property)
+            .where(Property.hidden_at.is_(None))
+            .order_by(Property.priority_score.desc())
+            .limit(500)
+        ).all()
+        supply_by_zone: Counter[str] = Counter()
+        for p in props:
+            if p.zone:
+                supply_by_zone[p.zone] += 1
+
+        suggestions = []
+        for zone, demand_n in zone_counts.most_common(limit):
+            supply_n = supply_by_zone.get(zone, 0)
+            gap = demand_n - supply_n
+            suggestions.append({
+                "zone": zone,
+                "demand_searches": demand_n,
+                "supply_listings": supply_n,
+                "gap": gap,
+                "priority": "alta" if gap > 5 else ("media" if gap > 0 else "cubierta"),
+            })
+        return {
+            "window_days": days,
+            "top_types": type_counts.most_common(10),
+            "top_rooms": rooms_counts.most_common(10),
+            "suggestions": suggestions,
+            "note": "Demanda anónima global; oferta = catálogo no oculto ordenado por priority_score.",
+        }
+
+
+@app.get("/analytics/pricing-hint")
+def pricing_hint(
+    zone: str,
+    rooms: int | None = None,
+    property_type: str | None = None,
+    session: dict[str, Any] = Depends(require_agent),
+):
+    """Rango de precio sugerido por mediana de catálogo en zona (+filtros).
+    Research-ready: usa la misma base que compute_priority_score.
+    """
+    with Session(engine) as db:
+        stmt = select(Property).where(
+            Property.hidden_at.is_(None),
+            Property.zone == zone,
+            Property.price.isnot(None),
+            Property.price > 0,
+        )
+        if rooms is not None:
+            stmt = stmt.where(
+                or_(Property.rooms == rooms, Property.bedrooms == rooms)
+            )
+        if property_type:
+            stmt = stmt.where(Property.type == property_type)
+        prices = sorted(
+            [float(p.price) for p in db.scalars(stmt.limit(500)).all() if p.price]
+        )
+        if len(prices) < 3:
+            return {
+                "zone": zone,
+                "sample": len(prices),
+                "hint": None,
+                "message": "Muestra insuficiente (<3) en catálogo para esa zona/filtros.",
+            }
+        mid = len(prices) // 2
+        median = prices[mid] if len(prices) % 2 else (prices[mid - 1] + prices[mid]) / 2
+        p25 = prices[max(0, len(prices) // 4)]
+        p75 = prices[min(len(prices) - 1, (3 * len(prices)) // 4)]
+        return {
+            "zone": zone,
+            "rooms": rooms,
+            "type": property_type,
+            "sample": len(prices),
+            "median": median,
+            "p25": p25,
+            "p75": p75,
+            "suggested_range": {"min": p25, "max": p75},
+            "currency": "USD",
+            "method": "percentiles del catálogo actual (misma base que priority_score)",
+        }
+
+
 @app.get("/admin/agencies/pending")
 def admin_pending_agencies(_: None = Depends(require_admin)):
     """Etapa 4: cola de agencias pendientes de revisión manual, ordenada
@@ -3253,7 +3482,7 @@ def admin_pending_agencies(_: None = Depends(require_admin)):
 
 
 @app.post("/admin/agencies/{agency_id}/approve")
-def admin_approve_agency(agency_id: str, payload: AgencyReviewIn | None = None, _: None = Depends(require_admin)):
+def admin_approve_agency(agency_id: str, request: Request, payload: AgencyReviewIn | None = None, _: None = Depends(require_admin)):
     with Session(engine) as db:
         a = db.get(Agency, agency_id)
         if not a:
@@ -3276,11 +3505,12 @@ def admin_approve_agency(agency_id: str, payload: AgencyReviewIn | None = None, 
             lc.consumido = 0
             lc.updated_at = datetime.now(timezone.utc)
         db.commit()
+        log_admin_action("agency_approve", "/admin/agencies/{id}/approve", agency_id, ip=_client_ip(request))
         return agency_admin_dict(a)
 
 
 @app.post("/admin/agencies/{agency_id}/reject")
-def admin_reject_agency(agency_id: str, payload: AgencyReviewIn | None = None, _: None = Depends(require_admin)):
+def admin_reject_agency(agency_id: str, request: Request, payload: AgencyReviewIn | None = None, _: None = Depends(require_admin)):
     with Session(engine) as db:
         a = db.get(Agency, agency_id)
         if not a:
@@ -3291,6 +3521,7 @@ def admin_reject_agency(agency_id: str, payload: AgencyReviewIn | None = None, _
         if payload and payload.notes:
             a.verification_notes = sanitize_free_text(payload.notes, "notas de revisión")
         db.commit()
+        log_admin_action("agency_reject", "/admin/agencies/{id}/reject", agency_id, ip=_client_ip(request))
         return agency_admin_dict(a)
 
 
@@ -3310,6 +3541,7 @@ def admin_reopen_agency(agency_id: str, payload: AgencyReviewIn | None = None, _
         if payload and payload.notes:
             a.verification_notes = sanitize_free_text(payload.notes, "notas de revisión")
         db.commit()
+        log_admin_action("agency_reopen", "/admin/agencies/{id}/reopen", agency_id, ip=_client_ip(request))
         return agency_admin_dict(a)
 
 
@@ -3519,10 +3751,12 @@ def complete_onboarding(
 
 
 @app.post("/admin/properties/expire-stale")
-def admin_expire_stale_properties(_: None = Depends(require_admin)):
+def admin_expire_stale_properties(request: Request, _: None = Depends(require_admin)):
     """Cron / disparo manual: oculta propiedades con antigüedad > MAX_AGE_DAYS."""
     with Session(engine) as db:
-        return expire_stale_properties(db)
+        result = expire_stale_properties(db)
+    log_admin_action("expire_stale", "/admin/properties/expire-stale", detail=result if isinstance(result, dict) else {}, ip=_client_ip(request))
+    return result
 
 
 @app.post("/admin/crawler/run")
@@ -3534,8 +3768,15 @@ def admin_run_crawler(
     """Disparo manual del crawler (protegido por ADMIN_KEY). sources=zonaprop,argenprop"""
     if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
         raise HTTPException(status_code=401, detail="Admin key inválida")
+    _rate.check(f"admin:ip:{_client_ip(request)}", RATE_ADMIN_PER_IP)
     from .crawler import run_crawl
     source_ids = [s.strip() for s in (sources or "").split(",") if s.strip()] or None
     with Session(engine) as db:
         report = run_crawl(db, source_ids)
+    log_admin_action(
+        "crawler_run",
+        "/admin/crawler/run",
+        detail={"sources": source_ids, "report_keys": list(report.keys()) if isinstance(report, dict) else []},
+        ip=_client_ip(request),
+    )
     return report
