@@ -1,3 +1,222 @@
+## 2026-09-15 — Auditoría de estado real del repo (sin cambios de código)
+
+**Qué se hizo:** se clonó `main` completo y se comparó contra
+`docs/PLAN_MAESTRO.md` y contra este mismo log. Motivo: tanto el documento
+maestro como este archivo habían quedado atrasados respecto del código —
+el log se cortaba en "Etapa 4 parte 1" (2026-09-13) y desde ahí hubo ~20
+commits que cerraron las etapas 5 a 9. Esta entrada y las tres siguientes
+reconstruyen ese tramo faltante para que cualquier sesión nueva lea el
+estado verdadero y no uno de hace dos días.
+
+**Verificado en este entorno (no declarado — corrido de verdad):**
+
+- `pytest apps/api/tests/` → **30/30 pasan** (no 8 como decía el plan
+  maestro): `test_security.py`, `test_subscriptions_credits.py`,
+  `test_t87_listing_group_reveal.py`.
+- Inventario real: **56 endpoints** en `apps/api/app/main.py` (3508 líneas)
+  y **17 tablas** SQLAlchemy.
+- No se pudo correr `npm run build` en este entorno (sin toolchain de
+  Node disponible) — sigue valiendo la regla de `CLAUDE.md`: la primera
+  corrida real del front es el build de Vercel.
+
+**Desfasajes encontrados entre `docs/PLAN_MAESTRO.md` y el código real.**
+El plan maestro afirma que estas cosas "no existen"; todas existen hoy:
+
+| Afirmación del plan maestro | Realidad en `main` al 2026-09-15 |
+|---|---|
+| Secc. 7: "el crawler no existe todavía" | Existe `apps/api/app/crawler/` completo (runner de 2 etapas, 7 parsers, dedup, normalize, links, selectors) |
+| Secc. 3.4: "no hay suscripciones/planes" | Tablas `Subscription` + `LeadCredit`, `PLAN_30/50/99` con cupo 30/60/ilimitado |
+| Secc. 3.4: "PaymentGateway es un mock que deniega" | Lemon Squeezy real con checkout hosteado + webhook con verificación HMAC |
+| Secc. 3.4: "no hay panel de revisión manual" | Backend + pantalla `/admin` en el front |
+| Secc. 4.2: `AgencyPhone`, `Property.images`, `origin_published_at`, `verification_status` pendientes | Los cuatro implementados, con migración de `image` → `images` |
+| Secc. 10 etapa 9: subdominios "al final, no bloquea nada" | Ya hecho: `middleware.ts` + `/tienda/[slug]` + `GET /agencies/by-slug/{slug}` |
+
+**Acción pendiente derivada:** regenerar `docs/PLAN_MAESTRO.md` para que
+deje de contradecir al código. Mientras no se haga, **este archivo manda
+sobre el plan maestro en todo lo que sea "estado actual"**; el plan maestro
+sigue siendo la fuente de verdad solo para *reglas de negocio* (secc. 5) y
+*decisiones de producto* (secc. 6), que no cambiaron.
+
+---
+
+## 2026-09-15 — Deuda abierta detectada en la auditoría (4 ítems, priorizados)
+
+Ninguno de estos es un bug que rompa lo que ya funciona; son huecos entre
+lo que el código hace y lo que el plan maestro exige.
+
+**1. Endpoints de debug vivos en `main` (borrar ya).** Los commits
+`4eaa279` y `0a06ad5` agregaron `POST /admin/debug/create-test-agency` y
+`GET /admin/debug/agency-by-id/{id}`, ambos con docstring "DEBUG TEMPORAL —
+borrar después de resolver el test de Lemon Squeezy (tarea 5)". Esa tarea
+ya se resolvió. Están detrás de `require_admin`, así que no hay fuga
+abierta, pero `create-test-agency` crea una `Agency` con
+`verification_status="VERIFIED"` directo, salteando toda la cola de
+revisión manual de la Etapa 4. Eliminar los dos endpoints y el modelo
+`DebugCreateAgencyIn`.
+
+**2. Falta el proceso periódico de antigüedad (plan maestro secc. 7).**
+`MAX_AGE_DAYS = 90` existe en `crawler/runner.py` pero es **solo filtro de
+entrada**. El plan maestro pide explícitamente un cron que oculte las
+propiedades al cumplir el límite mientras siguen publicadas en Propomi —
+eso no existe. Tampoco hay scheduler de ningún tipo: `render.yaml` define
+únicamente el servicio web, y `POST /admin/crawler/run` es disparo manual
+con `X-Admin-Key`. Sin esto, una propiedad indexada hace 55 días se queda
+publicada para siempre.
+
+**3. El crawler funciona pero casi no tiene fuentes habilitadas.** Estado
+confirmado de robots.txt al 2026-09-15 (documentado en `selectors.py`):
+
+- `cordobaprop` → **`enabled=True`**, única fuente viva. Robots permisivo.
+- `zonaprop` → `enabled=False`. El robots.txt **sí permite** fichas
+  (`/propiedades/*-ubicado-en-*`) y páginas de listado 2 a 5. El bloqueante
+  ya no es robots sino la **tarea 13**: validar `queries.py`/`links.py`
+  contra esas reglas de URL/paginación antes de habilitar.
+- `mendozaprop` → `enabled=False`. No publica robots.txt (404 real) → sin
+  restricciones declaradas. También esperando tarea 13.
+- `mercado_unico` → `enabled=False`. `Allow: /` general. Esperando tarea 13.
+- `argenprop`, `mercadolibre`, `properati` → **403 en el borde**
+  (CloudFront / bot protection propia / AWS ELB). Ni el robots.txt se
+  puede leer con curl simple. Sin proxy anti-bot dedicado no son viables.
+
+**Conflicto de producto que esto abre (decisión del dueño, no técnica):**
+el plan maestro fija como zona piloto **Caballito, CABA** con ZonaProp +
+Argenprop. Hoy Argenprop está fuera de alcance y la única fuente viva es
+CordobaProp, que no cubre CABA. Las opciones son: (a) mover el piloto a
+Córdoba, (b) habilitar ZonaProp vía tarea 13 y hacer el piloto solo con esa
+fuente, o (c) invertir en solución anti-bot. **Recomendado: (b), con (a)
+como plan B** — ZonaProp solo ya cubre Caballito con volumen suficiente, y
+no requiere gasto nuevo.
+
+**4. Volumen de crawl por corrida demasiado chico para llenar catálogo.**
+`MAX_LIST_PAGES_PER_SOURCE = 3`, `MAX_DETAILS_PER_SOURCE = 15`,
+`REQUEST_DELAY_SECONDS = 1.0`. Son ~15 fichas por fuente por corrida, y
+como no hay cursor persistido, cada corrida reempieza desde la página 1 y
+vuelve a traer casi lo mismo. Para un piloto real hace falta paginación con
+estado.
+
+---
+
+## 2026-09-14/15 — Etapa 8: crawler real (reconstrucción del tramo no logueado)
+
+Cubre los commits `29fb925`, `3bbea0e`, `9574db4`, `078997a`, `0715a87`,
+`d1fde0a`.
+
+- **Arquitectura de 2 etapas** (`crawler/runner.py`): etapa 1 genera URLs
+  de listado desde `selectors.SOURCES[...].list_urls_fn` y extrae de su
+  HTML las URLs de ficha (`links.py`); etapa 2 baja cada ficha, la parsea
+  con el parser específico de la fuente, normaliza y hace upsert contra
+  `Property`. Nunca entra detrás de login, nunca hardcodea credenciales,
+  nunca crawlea fuentes con `enabled=False`.
+- **7 parsers** en `crawler/parsers/`: zonaprop, argenprop, cordobaprop,
+  mendozaprop, mercado_unico, mercadolibre, properati. Todos basados en
+  extraer el **JSON embebido** en el HTML, no en selectores CSS frágiles —
+  esto resuelve el riesgo que el plan maestro marcaba en la secc. 12
+  ("selectores del scraper sin verificar").
+- **Dedup** (`crawler/dedup.py`): fingerprint de
+  `zona | dirección normalizada | precio bucketeado a 5000 | superficie
+  bucketeada a 5 | ambientes`. Pensado para fusionar el mismo aviso
+  publicado en más de un portal, no solo repetidos dentro de una fuente.
+  Coherente con el plan maestro: marca candidatos para **revisión manual**
+  (`GET /properties/review-queue`, `POST /properties/{id}/review`), no
+  fusiona automáticamente.
+- **Regla no negociable #3 respetada:** `normalize.strip_description()`
+  reusa `strip_contact_leaks` de `main.py` sobre la descripción scrapeada,
+  además de la pasada que ya hace `base.strip_contact_leaks` al extraer del
+  HTML. Doble pasada deliberada.
+- **Bugs encontrados y corregidos en el camino** (valen como aprendizaje,
+  no repetirlos):
+  - `links.py`: el patrón de URL de CordobaProp era incorrecto; el real es
+    `/propiedad/<id>-<slug>`.
+  - `cordobaprop_list_urls`: necesitaba `viewtype=list` y paginación por
+    offset, no por número de página.
+  - **Mojibake:** `requests` cae al default HTTP (ISO-8859-1) cuando el
+    servidor no declara charset en `Content-Type`. Estos portales sirven
+    UTF-8 real sin declararlo → "CÃ³rdoba" en vez de "Córdoba" en
+    `Property.zone`. Corregido forzando `apparent_encoding` en `_get()`.
+  - El upsert congelaba `zone`/`city`/`type` de la primera detección y no
+    los actualizaba en corridas posteriores.
+- **Búsqueda del front adaptada** (`f226ada`, `dbca137`): nuevo
+  `GET /properties/filters` para autodetectar ciudad/zona desde el catálogo
+  real, y la barra de búsqueda pasó a grid de 5 campos (ciudad + zona).
+
+---
+
+## 2026-09-14 — Etapas 5 a 7 y 9: monetización real, identidad, cold start, subdominios
+
+Cubre el commit `f5439d5` ("tandas 2-6") y los fixes posteriores de OTP.
+Este tramo nunca se logueó en su momento; se reconstruye acá desde el
+código.
+
+**Etapa 5 — Monetización completa (Lemon Squeezy).**
+
+- Tablas `Subscription` (plan activo, cupo del ciclo, consumido,
+  renovación) y `LeadCredit`, ambas por agencia.
+- `PLAN_CUPO`: `PLAN_30` → 30 reveals, `PLAN_50` → 60 reveals, `PLAN_99` →
+  ilimitado, `PAY_PER_LEAD` → 0. Coherente con decisión 6.2.3 del plan
+  maestro: **lo que consume cupo es un reveal, no una oferta recibida**.
+- Orden de consumo en `reveal_contact`: primero `free_leads_remaining` (los
+  10 gratis al verificarse), después cupo de plan, después pay-per-lead a
+  USD 5. Así no se pisan entre sí, como exige la secc. 8.
+- Excedente dentro del ciclo → se permite seguir revelando a pay-per-lead
+  en vez de bloquear (decisión 6.2.4).
+- `POST /payments/checkout` crea checkout hosteado de Lemon Squeezy;
+  `POST /payments/webhooks/lemonsqueezy` verifica `X-Signature` (HMAC-SHA256
+  del body crudo) y solo actúa con `order_created` + `status == paid`.
+  Mapeo variant→plan por variables de entorno (`LS_VARIANT_PLAN_BASIC/PRO/
+  PREMIUM`), con compatibilidad hacia los nombres legacy.
+- `docs/LEMON_SQUEEZY_CHECKLIST.md`: pasos operativos para cuando aprueben
+  la cuenta. **No hace falta código nuevo** — solo cargar `STORE_ID`,
+  `VARIANT_ID`, API key y `LEMON_SQUEEZY_WEBHOOK_SECRET` en Render.
+- Tests: `test_subscriptions_credits.py` cubre este flujo.
+- `reveal_contact` sigue bloqueando con 403 si
+  `verification_status != "VERIFIED"` (decisión 6.2.2).
+
+**Etapa 2 revisada — identidad del comprador.**
+
+- `7de1dff`: **se eliminó la exigencia de Google.** El SMS verificado
+  alcanza como verificación de comprador; Google quedó opcional. Esto
+  revierte parcialmente la decisión 6.2.1 del plan maestro (que pedía
+  ambos) — se cambió porque el doble gate mataba la conversión al final del
+  wizard, que es exactamente lo que el diseño de 3 pantallas busca evitar.
+- SMS real conectado: `sms_vonage.py` + selector `OTP_SMS_PROVIDER`
+  (`f5f4732`). Fixes de normalización AR: se quita el 9 del prefijo al
+  enviar a Vonage porque lo rechazaba como `AR-UNKNOWN` (`682687f`), y
+  `VONAGE_KEEP_AR_NINE` para matchear la whitelist de números de test en
+  modo demo (`eb81fe1`). Log de diagnóstico cuando `normalize_phone`
+  rechaza (`2d79d7e`).
+- `IntentWizard.tsx` (333 líneas) convive con `OfferModal.tsx`. Fixes:
+  auto-recuperación de sesión huérfana ante 403 de celular (`f4b7f79`),
+  `property_id` faltante al crear `IntentProfile` en `/intents` (`756dcb9`),
+  hint y validación E.164 en el campo Celular (`29663ff`).
+
+**Etapa 3 cerrada — `search_performed`.** `POST /events/search_performed` +
+`GET /analytics/demand` + `GET /agencies/{id}/market-opportunities`, con
+pestaña "Demanda" (`DemandPanel.tsx`) en el dashboard de agencia. Guardado
+agregado y anónimo, nunca atado a un comprador identificable.
+
+**Etapa 6 — Cold start.** Tabla `ColdStartTask`, cola en
+`GET /admin/cold-start/pending`, `POST /admin/cold-start/{id}/mark-sent`
+(envío 100% manual por ahora, como preveía la secc. 9), y flujo de reclamo
+por token: `GET /onboarding/{token}`, `POST /onboarding/{token}/complete`,
+`POST /agencies/{id}/claim`, con pantalla
+`apps/web/app/onboarding/[token]/page.tsx`.
+
+**Etapa 7 — Ingesta manual.** `POST /properties/ingest` y `POST /properties`
+para agentes ya verificados.
+
+**Etapa 9 — Subdominios por agencia.** `apps/web/middleware.ts` detecta el
+subdominio, `GET /agencies/by-slug/{slug}` resuelve la agencia, y
+`apps/web/app/tienda/[slug]/page.tsx` renderiza el portal propio **con el
+mismo funnel de oferta → reveal pago corriendo adentro**, no una versión
+reducida. DNS wildcard documentado en `apps/web/docs-wildcard-dns.md`.
+
+**Fuera de roadmap, construido igual:** modelo `Lead` con su propio reveal
+(`POST /leads`, `GET /leads`, `POST /leads/{id}/reveal`), grupos de listings
+duplicados (`GET /properties/{id}/group`, con
+`test_t87_listing_group_reveal.py` cubriendo el reveal sobre un grupo), y
+`AgentLeadActions.tsx` en el front.
+
+---
 ## 2026-09-13 — Cierre de sesión / punto de retomada
 
 - **Este es un corte de sesión de chat, no una etapa nueva.** El usuario va
