@@ -33,7 +33,7 @@ export default function PropertyCard({
           {cover
             ? <img src={cover} alt={p.title}/>
             : <div className="pcard-noimg" aria-hidden/>}
-          {p.freshness && <span className="fresh">{p.freshness}</span>}
+          {p.freshness && <span className="fresh">{p.freshness==='crawler'?'Propomi.lat':p.freshness}</span>}
           {p.groupMemberCount != null && p.groupMemberCount > 1 && (
             <span className="fresh multi-badge">Multi-agente · {p.groupMemberCount}</span>
           )}
