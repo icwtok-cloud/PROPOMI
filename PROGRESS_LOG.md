@@ -1,3 +1,25 @@
+## 2026-09-15 — Reaplicar panel admin sobre main.py post-deuda
+
+**Contexto:** el main.py con rate-limit + AdminAuditLog + aislamiento
+pisó la entrega previa del panel admin. Se reaplicó **solo** auth admin
+sobre el archivo actual del repo.
+
+**Qué se reaplicó**
+1. `AdminUser` + seed `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_PHONE`
+2. `POST /admin/auth/login` → OTP SMS; `POST /admin/auth/verify-otp` → JWT
+3. `GET /admin/auth/me`
+4. `require_admin` dual: X-Admin-Key **o** Bearer ADMIN, **conservando**
+   `_rate.check` por IP (`RATE_ADMIN_PER_IP`)
+5. Endpoints admin de negocio intactos (approve/reject/reopen/expire/crawler
+   siguen con `log_admin_action`)
+6. `bcrypt==4.2.1` en requirements.txt
+7. Front: `/admin` + `api.ts` alineados a JWT sessionStorage (login ya estaba)
+
+**Validado de verdad:** pytest `tests/test_admin_auth.py` → **5 passed**
+sobre el main.py final. Shape pending: phone, websiteLink, verificationPriority.
+
+---
+
 ## 2026-09-15 — Deuda técnica Etapa C: intelligence
 
 **Qué se hizo**

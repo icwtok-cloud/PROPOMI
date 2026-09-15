@@ -126,11 +126,41 @@ export async function getAnalyticsDemand(session?:Session|null){if(!base)return 
 // Etapa 013: panel de administración interno. Usa X-Admin-Key en vez del
 // Bearer token de sesión (agente/comprador) — es un mecanismo separado a
 // propósito, ver require_admin() en main.py. La clave nunca viaja en la URL.
-async function adminReq<T>(path:string,adminKey:string,init?:RequestInit):Promise<T>{
-  const r=await fetch(`${base}${path}`,{...init,headers:{'Content-Type':'application/json','X-Admin-Key':adminKey,...(init?.headers||{})},cache:'no-store'});
+async function adminReq<T>(path:string,credential:string,init?:RequestInit):Promise<T>{
+  // JWT (3 segmentos) → Bearer; si no, X-Admin-Key (crons/legacy)
+  const isJwt = credential.split(".").length === 3;
+  const headers: Record<string,string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string,string> || {}),
+  };
+  if (isJwt) headers["Authorization"] = `Bearer ${credential}`;
+  else headers["X-Admin-Key"] = credential;
+  const r=await fetch(`${base}${path}`,{...init,headers,cache:"no-store"});
   if(!r.ok){let message=`Error ${r.status}`;try{const body=await r.json();message=typeof body?.detail==='string'?body.detail:message}catch{}const err:any=new Error(message);err.status=r.status;throw err}
   return r.json();
 }
+
+// --- Admin panel: login + OTP → JWT (sessionStorage en el front) ---
+export type AdminSession = { token: string; username: string };
+
+export async function adminAuthLogin(username: string, password: string) {
+  return req<{ ok: boolean; otpRequired: boolean; phoneHint?: string; smsSent?: boolean; dev_code?: string }>(
+    "/admin/auth/login",
+    { method: "POST", body: JSON.stringify({ username, password }) },
+  );
+}
+
+export async function adminAuthVerifyOtp(username: string, code: string) {
+  return req<{ token: string; user: { id: string; username: string; role: string }; expiresInHours: number }>(
+    "/admin/auth/verify-otp",
+    { method: "POST", body: JSON.stringify({ username, code }) },
+  );
+}
+
+export async function adminAuthMe(token: string) {
+  return req<{ ok: boolean; role: string; username?: string }>("/admin/auth/me", undefined, token);
+}
+
 export async function getPendingAgencies(adminKey:string):Promise<PendingAgency[]>{if(!base)return [];return adminReq('/admin/agencies/pending',adminKey)}
 export async function approveAgency(id:string,adminKey:string,notes?:string):Promise<PendingAgency>{if(!base)return {} as PendingAgency;return adminReq(`/admin/agencies/${id}/approve`,adminKey,{method:'POST',body:notes?JSON.stringify({notes}):undefined})}
 export async function rejectAgency(id:string,adminKey:string,notes?:string):Promise<PendingAgency>{if(!base)return {} as PendingAgency;return adminReq(`/admin/agencies/${id}/reject`,adminKey,{method:'POST',body:notes?JSON.stringify({notes}):undefined})}

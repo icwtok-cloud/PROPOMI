@@ -17,6 +17,7 @@ from enum import Enum
 from typing import Any, Protocol
 
 import jwt
+import bcrypt
 import phonenumbers
 from google.auth import exceptions as google_auth_exceptions
 from google.auth.transport import requests as google_requests
@@ -574,6 +575,18 @@ class ContactRequest(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+
+class AdminUser(Base):
+    """Usuario admin del panel humano. Un solo seed vía env, sin auto-registro."""
+    __tablename__ = "admin_users"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    phone: Mapped[str] = mapped_column(String(30))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class OTPCode(Base):
     __tablename__ = "otp_codes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -1036,6 +1049,39 @@ def current_user(session: dict[str, Any] = Depends(current_session)) -> User:
         return user
 
 
+
+def ensure_admin_seed() -> None:
+    """Inserta el AdminUser único desde env (idempotente). Sin auto-registro API."""
+    username = (os.getenv("ADMIN_USERNAME") or "").strip()
+    password = os.getenv("ADMIN_PASSWORD") or ""
+    phone_raw = (os.getenv("ADMIN_PHONE") or "").strip()
+    if not username or not password or not phone_raw:
+        return
+    phone = normalize_phone(phone_raw) or phone_raw
+    with Session(engine) as db:
+        if db.scalars(select(AdminUser).where(AdminUser.username == username)).first():
+            return
+        pw_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        db.add(AdminUser(
+            id=f"adm-{uuid.uuid4().hex[:12]}",
+            username=username,
+            password_hash=pw_hash,
+            phone=phone,
+        ))
+        db.commit()
+        print(f"[PROPOMI] AdminUser seed creado: {username}")
+
+
+def create_admin_token(admin: "AdminUser") -> str:
+    payload = {
+        "role": "ADMIN",
+        "admin_id": admin.id,
+        "username": admin.username,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=8),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
 def require_agent(session: dict[str, Any] = Depends(current_session)) -> dict[str, Any]:
     if session.get("role") != Role.AGENTE.value or not session.get("agency_id"):
         raise HTTPException(status_code=403, detail="Se requiere una sesión de agente")
@@ -1044,12 +1090,25 @@ def require_agent(session: dict[str, Any] = Depends(current_session)) -> dict[st
 
 def require_admin(
     request: Request,
+    authorization: str | None = Header(default=None),
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
-) -> None:
-    """Clave admin + rate limit por IP. Header `X-Admin-Key`, nunca en la URL."""
-    if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
-        raise HTTPException(status_code=401, detail="Clave de administración inválida")
+) -> dict[str, Any]:
+    """Autenticación admin dual + rate limit por IP:
+    - X-Admin-Key: crons / servidor-a-servidor
+    - Bearer JWT role=ADMIN: panel humano tras login+OTP
+    """
     _rate.check(f"admin:ip:{_client_ip(request)}", RATE_ADMIN_PER_IP)
+    if x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY):
+        return {"role": "ADMIN", "auth": "key"}
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            payload = jwt.decode(authorization[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        except jwt.PyJWTError as exc:
+            raise HTTPException(status_code=401, detail="Sesión admin inválida o vencida") from exc
+        if payload.get("role") != "ADMIN":
+            raise HTTPException(status_code=403, detail="Se requiere sesión de administrador")
+        return payload
+    raise HTTPException(status_code=401, detail="Autenticación de administrador requerida")
 
 
 
@@ -3464,6 +3523,105 @@ def pricing_hint(
             "currency": "USD",
             "method": "percentiles del catálogo actual (misma base que priority_score)",
         }
+
+
+
+class AdminLoginIn(BaseModel):
+    username: str = Field(min_length=2, max_length=80)
+    password: str = Field(min_length=6, max_length=200)
+
+
+class AdminOtpVerifyIn(BaseModel):
+    username: str = Field(min_length=2, max_length=80)
+    code: str = Field(min_length=4, max_length=12)
+
+
+@app.post("/admin/auth/login")
+def admin_auth_login(payload: AdminLoginIn, request: Request):
+    """Paso 1: username+password. Si OK, envía OTP SMS. No emite JWT todavía."""
+    ensure_admin_seed()
+    _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
+    with Session(engine) as db:
+        admin = db.scalars(select(AdminUser).where(AdminUser.username == payload.username.strip())).first()
+        if not admin or not bcrypt.checkpw(
+            payload.password.encode("utf-8"), admin.password_hash.encode("utf-8")
+        ):
+            raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+        phone = admin.phone
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        db.query(OTPCode).filter(OTPCode.phone == phone, OTPCode.consumed == False).update({"consumed": True})
+        db.add(OTPCode(
+            phone=phone,
+            code_hash=hash_otp(code),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+            consumed=False,
+        ))
+        db.commit()
+    try:
+        send_otp_sms(phone, code)
+        sms_sent = True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[PROPOMI admin OTP] SMS falló: {exc}")
+        sms_sent = False
+    body: dict[str, Any] = {
+        "ok": True,
+        "otpRequired": True,
+        "phoneHint": (phone[:4] + "****" + phone[-3:]) if phone and len(phone) > 7 else "****",
+        "smsSent": sms_sent,
+    }
+    if ENV != "production":
+        body["dev_code"] = code
+    return body
+
+
+@app.post("/admin/auth/verify-otp")
+def admin_auth_verify_otp(payload: AdminOtpVerifyIn, request: Request):
+    """Paso 2: OTP válido → JWT role=ADMIN (8h)."""
+    ensure_admin_seed()
+    _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
+    with Session(engine) as db:
+        admin = db.scalars(select(AdminUser).where(AdminUser.username == payload.username.strip())).first()
+        if not admin:
+            raise HTTPException(status_code=401, detail="Usuario inválido")
+        now = datetime.now(timezone.utc)
+        otp = db.scalar(
+            select(OTPCode)
+            .where(OTPCode.phone == admin.phone, OTPCode.consumed == False)
+            .order_by(OTPCode.created_at.desc())
+        )
+        if not otp:
+            raise HTTPException(status_code=401, detail="Código OTP inválido o vencido")
+        exp = otp.expires_at
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp < now:
+            otp.consumed = True
+            db.commit()
+            raise HTTPException(status_code=401, detail="Código OTP vencido")
+        if not secrets.compare_digest(otp.code_hash, hash_otp(payload.code.strip())):
+            otp.verify_attempts = (otp.verify_attempts or 0) + 1
+            db.commit()
+            raise HTTPException(status_code=401, detail="Código OTP inválido o vencido")
+        otp.consumed = True
+        admin.last_login_at = now
+        db.commit()
+        token = create_admin_token(admin)
+        return {
+            "token": token,
+            "user": {"id": admin.id, "username": admin.username, "role": "ADMIN"},
+            "expiresInHours": 8,
+        }
+
+
+@app.get("/admin/auth/me")
+def admin_auth_me(session: dict[str, Any] = Depends(require_admin)):
+    """Confirma sesión admin (JWT o key)."""
+    return {
+        "ok": True,
+        "auth": session.get("auth") or "jwt",
+        "role": session.get("role"),
+        "username": session.get("username"),
+    }
 
 
 @app.get("/admin/agencies/pending")
