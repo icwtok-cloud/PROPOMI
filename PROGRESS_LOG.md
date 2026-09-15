@@ -1,3 +1,31 @@
+## 2026-09-15 — Rediseño UX buscador + PropertyCard (estilo Airbnb)
+
+**Bugs corregidos**
+1. Eliminado `.searchbtn` como acción de búsqueda; feedback en vivo con conteo.
+2. Chip Balcón conectado a `Property.balcony` (existía en el tipo).
+3. `isLoading` + skeleton grid separados del empty state.
+
+**UX**
+- Barra pill 3 segmentos (Dónde / Tipo+ambientes / Presupuesto) con popovers.
+- Sticky compact al scrollear pasado el hero.
+- Chips Cochera / Apto crédito / Balcón bajo la pill + ordenar.
+- Sort: relevancia | precio asc/desc | más recientes (sobre filtered, sin cambiar match).
+- PropertyCard: corazón sobre foto + mini-carrusel de `images`.
+
+**Mapa (punto 6):** NO implementado. `Property` no tiene lat/lng; dejaría
+marcadores solo por zona/ciudad sin precisión. Queda para encargo futuro
+con geocoding o campos de coordenadas.
+
+**Clases nuevas en globals.css:** search-pill-wrap, search-pill, pill-seg,
+pill-popover, type-chip-grid, results-live, skeleton-*, pcard-media,
+pcard-heart, pcard-nav, pcard-dots, multi-badge, etc.
+
+**No tocado:** backend, trackSearchPerformed, IntentWizard/ComparePanel lógica.
+
+**Validado:** revisión estructural del JSX; no tsc (sandbox npm).
+
+---
+
 ## 2026-09-15 — Auditoría frontend + research anti-bot
 
 **Etapa 1:** docs/ANTIBOT_PROPUESTA.md — proxy vs Playwright vs acuerdos

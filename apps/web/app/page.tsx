@@ -1,7 +1,7 @@
-﻿'use client';
+'use client';
 import {useEffect,useMemo,useState} from 'react';
 import Link from 'next/link';
-import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarChart3,MessageSquare,Lock} from 'lucide-react';
+import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarChart3,MessageSquare,Lock,ChevronDown,X,Building2,Home as HomeIcon,Store,Map,Briefcase} from 'lucide-react';
 import PropertyCard from '../components/PropertyCard';
 import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
@@ -36,6 +36,12 @@ export default function Home(){
   const [offers,setOffers]=useState<Offer[]>([]);
   const [toast,setToast]=useState('');
   const [loadError,setLoadError]=useState<string|null>(null);
+  const [isLoading,setIsLoading]=useState(true);
+  const [balcony,setBalcony]=useState(false);
+  const [sortBy,setSortBy]=useState<'relevance'|'price_asc'|'price_desc'|'recent'>('relevance');
+  const [openSeg,setOpenSeg]=useState<'where'|'type'|'budget'|null>(null);
+  const [moreFilters,setMoreFilters]=useState(false);
+  const [searchSticky,setSearchSticky]=useState(false);
 
   useEffect(()=>{captureOfferOriginFromUrl()},[]);
   useEffect(()=>{(async()=>{
@@ -59,6 +65,8 @@ export default function Home(){
   },[city,zonesByCity]);
   useEffect(()=>{(async()=>{
     try{
+      setIsLoading(true);
+      setLoadError(null);
       const items=await getPropertiesDeduped();
       setItems(items);
       try{
@@ -87,11 +95,40 @@ export default function Home(){
     }catch(e:any){
       setLoadError(e?.message||'No pudimos cargar las propiedades. Probá recargar.');
       setItems([]);
+    }finally{
+      setIsLoading(false);
     }
   })()},[]);
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
+  useEffect(()=>{
+    const onScroll=()=>setSearchSticky(window.scrollY>320);
+    window.addEventListener('scroll',onScroll,{passive:true});
+    return ()=>window.removeEventListener('scroll',onScroll);
+  },[]);
+  // Cerrar popover al click fuera
+  useEffect(()=>{
+    if(!openSeg)return;
+    const close=(e:MouseEvent)=>{
+      const el=document.getElementById('search-pill');
+      if(el&&!el.contains(e.target as Node))setOpenSeg(null);
+    };
+    document.addEventListener('mousedown',close);
+    return ()=>document.removeEventListener('mousedown',close);
+  },[openSeg]);
 
-  const filtered=useMemo(()=>items.filter(p=>(!city||p.city===city)&&(!zone||p.zone===zone)&&(ptype==='Todos'||p.type===ptype)&&(!rooms||rooms==='Todos'||p.rooms===Number(rooms))&&p.price<=Number(budget||Infinity)&&(!parking||p.parking)&&(!credit||p.credit)),[items,city,zone,ptype,rooms,budget,parking,credit]);
+
+  const filtered=useMemo(()=>{
+    let list=items.filter(p=>(!city||p.city===city)&&(!zone||p.zone===zone)&&(ptype==='Todos'||p.type===ptype)&&(!rooms||rooms==='Todos'||p.rooms===Number(rooms))&&p.price<=Number(budget||Infinity)&&(!parking||p.parking)&&(!credit||p.credit)&&(!balcony||!!p.balcony));
+    if(sortBy==='price_asc')list=[...list].sort((a,b)=>a.price-b.price);
+    else if(sortBy==='price_desc')list=[...list].sort((a,b)=>b.price-a.price);
+    else if(sortBy==='recent')list=[...list].sort((a,b)=>{
+      const da=a.originPublishedAt||a.detectedAt||'';
+      const db=b.originPublishedAt||b.detectedAt||'';
+      return db.localeCompare(da);
+    });
+    // relevance: keep API/priority order as received
+    return list;
+  },[items,city,zone,ptype,rooms,budget,parking,credit,balcony,sortBy]);
   useEffect(()=>{
     const t=setTimeout(()=>{
       trackSearchPerformed({
@@ -104,6 +141,17 @@ export default function Home(){
     return ()=>clearTimeout(t);
   },[zone,ptype,rooms,budget,parking,credit]);
 
+
+  const whereLabel=city?(zone?`${city} · ${zone}`:city):'Cualquier lugar';
+  const typeLabel=ptype==='Todos'?(rooms==='Todos'?'Tipo y ambientes':`${rooms} amb.`):(rooms==='Todos'?ptype:`${ptype} · ${rooms} amb.`);
+  const budgetLabel=budget?`Hasta USD ${Number(budget).toLocaleString('en-US')}`:'Presupuesto';
+  const typeIcon=(name:string)=>{
+    if(name==='Casa')return <HomeIcon size={18}/>;
+    if(name==='Oficina')return <Briefcase size={18}/>;
+    if(name==='Terreno')return <Map size={18}/>;
+    if(name==='Local')return <Store size={18}/>;
+    return <Building2 size={18}/>;
+  };
   const compareItems=items.filter(p=>compared.includes(p.id));
 
   function ev(name:any,id:string){trackEvent(name,id)}
@@ -133,28 +181,98 @@ export default function Home(){
         <h1>Encontrá una propiedad.<br/><em>Decidí. Proponé. Avanzá.</em></h1>
         <p>Descubrí, compará, evaluá y proponé un precio — sin entregar tus datos antes de tiempo.</p>
         <div className="focus-badge"><ShieldCheck size={14}/> 100% propiedades en venta · cero ruido de alquileres</div>
-        <div className="search">
-          <div className="field"><label>Ciudad</label>
-            <select value={city} onChange={e=>setCity(e.target.value)}>
-              {cities.length===0&&<option value="">Todas</option>}
-              {cities.map(c=><option key={c} value={c}>{c}</option>)}
-            </select></div>
-          <div className="field"><label>Zona</label>
-            <select value={zone} onChange={e=>setZone(e.target.value)}>
-              <option value="">Todas</option>
-              {(zonesByCity[city]||[]).map(z=><option key={z} value={z}>{z}</option>)}
-            </select></div>
-          <div className="field"><label>Tipo de propiedad</label>
-            <select value={ptype} onChange={e=>setPtype(e.target.value)}>
-              {PROPERTY_TYPES.map(t=><option key={t}>{t}</option>)}
-            </select></div>
-          <div className="field"><label>Presupuesto máx.</label>
-            <input value={budget} onChange={e=>setBudget(e.target.value)} inputMode="numeric" placeholder="USD"/></div>
-          <div className="field"><label>Ambientes</label>
-            <select value={rooms} onChange={e=>setRooms(e.target.value)}>
-              <option>1</option><option>2</option><option>3</option><option>Todos</option>
-            </select></div>
-          <button className="searchbtn" aria-label="Buscar" onClick={()=>document.getElementById('propiedades')?.scrollIntoView({behavior:'smooth'})}><Search size={19}/></button>
+        <div id="search-pill" className={searchSticky?'search-pill-wrap sticky':'search-pill-wrap'}>
+          <div className="search-pill" role="search">
+            <button type="button" className={openSeg==='where'?'pill-seg active':'pill-seg'} onClick={()=>setOpenSeg(openSeg==='where'?null:'where')}>
+              <span className="pill-label">Dónde</span>
+              <span className="pill-value">{whereLabel}</span>
+            </button>
+            <span className="pill-divider" aria-hidden/>
+            <button type="button" className={openSeg==='type'?'pill-seg active':'pill-seg'} onClick={()=>setOpenSeg(openSeg==='type'?null:'type')}>
+              <span className="pill-label">Tipo y ambientes</span>
+              <span className="pill-value">{typeLabel}</span>
+            </button>
+            <span className="pill-divider" aria-hidden/>
+            <button type="button" className={openSeg==='budget'?'pill-seg active':'pill-seg'} onClick={()=>setOpenSeg(openSeg==='budget'?null:'budget')}>
+              <span className="pill-label">Presupuesto</span>
+              <span className="pill-value">{budgetLabel}</span>
+            </button>
+            <span className="pill-icon" aria-hidden><Search size={16}/></span>
+          </div>
+
+          {openSeg==='where'&&(
+            <div className="pill-popover">
+              <div className="pill-pop-head"><strong>¿Dónde buscás?</strong><button type="button" className="icon" onClick={()=>setOpenSeg(null)} aria-label="Cerrar"><X size={18}/></button></div>
+              <label>Ciudad
+                <select value={city} onChange={e=>{setCity(e.target.value);setZone('')}}>
+                  <option value="">Todas</option>
+                  {cities.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+              <label>Zona
+                <select value={zone} onChange={e=>setZone(e.target.value)}>
+                  <option value="">Todas</option>
+                  {(zonesByCity[city]||[]).map(z=><option key={z} value={z}>{z}</option>)}
+                </select>
+              </label>
+            </div>
+          )}
+          {openSeg==='type'&&(
+            <div className="pill-popover">
+              <div className="pill-pop-head"><strong>Tipo de propiedad</strong><button type="button" className="icon" onClick={()=>setOpenSeg(null)} aria-label="Cerrar"><X size={18}/></button></div>
+              <div className="type-chip-grid">
+                {PROPERTY_TYPES.map(name=>(
+                  <button type="button" key={name} className={ptype===name?'type-chip selected':'type-chip'} onClick={()=>setPtype(name)}>
+                    {name!=='Todos'&&typeIcon(name)}
+                    <span>{name}</span>
+                  </button>
+                ))}
+              </div>
+              <label style={{marginTop:12}}>Ambientes
+                <div className="rooms-row">
+                  {['1','2','3','Todos'].map(r=>(
+                    <button type="button" key={r} className={rooms===r?'chip active':'chip'} onClick={()=>setRooms(r)}>{r}</button>
+                  ))}
+                </div>
+              </label>
+            </div>
+          )}
+          {openSeg==='budget'&&(
+            <div className="pill-popover">
+              <div className="pill-pop-head"><strong>Presupuesto máximo</strong><button type="button" className="icon" onClick={()=>setOpenSeg(null)} aria-label="Cerrar"><X size={18}/></button></div>
+              <label className="budget-big">USD
+                <input value={budget} onChange={e=>setBudget(e.target.value.replace(/[^\d]/g,''))} inputMode="numeric" placeholder="120000"/>
+              </label>
+              <p className="muted small">Filtrado en vivo · solo propiedades en venta</p>
+            </div>
+          )}
+
+          <div className="search-meta">
+            <div className="filterrow pill-chips">
+              <button type="button" className={parking?'chip active':'chip'} onClick={()=>setParking(!parking)}>Cochera</button>
+              <button type="button" className={credit?'chip active':'chip'} onClick={()=>setCredit(!credit)}>Apto crédito</button>
+              <button type="button" className={balcony?'chip active':'chip'} onClick={()=>setBalcony(!balcony)}>Balcón</button>
+              <button type="button" className={moreFilters?'chip active':'chip'} onClick={()=>setMoreFilters(!moreFilters)}>
+                Más filtros <ChevronDown size={14}/>
+              </button>
+            </div>
+            <div className="results-live">
+              <span className="results-count">{isLoading?'…':`${filtered.length} resultado${filtered.length===1?'':'s'}`}</span>
+              <label className="sort-label">Ordenar
+                <select value={sortBy} onChange={e=>setSortBy(e.target.value as any)}>
+                  <option value="relevance">Relevancia</option>
+                  <option value="price_asc">Precio: menor a mayor</option>
+                  <option value="price_desc">Precio: mayor a menor</option>
+                  <option value="recent">Más recientes</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          {moreFilters&&(
+            <div className="more-filters-panel muted small">
+              Zona y ambientes también están en la barra de arriba. Los chips activan filtros booleanos del listado (cochera, crédito, balcón).
+            </div>
+          )}
         </div>
         <div className="hero-note">
           <span><ShieldCheck size={15}/> Datos privados por defecto</span>
@@ -166,19 +284,28 @@ export default function Home(){
       <section className="section" id="propiedades"><div className="container">
         <div className="sectionhead">
           <div><div className="eyebrow">Fase 1 · Discovery + Decision</div><h2>Propiedades que tienen sentido para vos</h2>
-            <p className="muted">{filtered.length} compatibles con tus criterios actuales.</p></div>
-          <div className="filterrow">
-            <button className={parking?'chip active':'chip'} onClick={()=>setParking(!parking)}>Cochera</button>
-            <button className={credit?'chip active':'chip'} onClick={()=>setCredit(!credit)}>Apto crédito</button>
-            <button className="chip">Balcón</button>
-          </div>
+            <p className="muted">{isLoading?'Cargando…':`${filtered.length} compatibles con tus criterios actuales.`}</p></div>
         </div>
+        {isLoading&&(
+          <div className="grid skeleton-grid" aria-busy="true" aria-label="Cargando propiedades">
+            {[1,2,3,4,5,6].map(i=>(
+              <div key={i} className="property skeleton-card">
+                <div className="skeleton-img"/>
+                <div className="skeleton-line w60"/>
+                <div className="skeleton-line w90"/>
+                <div className="skeleton-line w40"/>
+              </div>
+            ))}
+          </div>
+        )}
+        {!isLoading&&(
         <div className="grid">{filtered.map(p=>
           <PropertyCard key={p.id} p={p} saved={saved.includes(p.id)} compared={compared.includes(p.id)}
             onSave={()=>toggleSave(p)} onCompare={()=>toggleCompare(p)}
             onOffer={()=>setWizard({p,mode:'offer'})} onView={()=>openDetail(p)}/>)}
         </div>
-        {filtered.length===0&&<div className="empty">No encontramos propiedades con estos criterios. Ampliá presupuesto, zona o ambientes.</div>}
+        )}
+        {!isLoading&&filtered.length===0&&!loadError&&<div className="empty">No encontramos propiedades con estos criterios. Ampliá presupuesto, zona o ambientes.</div>}
       </div></section>
 
       <section className="section darksection"><div className="container">
