@@ -88,6 +88,24 @@ def _mercadolibre(html: str, base_url: str) -> list[str]:
     return _dedupe(hrefs)
 
 
+
+def _inmoclick(html: str, base_url: str) -> list[str]:
+    hrefs = re.findall(r'href="([^"]+/inmuebles/\d+/ficha/[^"]+)"', html)
+    return _dedupe([urljoin(base_url, h) for h in hrefs])
+
+
+def _mercadolibre(html: str, base_url: str) -> list[str]:
+    # MLA ids en listado
+    ids = re.findall(r"(?:inmueble|casa|departamento)\.mercadolibre\.com\.ar/(MLA-?\d+)", html)
+    ids += re.findall(r"/(MLA-?\d{8,14})", html)
+    out = []
+    for i in ids:
+        mid = i if i.startswith("MLA") else f"MLA-{i}"
+        mid = mid.replace("MLA", "MLA-") if "MLA-" not in mid else mid
+        mid = re.sub(r"MLA-+", "MLA-", mid)
+        out.append(f"https://inmueble.mercadolibre.com.ar/{mid}")
+    return _dedupe(out)
+
 def _inmoup(html: str, base_url: str) -> list[str]:
     # Patrón real: /{agency-id}-{slug}/inmuebles/{n}/ficha/{slug-detalle}
     hrefs = re.findall(r'href="([^"]+/inmuebles/\d+/ficha/[^"]+)"', html)
@@ -105,6 +123,8 @@ EXTRACTORS = {
     "cordobaprop": _cordobaprop,
     "mendozaprop": _mendozaprop,
     "mercado_unico": _mercado_unico,
+    "inmoclick": _inmoclick,
+    "mercadolibre": _mercadolibre,
     "mercadolibre": _mercadolibre,
     "properati": _properati,
     "inmoup": _inmoup,

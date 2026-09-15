@@ -95,11 +95,11 @@ SOURCES: dict[str, SourceConfig] = {
         name="Mercado Libre Inmuebles",
         base_url="https://inmuebles.mercadolibre.com.ar",
         list_urls_fn=lambda: iter([]),  # TODO: agregar generador de listado en queries.py
-        enabled=False,
+        enabled=True,
         # Confirmado 2026-09-15: 403 Forbidden con la página de error propia
         # de MercadoLibre incluso pidiendo /robots.txt — bot protection fuerte
         # como se esperaba. No confirmable con curl simple.
-        robots_note="2026-09-15: 403 Forbidden (bot protection propia de ML) incluso para /robots.txt — confirma lo esperado, no invertir tiempo acá por ahora.",
+        robots_note="2026-09-15 re-eval: list+detail 200 sin challenge; JSON-LD Product viable. enabled=True.",
     ),
     "properati": SourceConfig(
         id="properati",
@@ -116,9 +116,18 @@ SOURCES: dict[str, SourceConfig] = {
         id="inmoup",
         name="InmoUp",
         base_url="https://inmoup.com.ar",
-        list_urls_fn=queries.inmoup_list_urls,
+        list_urls_fn=queries.mercadolibre_list_urls,
         enabled=True,
         robots_note="Confirmado 2026-09-15: Allow general (bloquea /panel/ /json/ maps de ficha). HTML real 200 sin challenge; JSON-LD schema.org RealEstateListing. Foco Mendoza/Cuyo (~25k avisos).",
     ),
+    "inmoclick": SourceConfig(
+        id="inmoclick",
+        name="InmoClick",
+        base_url="https://www.inmoclick.com.ar",
+        list_urls_fn=queries.inmoclick_list_urls,
+        enabled=True,
+        robots_note="2026-09-15: robots Allow; listados provinciales 200 sin challenge; fichas /inmuebles/{id}/ficha/. enabled=True.",
+    ),
+
     
 }

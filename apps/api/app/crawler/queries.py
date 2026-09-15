@@ -90,3 +90,24 @@ def inmoup_list_urls(provincias: list[str] | None = None, tipos: list[str] | Non
         base = f"https://inmoup.com.ar/{tipo}-en-venta-en-{prov}"
         for page in range(1, max_page + 1):
             yield base if page == 1 else f"{base}?page={page}"
+
+
+def inmoclick_list_urls() -> Iterator[str]:
+    """InmoClick — listados por provincia (HTML con hrefs /ficha/)."""
+    for path in (
+        "inmuebles-en-venta-en-cordoba",
+        "inmuebles-en-venta-en-mendoza",
+        "inmuebles-en-venta-en-capital-federal",
+        "inmuebles-en-venta-en-buenos-aires",
+        "inmuebles-en-venta-en-santa-fe",
+        "inmuebles-en-venta-en-rosario",
+        "inmuebles-en-venta",
+    ):
+        yield f"https://www.inmoclick.com.ar/{path}"
+
+
+def mercadolibre_list_urls() -> Iterator[str]:
+    """ML Inmuebles — casas y deptos en venta por provincia piloto."""
+    for prov in ("cordoba", "mendoza", "santa-fe", "buenos-aires"):
+        yield f"https://inmuebles.mercadolibre.com.ar/casas/venta/{prov}/"
+        yield f"https://inmuebles.mercadolibre.com.ar/departamentos/venta/{prov}/"

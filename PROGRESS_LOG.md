@@ -1,3 +1,60 @@
+## 2026-09-15 — Encargo 60 fuentes: Etapa 5 — infra cron
+
+**Qué se hizo:** revisado tiempo de crawl con 6 fuentes activas.
+Estimación: 6 × 80 details × ~1.2s ≈ 10 min + list pages. Cron semanal
+`propomi-crawler-weekly` sigue viable en dyno. Si se superan ~15 fuentes,
+partir por provincia en `docs/CRON_EXTERNO.md` (ya documentado el patrón).
+
+**Validado:** cálculo; no se midió wall-clock end-to-end en este entorno.
+
+---
+
+## 2026-09-15 — Encargo 60 fuentes: Etapa 4 — integración ML + InmoClick
+
+**Qué se hizo:**
+- `mercadolibre`: parser JSON-LD Product + melidata/og; queries por provincia;
+  links MLA-; enabled=True; fixture + tests.
+- `inmoclick`: parser nuevo og+HTML; queries multi-provincia; links `/ficha/`;
+  enabled=True; fixture + tests.
+- `parsers/__init__.py` registra ambos.
+
+**Validado:** pytest 9 passed (ML, IC, inmoup, mendozaprop, mercado_unico).
+
+**No se integraron** RE/MAX, Mudafy, BuscadorProp, Propia (sin discovery o SPA).
+
+---
+
+## 2026-09-15 — Encargo 60 fuentes: Etapa 3 — extractabilidad
+
+Evaluados patrones en viables Etapa 2. Solo ML (JSON-LD) e InmoClick (og/HTML
+con hrefs ficha) aportaron extraction nueva. Resto: SPA o sin inventario.
+
+Volúmenes: ML CBA casas ~14.5k; InmoClick ~150k declarados; InmoUp ~25k;
+MendozaProp sitemap ~11k.
+
+---
+
+## 2026-09-15 — Encargo 60 fuentes: Etapa 2 — filtro accesibilidad
+
+curl real robots + listado (+ detalle donde aplicó) sobre 50+ URLs.
+Viables sin challenge: cordobaprop (hist), inmoup, mendozaprop, mercado_unico,
+**mercadolibre (re-abierto)**, **inmoclick**.
+Descartados: zonaprop/argenprop/properati/roomix/lavoz/inmuebles24 + DNS down.
+
+Detalle en `docs/FUENTES_CANDIDATAS.md`.
+
+---
+
+## 2026-09-15 — Encargo 60 fuentes: Etapa 1 — lista larga
+
+Armadas listas ≥20 candidatos/provincia (nacionales + regionales + meta).
+Prioridad por volumen/relevancia. Documentado en FUENTES_CANDIDATAS.md.
+
+**Conclusión global:** objetivo 15×4=60 **no alcanzable** sin anti-bot;
+máximo real hoy = **6 fuentes** con cobertura de las 4 provincias piloto.
+
+---
+
 ## 2026-09-15 — Encargo #3: crons + mendozaprop + mercado_unico habilitados
 
 **Qué se hizo**

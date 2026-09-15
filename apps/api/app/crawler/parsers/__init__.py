@@ -1,4 +1,14 @@
-from . import argenprop, cordobaprop, inmoup, mercadolibre, mercado_unico, mendozaprop, properati, zonaprop
+from . import (
+    argenprop,
+    cordobaprop,
+    inmoup,
+    inmoclick,
+    mercadolibre,
+    mercado_unico,
+    mendozaprop,
+    properati,
+    zonaprop,
+)
 
 PARSERS = {
     "mendozaprop": mendozaprop.parse_detail,
@@ -9,6 +19,7 @@ PARSERS = {
     "mercadolibre": mercadolibre.parse_detail,
     "properati": properati.parse_detail,
     "inmoup": inmoup.parse_detail,
+    "inmoclick": inmoclick.parse_detail,
 }
 
 

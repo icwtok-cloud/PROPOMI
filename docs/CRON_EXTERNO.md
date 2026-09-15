@@ -35,3 +35,10 @@ Usar esto si el plan de Render **no soporta** `type: cron` en el Blueprint
 
 Con `MAX_AGE_DAYS=60`, un aviso tiene ~8–9 oportunidades de ser re-visto
 antes de ocultarse. Suficiente margen si una corrida falla.
+
+
+## Escalado (6+ fuentes)
+
+Con 6 fuentes activas el crawl semanal (~10–15 min) cabe en un job.
+Si se superan ~12–15 fuentes: crear 4 jobs en cron-job.org, uno por provincia,
+llamando `POST /admin/crawler/run?sources=...` filtrando IDs.
