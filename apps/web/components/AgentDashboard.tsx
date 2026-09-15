@@ -545,7 +545,7 @@ export default function AgentDashboard(){
                           type="button"
                           className="secondary pricing-cta"
                           disabled={checkoutLoadingKey === tier.kind}
-                          onClick={() => handleCheckout(tier.kind)}
+                          onClick={() => tier.kind && handleCheckout(tier.kind)}
                         >
                           {checkoutLoadingKey === tier.kind ? 'Redirigiendo…' : 'Contratar'}
                         </button>}
