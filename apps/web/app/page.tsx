@@ -5,7 +5,7 @@ import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarC
 import PropertyCard from '../components/PropertyCard';
 import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
-import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed} from '../lib/api';
+import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters} from '../lib/api';
 import {Property,Offer} from '../lib/types';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
@@ -15,7 +15,15 @@ const PROPERTY_TYPES=['Todos','Departamento','Casa','PH','Oficina','Local','Terr
 export default function Home(){
   const [items,setItems]=useState<Property[]>([]);
   const [budget,setBudget]=useState('120000');
-  const [zone,setZone]=useState('Palermo');
+  // Etapa 2 (bug reportado 2026-09-15): "Dónde" ya no es una lista fija de
+  // barrios de Buenos Aires — city/zone se autodetectan de lo que el
+  // crawler+carga manual efectivamente tienen en la base (GET
+  // /properties/filters), para que cualquier fuente nueva (ej. CordobaProp)
+  // aparezca sola en el buscador sin tocar este archivo.
+  const [cities,setCities]=useState<string[]>([]);
+  const [zonesByCity,setZonesByCity]=useState<Record<string,string[]>>({});
+  const [city,setCity]=useState('');
+  const [zone,setZone]=useState('');
   const [ptype,setPtype]=useState('Todos');
   const [rooms,setRooms]=useState('2');
   const [parking,setParking]=useState(false);
@@ -29,6 +37,25 @@ export default function Home(){
   const [toast,setToast]=useState('');
 
   useEffect(()=>{captureOfferOriginFromUrl()},[]);
+  useEffect(()=>{(async()=>{
+    try{
+      const f=await getPropertyFilters();
+      setCities(f.cities);
+      setZonesByCity(f.zonesByCity);
+      // Default: primera ciudad disponible (y su primera zona), en vez del
+      // "Palermo" hardcodeado de antes — así el buscador arranca mostrando
+      // algo que realmente existe en la base, sea Buenos Aires, Córdoba, etc.
+      if(f.cities.length){
+        setCity(prev=>prev||f.cities[0]);
+      }
+    }catch{}
+  })()},[]);
+  useEffect(()=>{
+    const zonesForCity=zonesByCity[city]||[];
+    if(!zone||!zonesForCity.includes(zone)){
+      setZone(zonesForCity[0]||'');
+    }
+  },[city,zonesByCity]);
   useEffect(()=>{(async()=>{
     try{
       const items=await getPropertiesDeduped();
@@ -60,7 +87,7 @@ export default function Home(){
   })()},[]);
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
 
-  const filtered=useMemo(()=>items.filter(p=>(!zone||p.zone===zone)&&(ptype==='Todos'||p.type===ptype)&&(!rooms||rooms==='Todos'||p.rooms===Number(rooms))&&p.price<=Number(budget||Infinity)&&(!parking||p.parking)&&(!credit||p.credit)),[items,zone,ptype,rooms,budget,parking,credit]);
+  const filtered=useMemo(()=>items.filter(p=>(!city||p.city===city)&&(!zone||p.zone===zone)&&(ptype==='Todos'||p.type===ptype)&&(!rooms||rooms==='Todos'||p.rooms===Number(rooms))&&p.price<=Number(budget||Infinity)&&(!parking||p.parking)&&(!credit||p.credit)),[items,city,zone,ptype,rooms,budget,parking,credit]);
   useEffect(()=>{
     const t=setTimeout(()=>{
       trackSearchPerformed({
@@ -103,9 +130,15 @@ export default function Home(){
         <p>Descubrí, compará, evaluá y proponé un precio — sin entregar tus datos antes de tiempo.</p>
         <div className="focus-badge"><ShieldCheck size={14}/> 100% propiedades en venta · cero ruido de alquileres</div>
         <div className="search">
-          <div className="field"><label>Dónde</label>
+          <div className="field"><label>Ciudad</label>
+            <select value={city} onChange={e=>setCity(e.target.value)}>
+              {cities.length===0&&<option value="">Todas</option>}
+              {cities.map(c=><option key={c} value={c}>{c}</option>)}
+            </select></div>
+          <div className="field"><label>Zona</label>
             <select value={zone} onChange={e=>setZone(e.target.value)}>
-              <option>Palermo</option><option>Villa Crespo</option><option>Caballito</option><option>Belgrano</option>
+              <option value="">Todas</option>
+              {(zonesByCity[city]||[]).map(z=><option key={z} value={z}>{z}</option>)}
             </select></div>
           <div className="field"><label>Tipo de propiedad</label>
             <select value={ptype} onChange={e=>setPtype(e.target.value)}>

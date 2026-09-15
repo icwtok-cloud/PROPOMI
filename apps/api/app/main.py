@@ -1638,9 +1638,44 @@ def resolve_review(property_id: str, payload: ReviewResolutionIn, _: None = Depe
         return {"id": p.id, "status": payload.action, "needsReview": p.needs_review}
 
 
+@app.get("/properties/filters")
+def properties_filters():
+    """Autodetect de opciones de búsqueda territorial (Etapa 2 / bug reportado
+    2026-09-15): en vez de una lista fija de barrios hardcodeada en el
+    frontend, devuelve las combinaciones ciudad+zona que realmente existen
+    hoy en la tabla `properties` (solo publicaciones frescas, mismo criterio
+    de PROPERTY_FRESHNESS_DAYS que usa GET /properties), agrupadas por
+    ciudad. Así cualquier fuente nueva que el crawler habilite (ej.
+    CordobaProp) aparece sola en el selector sin tocar código de frontend.
+    """
+    with Session(engine) as db:
+        ensure_seed(db)
+        freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
+        stmt = (
+            select(Property.city, Property.zone)
+            .where(Property.last_seen_at >= freshness_cutoff)
+            .distinct()
+        )
+        rows = db.execute(stmt).all()
+        by_city: dict[str, set[str]] = {}
+        for city, zone in rows:
+            city = (city or "").strip()
+            zone = (zone or "").strip()
+            if not city:
+                continue
+            by_city.setdefault(city, set())
+            if zone:
+                by_city[city].add(zone)
+        cities = sorted(by_city.keys())
+        return {
+            "cities": cities,
+            "zonesByCity": {c: sorted(zs) for c, zs in by_city.items()},
+        }
+
+
 @app.get("/properties")
 def properties(
-    zone: str | None = None, type: str | None = None, operation: str | None = None,
+    zone: str | None = None, city: str | None = None, type: str | None = None, operation: str | None = None,
     rooms: int | None = None, max_price: float | None = None, parking: bool | None = None,
     credit: bool | None = None, agency_id: str | None = None,
     # Etapa 3 (sección 10 / fase Intelligence): session_id opcional del
@@ -1663,6 +1698,7 @@ def properties(
         ensure_seed(db)
         stmt = select(Property)
         if zone: stmt = stmt.where(Property.zone == zone)
+        if city: stmt = stmt.where(Property.city == city)
         if type: stmt = stmt.where(Property.type == type)
         if operation: stmt = stmt.where(Property.operation == operation)
         if rooms: stmt = stmt.where(Property.rooms == rooms)
@@ -1685,7 +1721,7 @@ def properties(
         # libre; solo los filtros ya públicos de la query y el resultado.
         filters_used = {
             k: v for k, v in {
-                "zone": zone, "type": type, "operation": operation, "rooms": rooms,
+                "zone": zone, "city": city, "type": type, "operation": operation, "rooms": rooms,
                 "max_price": max_price, "parking": parking, "credit": credit,
                 "agency_id": agency_id,
             }.items() if v is not None
