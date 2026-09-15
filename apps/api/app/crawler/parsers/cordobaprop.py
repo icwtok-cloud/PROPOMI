@@ -55,7 +55,9 @@ def parse_detail(html: str, url: str) -> RawListing | None:
     ptype = cell("Tipo de inmueble") or "Casa"
     origin = cell("Fecha de ingreso")
     external = cell("Código de referencia")
-    id_m = re.search(r"/propiedad/(\d+)", url)
+    # Patrón real confirmado 2026-09-15: /propiedad-id-<N>-titulo-<slug>.html
+    # (antes se asumía /propiedad/<N>-<slug>, que nunca matcheaba)
+    id_m = re.search(r"/propiedad-id-(\d+)-titulo-", url)
     if id_m:
         external = external or id_m.group(1)
 
