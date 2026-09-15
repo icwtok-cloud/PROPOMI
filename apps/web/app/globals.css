@@ -85,7 +85,7 @@
 
 /* ========== Buscador estilo pill (rediseño 2026-09-15) ========== */
 .search-pill-wrap{position:relative;z-index:25;margin-top:22px;transition:all .2s ease}
-.search-pill-wrap.sticky{position:fixed;top:82px;left:50%;transform:translateX(-50%);width:min(560px,calc(100% - 24px));margin:0;z-index:70}
+.search-pill-wrap.sticky{position:fixed;top:82px;left:50%;transform:translateX(-50%);width:min(560px,calc(100% - 24px));margin:0;z-index:32}
 .search-pill-wrap.sticky .search-pill{padding:4px;box-shadow:0 12px 30px rgba(0,0,0,.22)}
 .search-pill-wrap.sticky .pill-seg{padding:8px 14px}
 .search-pill-wrap.sticky .pill-label{display:none}
