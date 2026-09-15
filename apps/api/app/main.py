@@ -3157,6 +3157,42 @@ def agency_admin_dict(a: "Agency") -> dict[str, Any]:
     }
 
 
+class DebugCreateAgencyIn(BaseModel):
+    id: str
+    name: str
+    phone: str
+    city: str = "Córdoba"
+
+
+@app.post("/admin/debug/create-test-agency")
+def admin_debug_create_test_agency(payload: DebugCreateAgencyIn, _: None = Depends(require_admin)):
+    """DEBUG TEMPORAL — borrar después de resolver el test de Lemon Squeezy
+    (tarea 5). Crea una Agency mínima para poder loguearse como agente vía
+    OTP y probar el flujo de checkout/webhook. phone se normaliza igual que
+    en el resto de la app para garantizar el match exacto que usa
+    find_agency_by_phone."""
+    phone_normalized = normalize_phone(payload.phone)
+    if not phone_normalized:
+        raise HTTPException(status_code=400, detail="Teléfono inválido")
+    with Session(engine) as db:
+        existing = db.get(Agency, payload.id)
+        if existing:
+            return {"id": existing.id, "phone_repr": repr(existing.phone), "status": "already_existed"}
+        agency = Agency(
+            id=payload.id,
+            name=payload.name,
+            slug=slugify(payload.name),
+            city=payload.city,
+            verified=True,
+            claimed=False,
+            phone=phone_normalized,
+            verification_status="VERIFIED",
+        )
+        db.add(agency)
+        db.commit()
+        return {"id": agency.id, "phone_repr": repr(agency.phone), "status": "created"}
+
+
 @app.get("/admin/debug/agency-by-id/{agency_id}")
 def admin_debug_agency_by_id(agency_id: str, _: None = Depends(require_admin)):
     """DEBUG TEMPORAL — borrar después de resolver el test de Lemon Squeezy
