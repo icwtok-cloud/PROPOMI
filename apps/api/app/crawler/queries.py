@@ -6,18 +6,20 @@ from typing import Iterator
 from urllib.parse import urlencode
 
 
-# --- ZonaProp (páginas 1–5 por combinación) ---
-ZP_BARRIOS_CABA = [
-    "caballito", "palermo", "belgrano", "recoleta", "villa-crespo",
-    "almagro", "nunez", "colegiales", "villa-urquiza", "flores",
-]
+# --- ZonaProp (páginas 1–5; robots.txt permite solo hasta página 5) ---
+# Piloto: Caballito, CABA, solo venta. Sin query params prohibidos (utm_*,
+# n_src=, gad_source=, gclid=, fbclid=, duplicated=true, labs=).
+ZP_BARRIOS_PILOTO = ["caballito"]
 ZP_TIPOS = ["departamentos", "casas", "ph"]
 ZP_OPERACION = "venta"
 
 
 def zonaprop_list_urls(barrios: list[str] | None = None, tipos: list[str] | None = None, max_page: int = 5) -> Iterator[str]:
-    barrios = barrios or ZP_BARRIOS_CABA
+    """URLs de listado dentro de lo permitido por robots.txt de ZonaProp.
+    Página 1 implícita; páginas 2-5 con -pagina-N.html. max_page cap a 5."""
+    barrios = barrios or ZP_BARRIOS_PILOTO
     tipos = tipos or ZP_TIPOS
+    max_page = min(max_page, 5)
     for barrio, tipo in product(barrios, tipos):
         for page in range(1, max_page + 1):
             # patrón típico ZP: /departamentos-venta-caballito.html o con -pagina-2

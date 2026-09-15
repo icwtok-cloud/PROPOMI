@@ -25,9 +25,23 @@ def _dedupe(urls: list[str]) -> list[str]:
 
 
 def _zonaprop(html: str, base_url: str) -> list[str]:
-    # Fichas terminan en un ID numérico largo + .html
-    hrefs = re.findall(r'href="([^"]+-\d{7,}\.html)"', html)
-    return _dedupe([urljoin(base_url, h) for h in hrefs])
+    # robots.txt: Allow: /propiedades/*-ubicado-en-* ; Disallow: /*-ubicado-en-*
+    # Solo aceptar fichas bajo /propiedades/ con el patrón ubicado-en.
+    hrefs = re.findall(r'href="([^"]*?/propiedades/[^"]*?-ubicado-en-[^"]*?-\d{7,}\.html)"', html)
+    if not hrefs:
+        # Fallback: IDs largos bajo /propiedades/ (por si el slug varía)
+        hrefs = re.findall(r'href="([^"]*?/propiedades/[^"]*?-\d{7,}\.html)"', html)
+    out = []
+    for h in hrefs:
+        full = urljoin(base_url, h)
+        # Descartar URLs con query params prohibidos por robots.txt
+        if any(x in full for x in ("utm_", "n_src=", "gad_source=", "gclid=", "fbclid=", "duplicated=true", "labs=")):
+            continue
+        if "/propiedades/" in full and "-ubicado-en-" in full:
+            out.append(full)
+        elif "/propiedades/" in full:
+            out.append(full)
+    return _dedupe(out)
 
 
 def _argenprop(html: str, base_url: str) -> list[str]:

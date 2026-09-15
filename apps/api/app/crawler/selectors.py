@@ -52,7 +52,7 @@ SOURCES: dict[str, SourceConfig] = {
         # Sigue en enabled=False: falta la tarea 13 (validar queries.py/links.py
         # contra HTML real de listado para respetar estos patrones antes de
         # habilitar) — el robots.txt en sí ya no es el bloqueante.
-        robots_note="Confirmado 2026-09-15: permite fichas y páginas 2-5, con restricciones específicas de URL/paginación (ver comentario arriba). Falta validar queries.py/links.py contra esas reglas (tarea 13) antes de habilitar.",
+        robots_note="Confirmado 2026-09-15: robots.txt permite fichas /propiedades/*-ubicado-en-* y páginas 2-5. queries.py apuntado a Caballito-venta y links.py filtra ese patrón. BLOQUEADO 2026-09-15: listados/fichas devuelven Cloudflare challenge (403 cf-mitigated: challenge) — no viable sin anti-bot. enabled=False hasta decisión de producto.",
     ),
     "argenprop": SourceConfig(
         id="argenprop",

@@ -10,3 +10,37 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      - key: ADMIN_KEY
+        sync: false
+
+  # Cron jobs: requieren plan Render que los soporte. Si el plan actual no
+  # los tiene, dejar comentados y usar un scheduler externo (p.ej.
+  # cron-job.org) que haga POST con header X-Admin-Key a las mismas URLs.
+  #
+  # - type: cron
+  #   name: propomi-expire-stale
+  #   env: python
+  #   rootDir: apps/api
+  #   schedule: "0 4 * * *"
+  #   buildCommand: pip install -r requirements.txt
+  #   startCommand: >
+  #     python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL']+'/admin/properties/expire-stale', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r)"
+  #   envVars:
+  #     - key: ADMIN_KEY
+  #       sync: false
+  #     - key: API_URL
+  #       sync: false
+  #
+  # - type: cron
+  #   name: propomi-crawler-daily
+  #   env: python
+  #   rootDir: apps/api
+  #   schedule: "0 5 * * *"
+  #   buildCommand: pip install -r requirements.txt
+  #   startCommand: >
+  #     python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL']+'/admin/crawler/run', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r)"
+  #   envVars:
+  #     - key: ADMIN_KEY
+  #       sync: false
+  #     - key: API_URL
+  #       sync: false

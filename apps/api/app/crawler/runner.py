@@ -9,6 +9,9 @@
 No hardcodea credenciales. No entra detrás de login. No crawlea fuentes
 con `enabled=False` en selectors.py (pendientes de confirmar robots.txt).
 Logging por fuente para auditar caídas de selectores/parsers.
+
+Paginación con estado (CrawlCursor): arranca desde last_page+1 y persiste
+el avance; al llegar al tope de la fuente reinicia a 1 (upsert idempotente).
 """
 from __future__ import annotations
 
@@ -34,8 +37,15 @@ USER_AGENT = "PropomiBot/0.1 (+https://propomi.lat; research)"
 # Límites de cortesía — evitar hammering de portales de terceros y del
 # propio dyno free de Render. Ajustar cuando haya cron real + colas.
 MAX_LIST_PAGES_PER_SOURCE = 3
-MAX_DETAILS_PER_SOURCE = 15
+MAX_DETAILS_PER_SOURCE = 40
 REQUEST_DELAY_SECONDS = 1.0
+
+# Tope de paginación por fuente (robots.txt / cortesía). Al llegar se reinicia.
+SOURCE_MAX_PAGE: dict[str, int] = {
+    "zonaprop": 5,  # robots.txt: solo páginas 1-5
+    "argenprop": 5,
+    "cordobaprop": 10,
+}
 
 
 def _get(url: str, timeout: int = 20) -> str:
@@ -55,20 +65,58 @@ def _get(url: str, timeout: int = 20) -> str:
     return resp.text
 
 
-def discover_detail_urls(source: SourceConfig) -> list[str]:
-    """Etapa 1: recorre listados y junta URLs de fichas, sin duplicados."""
+def _get_or_create_cursor(db, source_id: str):
+    from app.main import CrawlCursor
+    cursor = db.get(CrawlCursor, source_id)
+    if cursor is None:
+        cursor = CrawlCursor(source_id=source_id, last_page=0, total_seen=0)
+        db.add(cursor)
+        db.flush()
+    return cursor
+
+
+def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
+    """Etapa 1: recorre listados y junta URLs de fichas, sin duplicados.
+
+    Si se pasa `db`, usa CrawlCursor para arrancar desde last_page+1 y
+    persistir el avance al terminar (reinicia al tope de la fuente).
+    """
     urls: list[str] = []
     seen: set[str] = set()
     pages_fetched = 0
-    for list_url in source.list_urls_fn():
+
+    all_list_urls = list(source.list_urls_fn())
+    start_idx = 0
+    cursor = None
+    max_page = SOURCE_MAX_PAGE.get(source.id, len(all_list_urls) or 1)
+
+    if db is not None:
+        cursor = _get_or_create_cursor(db, source.id)
+        # last_page es 1-based respecto de las páginas de la fuente; 0 = nunca corrió
+        if cursor.last_page > 0:
+            # Avanzar al siguiente bloque de páginas
+            start_idx = min(cursor.last_page, len(all_list_urls))
+            if start_idx >= len(all_list_urls) or cursor.last_page >= max_page:
+                # Tope alcanzado → reiniciar a 1
+                start_idx = 0
+                cursor.last_page = 0
+
+    list_slice = all_list_urls[start_idx:]
+    pages_this_run = 0
+    absolute_page = start_idx  # 0-based index in all_list_urls
+
+    for list_url in list_slice:
         if pages_fetched >= MAX_LIST_PAGES_PER_SOURCE:
             break
         try:
             html = _get(list_url)
         except Exception:
             logger.exception("crawler source=%s listado fallido url=%s", source.id, list_url)
+            absolute_page += 1
             continue
         pages_fetched += 1
+        pages_this_run += 1
+        absolute_page += 1
         time.sleep(REQUEST_DELAY_SECONDS)
         try:
             found = extract_detail_urls(source.id, html, source.base_url, limit=MAX_DETAILS_PER_SOURCE)
@@ -81,6 +129,17 @@ def discover_detail_urls(source: SourceConfig) -> list[str]:
                 urls.append(u)
         if len(urls) >= MAX_DETAILS_PER_SOURCE:
             break
+
+    if cursor is not None:
+        # Persist advance: last_page is the absolute 1-based page we reached
+        new_last = absolute_page
+        if new_last >= max_page:
+            new_last = 0  # reinicia en la próxima corrida
+        cursor.last_page = new_last
+        cursor.last_run_at = datetime.now(timezone.utc)
+        cursor.total_seen = (cursor.total_seen or 0) + len(urls)
+        db.flush()
+
     return urls[:MAX_DETAILS_PER_SOURCE]
 
 
@@ -121,6 +180,10 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
             existing.images = payload["images"][:MAX_PROPERTY_IMAGES]
             existing.image = payload["images"][0]
         existing.last_seen_at = now
+        # Si el aviso reaparece en el portal, re-mostrar (plan maestro secc. 7)
+        existing.hidden_at = None
+        if payload.get("origin_published_at"):
+            existing.origin_published_at = payload["origin_published_at"]
         return "updated"
 
     prop = Property(
@@ -146,13 +209,14 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         agency_id=None,
         detected_at=now,
         last_seen_at=now,
+        hidden_at=None,
     )
     db.add(prop)
     return "created"
 
 
 def run_source(db, source: SourceConfig) -> dict[str, Any]:
-    detail_urls = discover_detail_urls(source)
+    detail_urls = discover_detail_urls(source, db=db)
     stats = {"created": 0, "updated": 0, "skipped": 0, "errors": 0}
     seen_fp: set[str] = set()
 

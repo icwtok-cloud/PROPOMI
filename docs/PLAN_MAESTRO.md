@@ -15,8 +15,8 @@ Estructura:
 5.  Reglas de negocio no negociables (privacidad, anti-fuga de contacto)
 6.  Decisiones de producto --- cuáles ya están tomadas y cuáles son
     defaults recomendados a confirmar
-7.  El elefante en la habitación: el crawler (no existe todavía)
-8.  Sistema de monetización --- lo que falta construir
+7.  El crawler (estado real, fuentes, antigüedad, cursores)
+8.  Sistema de monetización --- estado real
 9.  Cold start --- cómo arrancar sin usuarios
 10. Roadmap completo, en orden de dependencia
 11. Cómo entregar el trabajo (checklist de calidad antes de cada
@@ -216,197 +216,94 @@ Flujo real hoy:
 
 # 3. Estado real del código HOY
 
-**Importante:** esta sección describe lo que existe de verdad en el
-repo, no lo planeado. Todo lo marcado como "no existe" en las secciones
-anteriores tampoco está acá --- no se repite.
+**Actualizado 2026-09-15.** Esta sección refleja el código en `main`, no el plan histórico.
 
 ## 3.1 Arquitectura
 
--   **Backend:** Python, FastAPI, SQLAlchemy 2.0, base de datos vía
-    `DATABASE_URL` (SQLite en desarrollo). Un único archivo
-    `apps/api/app/main.py` concentra modelos, endpoints y lógica de
-    migración incremental de columnas (agrega columnas nuevas a tablas
-    existentes sin borrar datos, comprobando si ya existen antes de
-    correr el `ALTER TABLE`).
--   **Frontend:** Next.js (App Router), React, TypeScript, sin librería
-    de componentes --- CSS propio en `apps/web/app/globals.css`.
--   **Autenticación:** JWT propio. Dos flujos: sesión de comprador tipo
-    "guest" (`POST /auth/guest`, sin dato personal) y login de agente
-    por OTP (`POST /auth/otp/request` + `POST /auth/otp/verify`).
--   **Repos:**
-    -   `github.com/icwtok-cloud/PROPOMI` --- el monorepo (frontend +
-        backend), el más avanzado.
-    -   `github.com/icwtok-cloud/proferta-crawler` --- pipeline de
-        crawler, separado, con selectores de scraping **sin verificar
-        contra HTML real todavía** (etapas 1-2, scraping de
-        ZonaProp/Argenprop) y etapas de normalización/dedup/anti-fuga
-        (etapas 3-8) que no están conectadas al backend de PROPOMI
-        todavía.
--   **Deploy:** frontend en Vercel (`propomi.vercel.app`), hay un
-    `render.yaml` para el backend (Render).
+-   **Backend:** Python, FastAPI, SQLAlchemy 2.0, `DATABASE_URL` (SQLite
+    en dev / Postgres en Render). Un único archivo
+    `apps/api/app/main.py` concentra modelos, endpoints y migración
+    incremental de columnas (`ensure_schema_columns`). Crawler en
+    `apps/api/app/crawler/` (runner de 2 etapas, 7 parsers, dedup,
+    normalize, links, selectors, cursores de paginación).
+-   **Frontend:** Next.js (App Router), React, TypeScript, CSS propio en
+    `globals.css`. Middleware de subdominios (`middleware.ts`) +
+    `/tienda/[slug]`.
+-   **Auth:** JWT. Guest comprador, OTP de agente, Google opcional para
+    comprador (SMS verificado alcanza desde commit `7de1dff`).
+-   **Deploy:** frontend Vercel, backend Render (`render.yaml`). Crons de
+    antigüedad y crawler documentados en `render.yaml` (comentados si el
+    plan no soporta cron; alternativa: scheduler externo con
+    `X-Admin-Key`).
+-   **Inventario:** ~56 endpoints, 18 tablas (incluye `CrawlCursor`),
+    **40 tests** pasando en `apps/api/tests/`.
 
-## 3.2 Backend --- lo que YA funciona y está probado (`apps/api/app/main.py`)
+## 3.2 Backend --- lo que YA funciona
 
--   Modelos: `Agency`, `Property`, `Offer`, `Event` (para tracking de
-    interacciones tipo vista/guardado/comparación/etc.).
--   `POST /auth/guest` --- sesión anónima de comprador.
--   `POST /auth/otp/request` / `POST /auth/otp/verify` --- login de
-    agente por teléfono. En modo desarrollo devuelve el código en la
-    respuesta (`dev_code`) para poder probar sin SMS real.
--   `GET /properties` (con filtros: zona, tipo, operación, ambientes,
-    precio máximo, cochera, apto crédito, agencia) y
-    `GET /properties/{id}`.
--   `POST /events` y `GET /events/funnel` --- tracking de interacciones
-    del comprador.
--   `POST /intents` --- guarda la intención/contexto detrás de una
-    interacción (por ejemplo los datos completos del wizard de oferta).
--   `POST /offers` --- crea una oferta. Valida:
-    -   `buyer_name`, `buyer_phone` obligatorios.
-    -   `buyer_email` opcional, con formato validado por regex simple
-        (sin dependencia externa de validación de email).
-    -   El campo `comment` pasa por `sanitize_free_text()`, un filtro
-        anti-fuga que **rechaza teléfonos, emails, usuarios y links**
-        --- esto es lo que impide que alguien escriba su contacto real
-        dentro de la oferta para saltear el pago. Hoy este filtro corre
-        sobre el `comment`, que en el frontend actual se arma
-        automáticamente a partir de los chips de condiciones
-        seleccionados (el comprador ya no escribe texto libre ahí).
--   `GET /offers` --- lista ofertas (para agente, filtradas por sus
-    propiedades; para comprador, las propias). Nunca devuelve
-    `buyer_name`/`buyer_phone`/`buyer_email` salvo que
-    `contact_revealed = true`.
--   `POST /offers/{id}/counter` --- contraoferta.
--   `POST /offers/{id}/reveal` --- el corazón del negocio. Verifica cupo
-    de suscripción o dispara el gate de pago (`PaymentGateway`, hoy un
-    mock que **deniega por defecto**); solo si hay cupo o pago
-    confirmado, devuelve `buyer_name`/`buyer_phone`/`buyer_email`.
--   `POST /payments/{transaction_id}/mock-complete` --- endpoint de
-    desarrollo para simular un pago exitoso sin pasarela real conectada.
--   `AgentSuppressionList` + `POST /contact-requests` +
-    `POST /agencies/{id}/opt-out` --- lista de supresión para que una
-    agencia pueda optar por no recibir más solicitudes de contacto de
-    cierto tipo.
--   `GET /agencies/{id}/opportunities` --- actividad agregada (vistas,
-    guardados, etc.) sobre las propiedades de una agencia.
--   `GET /agencies/{id}` / `PATCH /agencies/{id}` --- perfil de agencia.
--   `POST /agencies/{id}/relink-by-phone` --- vuelve a vincular
-    publicaciones nuevas detectadas con el mismo teléfono de la agencia.
--   `GET /analytics/summary` --- conteo simple de
-    propiedades/eventos/ofertas y funnel por tipo de evento.
--   Identidad canónica de agente: **teléfono normalizado en formato
-    E.164** (usando la librería `phonenumbers`), no email.
--   Tests: `apps/api/tests/test_security.py`, 8 tests, **todos pasando**
-    --- cubren el flujo de seguridad central (reveal invertido
-    corregido, gate de pago, filtro anti-fuga, lista de supresión).
+-   Modelos principales: `Agency`, `AgencyPhone`, `Property` (con
+    `images`, `origin_published_at`, `hidden_at`, dedup/listing_group),
+    `Offer`, `Lead`, `Event`, `Subscription`, `LeadCredit`,
+    `ColdStartTask`, `CrawlCursor`, `RevealTransaction`, OTP, etc.
+-   Auth: guest, OTP (Vonage real configurable), Google opcional.
+-   Catálogo: `GET /properties` (filtros + oculta `hidden_at` y frescura
+    por `last_seen_at`), `GET /properties/{id}`, filtros, review-queue,
+    grupos de listing, alta manual e ingest para agentes verificados.
+-   Ofertas / leads / reveal con cupo (free → plan → pay-per-lead) y
+    bloqueo si `verification_status != VERIFIED`.
+-   Lemon Squeezy: checkout hosteado + webhook HMAC.
+-   Admin: cola de agencias, cold-start, crawler run, expire-stale.
+-   Analytics: `search_performed`, `/analytics/demand`, oportunidades.
+-   Crawler: CordobaProp `enabled=True`. ZonaProp preparado (queries/
+    links/parser + fixture) pero **`enabled=False`** por Cloudflare
+    challenge (403) al 2026-09-15. Argenprop/ML/Properati bloqueados en
+    el borde.
 
-## 3.3 Frontend --- lo que YA funciona (`apps/web`)
+## 3.3 Frontend --- lo que YA funciona
 
--   `app/page.tsx` --- landing + catálogo de propiedades con filtros
-    (incluye **tipo de propiedad** como campo de búsqueda, agregado
-    recientemente junto a ubicación/presupuesto/ambientes).
--   `app/agencia/page.tsx` --- ruta dedicada que renderiza
-    `AgentDashboard` (ya no es una pestaña dentro de la landing, es una
-    URL propia).
--   `components/OfferModal.tsx` --- el wizard de 3 pantallas descrito en
-    2.1.
--   `components/AgentDashboard.tsx` --- login por OTP + dashboard con
-    las 3 pestañas descritas en 2.2. Tiene su propia sesión persistida
-    en `localStorage` (`propomi-agent-session`), separada de la sesión
-    de comprador (`propomi-buyer-session`).
--   `components/AgentOfferActions.tsx` --- botones estructurados de
-    aceptar/contraofertar/declinar/revelar dentro de cada oferta, sin
-    texto libre.
--   `components/ComparePanel.tsx`, `components/PropertyCard.tsx`,
-    `components/BuyerIdentityModal.tsx` --- soporte de catálogo y
-    captura de identidad del comprador.
--   `lib/api.ts` --- cliente HTTP tipado hacia el backend, con modo demo
-    (si no hay `DATABASE_URL`/backend configurado, usa datos locales
-    fijos para poder probar el frontend solo).
--   `lib/types.ts` --- tipos compartidos (ver sección 4.1 para el
-    detalle completo).
--   Isotipo con dos colores (la palabra "omi" dentro de "propomi" en un
-    color distinto al resto) y barra de búsqueda responsive corregida
-    (el bug de un botón circular que se rompía en mobile ya está
-    solucionado).
--   Sin ninguna opción de alquiler en ningún lado de la interfaz --- el
-    tipo `Property.operation` es literalmente `'Venta'`, no hay forma de
-    seleccionar otra cosa.
+-   Landing + catálogo, `IntentWizard`, dashboard de agencia (ofertas,
+    leads, demanda, cuenta), panel admin, onboarding por token, tienda
+    por slug/subdominio.
+-   Google opcional; SMS alcanza para enviar oferta.
 
-## 3.4 Lo que es demo/mock (no confundir con "producción funcionando")
+## 3.4 Lo que sigue incompleto / bloqueado
 
--   Todas las propiedades hoy son **datos fijos** (`lib/data.ts` en el
-    frontend, `DEMO` en el backend) --- no hay crawler real corriendo.
--   El pago (`PaymentGateway`) es un mock que deniega por defecto; no
-    hay integración real con Mercado Pago/Stripe.
--   El envío de OTP por SMS no está conectado a un proveedor real --- en
-    desarrollo el código se devuelve en la respuesta de la API.
--   No hay panel de revisión manual de agencias.
--   No hay sistema de suscripciones/planes con cupo de leads --- el gate
-    de pago existe a nivel de "revelar este contacto puntual", pero no
-    hay tablas de plan/ciclo/cupo consumido.
+-   ZonaProp (y el resto de portales con bot protection) sin anti-bot.
+-   Crons de Render dependen del plan; documentados comentados.
+-   Envío cold-start sigue siendo manual (cola admin lista).
+-   Datos seed de demo siguen presentes para desarrollo local.
 
 # 4. Modelo de datos
 
-## 4.1 Lo que existe hoy (tal cual está tipado en `lib/types.ts` / modelado en `main.py`)
+## 4.1 Modelo actual (implementado)
 
--   `Agency`: id, name, city, verified (booleano simple), claimed
-    (booleano), phone (un solo campo).
--   `Property`: id, title, type, operation ('Venta' fijo), price,
-    currency, zone, city, country, surface, rooms, bedrooms, bathrooms,
-    parking, pool, balcony, petFriendly, credit, freshness (texto único,
-    mezcla antigüedad real y fecha de detección --- ver problema en
-    sección 12), source, sourceUrl, **image** (string único, no lista),
-    description, agencyId, detectedAt, lastSeenAt.
--   `Offer`: id, user_id, property_id, amount, currency, payment_form,
-    capital, timeframe, comment, status, created_at, contact_revealed,
-    buyer_name, buyer_phone, buyer_email (todos estos tres últimos solo
-    visibles si contact_revealed=true).
--   `Event`: registro de interacción (vista, guardado, comparación,
-    consulta, pedido de visita, oferta creada, contacto
-    solicitado/compartido, contraoferta, negociación iniciada, avance de
-    operación).
--   `Intent`: contexto libre asociado a un evento (budget, capital,
-    financing, timeframe, decisionMaker, alternatives, comment).
--   `Opportunity`: proyección de `Event` para el dashboard de agencia.
--   `BuyerProfile`: name, phone, email (opcional) --- la identidad que
-    el comprador deja en la pantalla 3 del wizard.
--   `Session`: token + user (id, phone, role, agency_id).
+-   `Agency`: id, name, slug, city, phone, verified (legacy), claimed,
+    `verification_status` (PENDING|VERIFIED|REJECTED), priority, notes,
+    instagram, website_link, campos de monetización legacy migrados a
+    tablas propias.
+-   `AgencyPhone`: múltiples teléfonos por agencia.
+-   `Property`: campos de ficha + `images` (lista JSON, hasta 5),
+    `origin_published_at` (texto del portal), `detected_at` /
+    `last_seen_at`, `needs_review`, `possible_duplicate_of`,
+    `listing_group_id`, **`hidden_at`** (nullable; ocultar por
+    antigüedad sin borrar).
+-   `Offer` / `Lead` + reveal con `contact_revealed`.
+-   `Event` (incluye `search_performed` agregado/anónimo).
+-   `Subscription` + `LeadCredit` por agencia.
+-   `ColdStartTask` + onboarding token.
+-   **`CrawlCursor`:** `source_id` (PK), `last_page`, `last_run_at`,
+    `total_seen` — paginación con estado del crawler.
+-   Migración: `ensure_schema_columns()` agrega columnas faltantes sin
+    borrar datos. Filas existentes quedan con `hidden_at = NULL`
+    (visibles) hasta el primer `expire-stale`.
 
-## 4.2 Lo que hay que agregar (según lo definido en el brief de negocio y en la auditoría de reglas)
+## 4.2 Ya no pendiente (cerrado respecto del plan histórico)
 
--   `AgencyPhone`: tabla nueva --- agencia, teléfono, verificado_en. Un
-    agente puede tener celular personal + línea de oficina; ambos deben
-    disparar la nucleación automática de publicaciones
-    (`relink-by-phone` tiene que buscar contra todos los teléfonos de la
-    agencia, no solo uno).
--   `Property.images`: cambiar de `image` (string) a **lista de hasta 5
-    URLs**. Esto rompe compatibilidad con los datos de demo actuales ---
-    hace falta decidir explícitamente si se migra el dato viejo (`image`
-    → `images: [image]`) o se arranca de cero (ver sección 6, decisión
-    pendiente).
--   **Separar** `freshness` **en dos campos reales:** `detected_at`
-    (cuándo el crawler de Propomi la vio por primera vez) y
-    `origin_published_at` (lo que el portal de origen declara, por
-    ejemplo "publicado hace 3 días" --- hay que preservarlo tal cual
-    viene, no reemplazarlo).
--   **Verificación en dos niveles para agencia:** hoy `verified` es un
-    booleano. Hace falta algo como `verification_status` con al menos
-    dos estados (`PENDING`, `VERIFIED`, y probablemente `REJECTED`), más
-    los campos `instagram` (obligatorio) y `website_link` (opcional) que
-    se revisan a mano. Además una prioridad de cola
-    (`verification_priority`) que ponga primero a quien ya se suscribió
-    antes de verificarse, con SLA de 24 horas.
--   `Subscription`: por agencia --- plan activo, cupo de leads del
-    ciclo, leads consumidos, fecha de renovación.
--   `LeadCredit`: contador de leads gratis al verificarse (los
-    primeros 10) --- tiene que descontarse contra el mismo contador que
-    usa la suscripción para que no se dupliquen ni se pisen entre sí.
--   **Evento** `search_performed`: hoy no se registra ninguna
-    búsqueda/filtro que use el comprador en la barra (zona, presupuesto,
-    tipo, ambientes). Sin este evento no hay materia prima para el
-    dashboard de "oportunidades de mercado" del lado agencia. Tiene que
-    guardarse de forma **agregada y anónima** --- nunca asociado a un
-    comprador identificable.
+Los ítems que la versión anterior de este documento listaba en 4.2
+(`AgencyPhone`, `images`, `origin_published_at`, `verification_status`,
+`Subscription`, `LeadCredit`, `search_performed`) **están implementados**.
+Pendientes de producto/ops: habilitar más fuentes de crawl cuando dejen
+de estar detrás de bot protection, y activar crons en el plan de Render
+(o scheduler externo).
 
 # 5. Reglas de negocio no negociables (privacidad / anti-fuga)
 
@@ -480,14 +377,13 @@ señalado como reversible, no bloquearse esperando respuesta.
 Para cada uno se indica la recomendación y el motivo. Si nadie los
 contradice, **construir con este default**:
 
-1.  **Orden del login de Google (comprador):** wizard completo primero,
-    sin pedir login para navegar/comparar/ofertar. Recién **en el último
-    paso**, antes de poder apretar "Enviar oferta", pedir Google Sign-In
-    (además del teléfono verificado por OTP, que Google no valida).
-    *Motivo:* pedir login al entrar reintroduce la fricción que el
-    wizard de 3 pantallas está diseñado para evitar; pedirlo cuando la
-    persona ya invirtió tiempo completando los pasos convierte mucho
-    mejor (aversión a la pérdida / compromiso y consistencia).
+1.  **Login de Google (comprador) — REVERTIDO 2026-09-14 (commit
+    `7de1dff`):** la decisión original pedía Google Sign-In obligatorio
+    además del SMS en el último paso del wizard. Se revirtió: **el SMS
+    verificado alcanza**; Google quedó opcional. *Motivo:* el doble gate
+    mataba la conversión al final del wizard (exactamente la fricción
+    que el diseño de 3 pantallas buscaba evitar). No reabrir sin datos
+    nuevos de conversión.
 2.  **Qué ve un agente NO verificado en su dashboard:** puede ver que
     **tiene leads esperando** (cantidad, no el detalle ni el contacto)
     --- para generarle la ansiedad de completar la verificación. No
@@ -540,65 +436,50 @@ contradice, **construir con este default**:
     comunicarlo ANTES del lanzamiample, no después del primer reclamo
     real.
 
-# 7. El crawler --- no existe todavía, no prometer fechas sin construirlo
+# 7. El crawler --- estado real (2026-09-15)
 
-Hoy **no hay ningún crawler corriendo.** Las propiedades que se ven en
-el producto son datos fijos de demostración. Antes de prometer fechas de
-lanzamiento con catálogo real, esto tiene que construirse desde cero.
-Reglas que va a tener que cumplir:
+El crawler **existe** en `apps/api/app/crawler/`:
 
--   **Hasta 5 fotos por propiedad** → requiere que `Property.images` sea
-    lista (ver sección 4.2).
--   **Filtro de antigüedad de 90 días (o 60, según la etapa ---
-    confirmar cuál rige) no alcanza solo al indexar.** Una propiedad
-    indexada hace 55 días va a superar el límite mientras sigue
-    publicada en Propomi sin que nadie la vuelva a mirar --- hace falta
-    un **proceso periódico (cron diario)** que la oculte al cumplir el
-    límite, no solo un filtro de entrada.
--   **Preservar la antigüedad declarada por el portal de origen**
-    ("publicado hace 3 días") como un dato separado de la fecha en que
-    el crawler de Propomi la detectó --- hoy el campo `freshness` mezcla
-    ambas cosas sin distinguir (ver 4.2).
--   **Limpiar contacto también en el texto scrapeado**, no solo en lo
-    que un usuario escribe dentro de Propomi (ver regla no negociable #3
-    de la sección 5).
--   **Deduplicación entre portales.** Es habitual que dos agentes
-    publiquen la misma propiedad física en distintos portales, o que el
-    mismo agente la suba dos veces. Sin una regla de "esto es la misma
-    propiedad", se le puede llegar a cobrar a dos agencias distintas por
-    el mismo lead sobre el mismo departamento --- un riesgo de confianza
-    serio. No hace falta IA sofisticada para la primera versión: alcanza
-    con una regla simple --- mismo rango de precio + misma zona +
-    superficie casi igual = candidato a duplicado, marcado para
-    **revisión manual** (no fusión automática todavía).
--   **Selectores CSS sin verificar contra HTML real.** El repo
-    `proferta-crawler` tiene un `proferta_scraper.py` con selectores
-    para ZonaProp/Argenprop que todavía no se probaron contra el HTML
-    real de esos sitios --- hay una función
-    `test_parsers_con_html_local()` pensada para eso, pero no se corrió
-    en serio todavía.
+-   Runner de 2 etapas (listado → detalle), parsers por fuente basados
+    en JSON embebido / JSON-LD (no solo CSS frágil).
+-   Dedup por fingerprint zona|dirección|precio|superficie|ambientes;
+    candidatos a revisión manual / `listing_group_id`.
+-   Limpieza de contacto en descripción scrapeada (`strip_contact_leaks`).
+-   **`MAX_AGE_DAYS = 90`**: filtro de entrada + proceso periódico
+    `expire_stale_properties` / `POST /admin/properties/expire-stale`
+    que setea `hidden_at` (no borra). Upsert resetea `hidden_at` si el
+    aviso reaparece.
+-   **Paginación con estado:** tabla `CrawlCursor`; al llegar al tope de
+    la fuente reinicia a página 1. `MAX_DETAILS_PER_SOURCE = 40`,
+    `REQUEST_DELAY_SECONDS = 1.0`.
+-   Fuentes:
+    -   `cordobaprop`: **enabled=True**
+    -   `zonaprop`: código listo (Caballito/venta, robots respetado,
+        fixture + test de parser) pero **enabled=False** — Cloudflare
+        challenge en listados/fichas al 2026-09-15
+    -   `argenprop` / `mercadolibre` / `properati`: 403 en el borde
+    -   `mendozaprop` / `mercado_unico`: robots OK, falta validar HTML
+        real antes de habilitar
 
-# 8. Sistema de monetización --- falta el modelo de datos completo
+Disparo: `POST /admin/crawler/run` (admin key). Cron diario documentado
+en `render.yaml` (comentado si el plan no soporta cron jobs).
 
-Los montos (\~USD 5 pay-per-lead; USD 30/50/99 de suscripción) son un
-dato, no un sistema. Falta construir:
+# 8. Sistema de monetización --- estado real
 
--   La tabla `Subscription` por agencia (plan activo, cupo del ciclo,
-    consumido, renovación) --- ver 4.2.
--   El contador `LeadCredit` de los primeros 10 leads gratis al
-    verificarse, descontado contra el mismo contador que la suscripción
-    (ver 4.2 y decisión 6.2.3).
--   Prevención de abuso de cuentas duplicadas para repetir el cupo
-    gratis (ver decisión 6.2.8).
--   Política de disputa/reembolso explícita (ver decisión 6.2.9),
-    documentada y visible **antes** del lanzamiento.
--   Conectar una pasarela de pago real (Mercado Pago y/o Stripe) --- el
-    "seam" (punto de integración) ya existe en el backend vía
-    `PaymentGateway`, pero hoy es un mock que deniega por defecto.
--   **El dashboard de oportunidades de mercado** (demanda agregada por
-    zona/precio/ambientes cruzada contra el catálogo propio de la
-    agencia) depende de que exista el evento `search_performed` (sección
-    4.2) generando volumen real primero.
+Implementado:
+
+-   Tablas `Subscription` y `LeadCredit` por agencia.
+-   Planes: `PLAN_30` (30 reveals), `PLAN_50` (60), `PLAN_99`
+    (ilimitado), pay-per-lead ~USD 5.
+-   Orden de consumo en reveal: free_leads → cupo de plan → pay-per-lead.
+-   Excedente de cupo → pay-per-lead (no bloqueo duro).
+-   Lemon Squeezy: checkout hosteado + webhook con verificación HMAC;
+    mapeo variant→plan por env vars.
+-   Reveal bloqueado si `verification_status != VERIFIED`.
+
+Pendiente operativo: cargar secrets de Lemon Squeezy en Render cuando la
+cuenta esté aprobada (`docs/LEMON_SQUEEZY_CHECKLIST.md`). Política de
+disputa/reembolso sigue siendo decisión de producto documentada en 6.2.9.
 
 # 9. Cold start --- cómo arrancar con catálogo scrapeado y cero agencias registradas
 
@@ -620,44 +501,26 @@ el roadmap original como algo a automatizar "cuando haya tracción" ---
 al principio puede ser 100% manual, alguien del equipo mandando el
 mensaje a mano).
 
-# 10. Roadmap completo, en orden de dependencia
+# 10. Roadmap completo --- estado al 2026-09-15
 
-Cada etapa depende de que la anterior esté terminada y probada. No es un
-orden arbitrario --- está pensado así porque etapas posteriores
-necesitan datos/infraestructura que generan las anteriores.
+| Etapa | Tema | Estado |
+|---|---|---|
+| 1 | Modelo de datos ampliado | **Hecho** |
+| 2 | Identidad comprador (SMS + Google opcional) | **Hecho** (Google ya no obligatorio) |
+| 3 | `search_performed` + demanda | **Hecho** |
+| 4 | Panel revisión manual agencias | **Hecho** (backend + `/admin`) |
+| 5 | Monetización Lemon Squeezy | **Hecho** (falta ops de secrets) |
+| 6 | Cold start (cola + onboarding token) | **Hecho** (envío aún manual) |
+| 7 | Ingesta / alta manual verificados | **Hecho** |
+| 8 | Crawler real | **Hecho** (CordobaProp live; ZonaProp bloqueado por CF; antigüedad + cursores agregados 2026-09-15) |
+| 9 | Subdominios por agencia | **Hecho** |
 
-1.  **Modelo de datos ampliado:** `AgencyPhone` (múltiples teléfonos),
-    Instagram/link + verificación en dos niveles, `Property.images` como
-    lista (con decisión explícita sobre migración de datos viejos),
-    `Subscription` y `LeadCredit`.
-2.  **Login de Google para compradores** + reutilización del OTP
-    existente para verificar el celular, en el orden definido en 6.2.1.
-3.  **Evento** `search_performed`**:** loguear búsquedas/filtros del
-    comprador de forma agregada y anónima --- base para el dashboard de
-    oportunidades de mercado.
-4.  **Panel de revisión manual de agencias** (mínimo viable: una
-    pantalla interna, protegida por clave fija, donde se vean perfiles
-    pendientes con su Instagram/link y se aprueben o rechacen --- cola
-    ordenada por prioridad de suscripción, SLA 24hs).
-5.  **Sistema de monetización completo:** planes, contador de leads,
-    reveal pago conectado a pasarela real, los 10 leads gratis al
-    verificarse, política de reembolso documentada y visible.
-6.  **Cold start real:** notificación automática al teléfono scrapeado
-    con el resumen de la propuesta + link de onboarding (empezar 100%
-    manual, dejar el lugar para automatizar con WhatsApp Cloud API
-    después).
-7.  **Ingesta de propiedades por URL o alta manual**, habilitado para
-    agentes ya verificados.
-8.  **Crawler real**, con las reglas de antigüedad (filtro de entrada +
-    proceso periódico), 5 fotos, deduplicación simple por
-    zona/precio/superficie, y limpieza de contacto en el texto scrapeado
-    (no solo en lo que escribe un usuario dentro de Propomi).
-9.  **Subdominios por agencia** (`suagencia.propomi.com`) con el mismo
-    funnel de precio corriendo adentro, y **links compartibles con
-    tracking de origen** por propiedad --- dejar para el final porque es
-    infraestructura nueva y no bloquea nada de lo anterior. Ambas cosas
-    dependen de que existan agencias verificadas y con catálogo propio
-    real (etapas 1, 4 y 7).
+Próximas decisiones de producto (no técnicas):
+
+1.  Qué hacer con el piloto Caballito si ZonaProp sigue detrás de
+    Cloudflare (mover a Córdoba vs. anti-bot vs. otra fuente).
+2.  Activar crons en Render o scheduler externo con `ADMIN_KEY`.
+3.  Automatizar cold-start WhatsApp cuando haya tracción.
 
 # 11. Checklist de calidad antes de entregar cualquier etapa
 

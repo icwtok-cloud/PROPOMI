@@ -1,3 +1,58 @@
+## 2026-09-15 — Encargo one-pass (Grok): antigüedad, cursores, limpieza debug, ZonaProp bloqueado
+
+**Qué se hizo**
+
+1. **Tarea 1:** eliminados endpoints de debug
+   `POST /admin/debug/create-test-agency`,
+   `GET /admin/debug/agency-by-id/{id}` y el modelo `DebugCreateAgencyIn`.
+2. **Tarea 2:** `Property.hidden_at`; `expire_stale_properties`;
+   `POST /admin/properties/expire-stale`; `GET /properties` y detail
+   filtran ocultas (admin + `include_hidden=true` puede verlas).
+   Antigüedad efectiva = `origin_published_at` si es ISO parseable, si no
+   `detected_at`. Upsert del crawler resetea `hidden_at` si el aviso
+   reaparece.
+3. **Tarea 3 (ZonaProp):** `queries.py` → solo Caballito/venta páginas
+   1–5; `links.py` → solo `/propiedades/*-ubicado-en-*`; fixture + test
+   de parser. **No se habilitó:** listados/fichas devuelven Cloudflare
+   challenge (403). `enabled=False` y nota en `selectors.py`.
+4. **Tarea 4:** tabla `CrawlCursor`; runner avanza/reinicia página;
+   `MAX_DETAILS_PER_SOURCE = 40`. Crons documentados comentados en
+   `render.yaml`.
+5. **Tarea 5:** checklist abajo.
+6. **Tarea 6:** regeneradas secc. 3, 4, 7, 8, 10 de `PLAN_MAESTRO.md`;
+   documentada reversión 6.2.1 (Google opcional).
+
+**Qué se validó (corrido de verdad)**
+
+- `pytest apps/api/tests/` → **40/40 pasan** (30 previos + expiry +
+  cursor + zonaprop parser fixture).
+- `grep -rn "admin/debug" apps/` → vacío.
+- `npm run build` **no se corrió** (sin toolchain Node en este entorno;
+  no se tocó frontend).
+
+**Datos existentes:** columnas nuevas vía `ensure_schema_columns` /
+`create_all` de tablas nuevas. Filas viejas: `hidden_at = NULL`
+(siguen visibles hasta el primer expire). `CrawlCursor` arranca vacío.
+
+**Variables de entorno nuevas:** ninguna obligatoria nueva. Ya existentes
+a cargar en Render si faltan: `ADMIN_KEY`, y para crons externos
+`API_URL` + `ADMIN_KEY`. Lemon Squeezy / Vonage sin cambios de schema.
+
+**Pendiente**
+
+- Decisión de producto sobre piloto Caballito vs Cloudflare ZonaProp.
+- Activar crons (plan Render o cron-job.org).
+- Habilitar ZonaProp solo si deja de devolver challenge.
+
+**Archivos tocados:** `apps/api/app/main.py`, `crawler/runner.py`,
+`crawler/queries.py`, `crawler/links.py`, `crawler/selectors.py`,
+`render.yaml`, `tests/test_property_expiry.py`,
+`tests/test_crawl_cursor.py`, `tests/test_zonaprop_parser.py`,
+`tests/fixtures/zonaprop_detail.html`, `docs/PLAN_MAESTRO.md`,
+`PROGRESS_LOG.md`.
+
+---
+
 ## 2026-09-15 — Auditoría de estado real del repo (sin cambios de código)
 
 **Qué se hizo:** se clonó `main` completo y se comparó contra

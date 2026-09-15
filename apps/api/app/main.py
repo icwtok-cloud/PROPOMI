@@ -201,6 +201,10 @@ class Property(Base):
     # dueña de su propia fila/oferta/reveal); el rango de precio se calcula
     # al leer, ver `GET /properties/{id}/group`.
     listing_group_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    # Antigüedad (plan maestro secc. 7): se oculta al superar MAX_AGE_DAYS
+    # sin borrar la fila. El crawler puede resetear a None si el aviso
+    # reaparece en el portal de origen (upsert idempotente).
+    hidden_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
 
 
 class Event(Base):
@@ -462,6 +466,18 @@ class ColdStartTask(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
+
+class CrawlCursor(Base):
+    """Paginación con estado del crawler (tarea 4 del encargo one-pass).
+    Cada fuente avanza last_page entre corridas; al llegar al tope permitido
+    por robots/cortesía se reinicia a 1 (el upsert es idempotente)."""
+    __tablename__ = "crawl_cursors"
+    source_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    last_page: Mapped[int] = mapped_column(Integer, default=0)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    total_seen: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class AgentSuppressionList(Base):
     """Lista de baja permanente — un teléfono/email acá nunca vuelve a
     recibir contacto en frío ni ver sus datos reutilizados, aunque el
@@ -471,7 +487,6 @@ class AgentSuppressionList(Base):
     phone_e164: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True, unique=True)
     email: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
@@ -529,6 +544,7 @@ def ensure_schema_columns() -> None:
             "needs_review": "BOOLEAN DEFAULT FALSE",
             "possible_duplicate_of": "VARCHAR(40)",
             "listing_group_id": "VARCHAR(40)",
+            "hidden_at": "TIMESTAMP",
         },
         "agencies": {
             "phone": "VARCHAR(30)",
@@ -1561,7 +1577,49 @@ def prop_dict(p: Property) -> dict[str, Any]:
         "description": p.description, "agencyId": p.agency_id, "detectedAt": p.detected_at.isoformat(), "lastSeenAt": p.last_seen_at.isoformat(),
         "needsReview": p.needs_review, "possibleDuplicateOf": p.possible_duplicate_of,
         "listingGroupId": p.listing_group_id,
+        "hiddenAt": p.hidden_at.isoformat() if p.hidden_at else None,
     }
+
+
+def _effective_published_at(p: "Property") -> datetime:
+    """Antigüedad efectiva: origin_published_at si es un ISO datetime parseable,
+    si no detected_at. origin_published_at es VARCHAR libre ("Publicado hace
+    3 días") en datos legados; solo se usa cuando viene como ISO (crawler
+    nuevo / tests)."""
+    raw = p.origin_published_at
+    if raw:
+        try:
+            # Acepta "2026-01-01T00:00:00+00:00" y "2026-01-01T00:00:00Z"
+            s = raw.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(s)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except (ValueError, TypeError):
+            pass
+    dt = p.detected_at
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def expire_stale_properties(db) -> dict:
+    """Oculta propiedades cuya antigüedad efectiva supera MAX_AGE_DAYS.
+    No borra filas. Devuelve reporte con conteos."""
+    from app.crawler.runner import MAX_AGE_DAYS
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=MAX_AGE_DAYS)
+    candidates = db.scalars(
+        select(Property).where(Property.hidden_at.is_(None))
+    ).all()
+    hidden = 0
+    for p in candidates:
+        if _effective_published_at(p) < cutoff:
+            p.hidden_at = now
+            hidden += 1
+    if hidden:
+        db.commit()
+    return {"hidden": hidden, "scanned": len(candidates), "max_age_days": MAX_AGE_DAYS, "cutoff": cutoff.isoformat()}
 
 
 @app.get("/properties/{property_id}/group")
@@ -1685,6 +1743,10 @@ def properties(
     # una sesión válida (agente o comprador) se guarda el user_id para
     # análisis de demanda, igual que en cualquier otro evento del sistema.
     session_id: str | None = None, authorization: str | None = Header(default=None),
+    # Plan maestro secc. 7: por defecto no se muestran ocultas por antigüedad.
+    # include_hidden=true solo con X-Admin-Key válida (un agente no ve ocultas de otros).
+    include_hidden: bool = False,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ):
     session = None
     if authorization:
@@ -1694,6 +1756,7 @@ def properties(
             # Token vencido/ inválido en una búsqueda no debe romper la
             # búsqueda en sí — solo se pierde la asociación a un user_id.
             session = None
+    admin_ok = bool(x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY))
     with Session(engine) as db:
         ensure_seed(db)
         stmt = select(Property)
@@ -1706,6 +1769,9 @@ def properties(
         if parking is not None: stmt = stmt.where(Property.parking == parking)
         if credit is not None: stmt = stmt.where(Property.credit == credit)
         if agency_id: stmt = stmt.where(Property.agency_id == agency_id)
+        # Ocultas por antigüedad (MAX_AGE_DAYS): solo admin con include_hidden.
+        if not (include_hidden and admin_ok):
+            stmt = stmt.where(Property.hidden_at.is_(None))
         # Etapa 2 (doc 05): oculta de la búsqueda pública lo que el crawler
         # no ve hace más de PROPERTY_FRESHNESS_DAYS — no afecta a agency_id
         # (una agencia sigue viendo sus propias publicaciones en "Mi cuenta"
@@ -1739,11 +1805,18 @@ def properties(
 
 
 @app.get("/properties/{property_id}")
-def property_detail(property_id: str):
+def property_detail(
+    property_id: str,
+    include_hidden: bool = False,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
+    admin_ok = bool(x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY))
     with Session(engine) as db:
         ensure_seed(db)
         p = db.get(Property, property_id)
         if not p: raise HTTPException(status_code=404, detail="Propiedad no encontrada")
+        if p.hidden_at is not None and not (include_hidden and admin_ok):
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada")
         return prop_dict(p)
 
 
@@ -3157,60 +3230,6 @@ def agency_admin_dict(a: "Agency") -> dict[str, Any]:
     }
 
 
-class DebugCreateAgencyIn(BaseModel):
-    id: str
-    name: str
-    phone: str
-    city: str = "Córdoba"
-
-
-@app.post("/admin/debug/create-test-agency")
-def admin_debug_create_test_agency(payload: DebugCreateAgencyIn, _: None = Depends(require_admin)):
-    """DEBUG TEMPORAL — borrar después de resolver el test de Lemon Squeezy
-    (tarea 5). Crea una Agency mínima para poder loguearse como agente vía
-    OTP y probar el flujo de checkout/webhook. phone se normaliza igual que
-    en el resto de la app para garantizar el match exacto que usa
-    find_agency_by_phone."""
-    phone_normalized = normalize_phone(payload.phone)
-    if not phone_normalized:
-        raise HTTPException(status_code=400, detail="Teléfono inválido")
-    with Session(engine) as db:
-        existing = db.get(Agency, payload.id)
-        if existing:
-            return {"id": existing.id, "phone_repr": repr(existing.phone), "status": "already_existed"}
-        agency = Agency(
-            id=payload.id,
-            name=payload.name,
-            slug=slugify(payload.name),
-            city=payload.city,
-            verified=True,
-            claimed=False,
-            phone=phone_normalized,
-            verification_status="VERIFIED",
-        )
-        db.add(agency)
-        db.commit()
-        return {"id": agency.id, "phone_repr": repr(agency.phone), "status": "created"}
-
-
-@app.get("/admin/debug/agency-by-id/{agency_id}")
-def admin_debug_agency_by_id(agency_id: str, _: None = Depends(require_admin)):
-    """DEBUG TEMPORAL — borrar después de resolver el test de Lemon Squeezy
-    (tarea 5). Devuelve el teléfono tal cual está guardado en DB (repr
-    incluye comillas para detectar espacios/caracteres invisibles a simple
-    vista)."""
-    with Session(engine) as db:
-        agency = db.get(Agency, agency_id)
-        if not agency:
-            raise HTTPException(status_code=404, detail="No existe esa agencia")
-        return {
-            "id": agency.id,
-            "phone_repr": repr(agency.phone),
-            "verified": agency.verified,
-            "claimed": agency.claimed,
-        }
-
-
 @app.get("/admin/agencies/pending")
 def admin_pending_agencies(_: None = Depends(require_admin)):
     """Etapa 4: cola de agencias pendientes de revisión manual, ordenada
@@ -3490,6 +3509,13 @@ def complete_onboarding(
             "message": "Perfil reclamado. Completá la verificación desde el panel de agencia si todavía está pendiente.",
         }
 
+
+
+@app.post("/admin/properties/expire-stale")
+def admin_expire_stale_properties(_: None = Depends(require_admin)):
+    """Cron / disparo manual: oculta propiedades con antigüedad > MAX_AGE_DAYS."""
+    with Session(engine) as db:
+        return expire_stale_properties(db)
 
 
 @app.post("/admin/crawler/run")
