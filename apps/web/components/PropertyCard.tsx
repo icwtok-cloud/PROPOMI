@@ -37,6 +37,12 @@ export default function PropertyCard({
           {p.groupMemberCount != null && p.groupMemberCount > 1 && (
             <span className="fresh multi-badge">Multi-agente · {p.groupMemberCount}</span>
           )}
+          {p.investmentOpportunity && (
+            <span className="fresh invest-badge">Oportunidad de Inversión</span>
+          )}
+          {p.underConstruction && (
+            <span className="fresh pozo-badge">En Pozo</span>
+          )}
         </button>
         <button
           type="button"

@@ -270,6 +270,9 @@ class Property(Base):
     zone: Mapped[str] = mapped_column(String(100))
     city: Mapped[str] = mapped_column(String(100))
     country: Mapped[str] = mapped_column(String(100), default="Argentina")
+    province: Mapped[str] = mapped_column(String(100), default="")
+    under_construction: Mapped[bool] = mapped_column(Boolean, default=False)  # En Pozo / Pre-venta
+    investment_opportunity: Mapped[bool] = mapped_column(Boolean, default=False)
     surface: Mapped[float] = mapped_column(Float)
     rooms: Mapped[int] = mapped_column(Integer)
     bedrooms: Mapped[int] = mapped_column(Integer, default=1)
@@ -737,6 +740,9 @@ def ensure_schema_columns() -> None:
             "listing_group_id": "VARCHAR(40)",
             "hidden_at": "TIMESTAMP",
             "priority_score": "FLOAT DEFAULT 0",
+            "province": "VARCHAR(100) DEFAULT ''",
+            "under_construction": "BOOLEAN DEFAULT FALSE",
+            "investment_opportunity": "BOOLEAN DEFAULT FALSE",
         },
         "agencies": {
             "phone": "VARCHAR(30)",
@@ -1981,7 +1987,7 @@ def relink_properties(db: Session, agency_id: str, phone: str) -> int:
 def prop_dict(p: Property) -> dict[str, Any]:
     return {
         "id": p.id, "title": p.title, "type": p.type, "operation": p.operation, "price": p.price, "currency": p.currency,
-        "zone": p.zone, "city": p.city, "country": p.country, "surface": p.surface, "rooms": p.rooms, "bedrooms": p.bedrooms,
+        "zone": p.zone, "city": p.city, "country": p.country, "province": getattr(p, "province", None) or "", "underConstruction": bool(getattr(p, "under_construction", False)), "investmentOpportunity": bool(getattr(p, "investment_opportunity", False)), "surface": p.surface, "rooms": p.rooms, "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms, "parking": p.parking, "pool": p.pool, "balcony": p.balcony, "petFriendly": p.pet_friendly,
         "credit": p.credit, "freshness": p.freshness, "source": p.source, "sourceUrl": p.source_url,
         "image": p.image, "images": p.images or ([p.image] if p.image else []),
@@ -2123,22 +2129,33 @@ def properties_filters():
         ensure_seed(db)
         freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
         stmt = (
-            select(Property.city, Property.zone)
+            select(Property.country, Property.province, Property.city, Property.zone)
             .where(Property.last_seen_at >= freshness_cutoff)
             .distinct()
         )
         rows = db.execute(stmt).all()
         by_city: dict[str, set[str]] = {}
-        for city, zone in rows:
+        countries: set[str] = set()
+        provinces_by_country: dict[str, set[str]] = {}
+        cities_by_province: dict[str, set[str]] = {}
+        for country, province, city, zone in rows:
+            country = (country or "Argentina").strip() or "Argentina"
+            province = (province or "").strip()
             city = (city or "").strip()
             zone = (zone or "").strip()
-            if not city:
-                continue
-            by_city.setdefault(city, set())
-            if zone:
-                by_city[city].add(zone)
+            countries.add(country)
+            if province:
+                provinces_by_country.setdefault(country, set()).add(province)
+            if city:
+                by_city.setdefault(city, set())
+                if zone:
+                    by_city[city].add(zone)
+                cities_by_province.setdefault(f"{country}|{province}", set()).add(city)
         cities = sorted(by_city.keys())
         return {
+            "countries": sorted(countries) or ["Argentina", "Paraguay", "Uruguay"],
+            "provincesByCountry": {c: sorted(ps) for c, ps in provinces_by_country.items()},
+            "citiesByProvince": {k: sorted(vs) for k, vs in cities_by_province.items()},
             "cities": cities,
             "zonesByCity": {c: sorted(zs) for c, zs in by_city.items()},
         }
@@ -2149,6 +2166,8 @@ def properties(
     zone: str | None = None, city: str | None = None, type: str | None = None, operation: str | None = None,
     rooms: int | None = None, max_price: float | None = None, parking: bool | None = None,
     credit: bool | None = None, agency_id: str | None = None,
+    country: str | None = None, province: str | None = None,
+    under_construction: bool | None = None, investment_opportunity: bool | None = None,
     exclude_agency_id: str | None = None,
     # Etapa 3 (secci�n 10 / fase Intelligence): session_id opcional del
     # frontend para poder agrupar b�squedas de una misma sesi�n an�nima sin
@@ -2176,6 +2195,10 @@ def properties(
         stmt = select(Property)
         if zone: stmt = stmt.where(Property.zone == zone)
         if city: stmt = stmt.where(Property.city == city)
+        if country: stmt = stmt.where(Property.country == country)
+        if province: stmt = stmt.where(Property.province == province)
+        if under_construction is not None: stmt = stmt.where(Property.under_construction == under_construction)
+        if investment_opportunity is not None: stmt = stmt.where(Property.investment_opportunity == investment_opportunity)
         if type: stmt = stmt.where(Property.type == type)
         if operation: stmt = stmt.where(Property.operation == operation)
         if rooms: stmt = stmt.where(Property.rooms == rooms)

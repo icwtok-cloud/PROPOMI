@@ -10,7 +10,8 @@ import {Property,Offer} from '../lib/types';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
 const FUNNEL=['Vistas','Guardados','Comparaciones','Consultas','Visitas','Ofertas','Negociaciones','Contacto compartido','Operaciones'];
-const PROPERTY_TYPES=['Todos','Departamento','Casa','PH','Oficina','Local','Terreno'];
+const PROPERTY_TYPES=['Todos','Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
+const COUNTRY_OPTIONS=['Todos','Argentina','Paraguay','Uruguay'];
 
 export default function Home(){
   const [items,setItems]=useState<Property[]>([]);
@@ -22,8 +23,13 @@ export default function Home(){
   // aparezca sola en el buscador sin tocar este archivo.
   const [cities,setCities]=useState<string[]>([]);
   const [zonesByCity,setZonesByCity]=useState<Record<string,string[]>>({});
+  const [country,setCountry]=useState('Todos');
+  const [province,setProvince]=useState('');
+  const [provincesByCountry,setProvincesByCountry]=useState<Record<string,string[]>>({});
+  const [citiesByProvince,setCitiesByProvince]=useState<Record<string,string[]>>({});
   const [city,setCity]=useState('');
   const [zone,setZone]=useState('');
+  const [investmentOnly,setInvestmentOnly]=useState(false);
   const [ptype,setPtype]=useState('Todos');
   const [rooms,setRooms]=useState('2');
   const [parking,setParking]=useState(false);
@@ -52,7 +58,9 @@ export default function Home(){
     try{
       const f=await getPropertyFilters();
       setCities(f.cities);
-      setZonesByCity(f.zonesByCity);
+      setZonesByCity(f.zonesByCity||{});
+      if((f as any).provincesByCountry) setProvincesByCountry((f as any).provincesByCountry);
+      if((f as any).citiesByProvince) setCitiesByProvince((f as any).citiesByProvince);
       // Default: primera ciudad disponible (y su primera zona), en vez del
       // "Palermo" hardcodeado de antes — así el buscador arranca mostrando
       // algo que realmente existe en la base, sea Buenos Aires, Córdoba, etc.
@@ -125,7 +133,23 @@ export default function Home(){
 
 
   const filtered=useMemo(()=>{
-    let list=items.filter(p=>(!city||p.city===city)&&(!zone||p.zone===zone)&&(ptype==='Todos'||p.type===ptype)&&(!rooms||rooms==='Todos'||p.rooms===Number(rooms))&&p.price<=Number(budget||Infinity)&&(!parking||p.parking)&&(!credit||p.credit)&&(!balcony||!!p.balcony));
+    let list=items.filter(p=>{
+      const pCountry=(p.country||'Argentina');
+      const pProvince=(p.province||'');
+      if(country&&country!=='Todos'&&pCountry!==country) return false;
+      if(province&&pProvince!==province) return false;
+      if(city&&p.city!==city) return false;
+      if(zone&&p.zone!==zone) return false;
+      if(ptype==='En Pozo'){ if(!p.underConstruction) return false; }
+      else if(ptype!=='Todos'&&p.type!==ptype) return false;
+      if(rooms&&rooms!=='Todos'&&p.rooms!==Number(rooms)) return false;
+      if(!(p.price<=Number(budget||Infinity))) return false;
+      if(parking&&!p.parking) return false;
+      if(credit&&!p.credit) return false;
+      if(balcony&&!p.balcony) return false;
+      if(investmentOnly&&!p.investmentOpportunity) return false;
+      return true;
+    });
     if(sortBy==='price_asc')list=[...list].sort((a,b)=>a.price-b.price);
     else if(sortBy==='price_desc')list=[...list].sort((a,b)=>b.price-a.price);
     else if(sortBy==='recent')list=[...list].sort((a,b)=>{
@@ -135,7 +159,7 @@ export default function Home(){
     });
     // relevance: keep API/priority order as received
     return list;
-  },[items,city,zone,ptype,rooms,budget,parking,credit,balcony,sortBy]);
+  },[items,country,province,city,zone,ptype,rooms,budget,parking,credit,balcony,investmentOnly,sortBy]);
   useEffect(()=>{
     const t=setTimeout(()=>{
       trackSearchPerformed({
@@ -149,7 +173,7 @@ export default function Home(){
   },[zone,ptype,rooms,budget,parking,credit]);
 
 
-  const whereLabel=city?(zone?`${city} · ${zone}`:city):'Cualquier lugar';
+  const whereLabel=[country&&country!=='Todos'?country:null,province||null,city||null,zone||null].filter(Boolean).join(' · ')||'Cualquier lugar';
   const typeLabel=ptype==='Todos'?(rooms==='Todos'?'Tipo y ambientes':`${rooms} amb.`):(rooms==='Todos'?ptype:`${ptype} · ${rooms} amb.`);
   const budgetLabel=budget?`Hasta USD ${Number(budget).toLocaleString('en-US')}`:'Presupuesto';
   const typeIcon=(name:string)=>{
@@ -210,10 +234,29 @@ export default function Home(){
           {openSeg==='where'&&(
             <div className="pill-popover">
               <div className="pill-pop-head"><strong>¿Dónde buscás?</strong><button type="button" className="icon" onClick={()=>setOpenSeg(null)} aria-label="Cerrar"><X size={18}/></button></div>
+              <label>País
+                <select value={country} onChange={e=>{setCountry(e.target.value);setProvince('');setCity('');setZone('')}}>
+                  {COUNTRY_OPTIONS.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+              <label>Provincia
+                <select value={province} onChange={e=>{setProvince(e.target.value);setCity('');setZone('')}}>
+                  <option value="">Todas</option>
+                  {(
+                    country!=='Todos'
+                      ? (provincesByCountry[country]||[])
+                      : Array.from(new Set(Object.values(provincesByCountry).flat()))
+                  ).map(pr=><option key={pr} value={pr}>{pr}</option>)}
+                </select>
+              </label>
               <label>Ciudad
                 <select value={city} onChange={e=>{setCity(e.target.value);setZone('')}}>
                   <option value="">Todas</option>
-                  {cities.map(c=><option key={c} value={c}>{c}</option>)}
+                  {(
+                    province
+                      ? (citiesByProvince[`${country==='Todos'?'Argentina':country}|${province}`]||cities)
+                      : cities
+                  ).map(c=><option key={c} value={c}>{c}</option>)}
                 </select>
               </label>
               <label>Zona
@@ -235,6 +278,10 @@ export default function Home(){
                   </button>
                 ))}
               </div>
+              <label className="filter-check" style={{display:'flex',alignItems:'center',gap:8,margin:'10px 0 4px',cursor:'pointer',fontWeight:650}}>
+                <input type="checkbox" checked={investmentOnly} onChange={e=>setInvestmentOnly(e.target.checked)}/>
+                <span>Oportunidad de Inversión</span>
+              </label>
               <label style={{marginTop:12}}>Ambientes
                 <div className="rooms-row">
                   {['1','2','3','Todos'].map(r=>(

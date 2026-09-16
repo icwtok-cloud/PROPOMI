@@ -247,3 +247,27 @@
 @media (max-width:560px){
   .reveal-single-card{flex-direction:column;align-items:flex-start;}
 }
+
+
+/* Cards compactas (ratio Airbnb) + badges pozo/inversion */
+.property-card-v2{border-radius:14px;overflow:hidden}
+.property-card-v2 .imagebtn img,
+.property-card-v2 .pcard-media img{aspect-ratio:4/3;height:auto;max-height:180px;width:100%;object-fit:cover;border-radius:12px}
+.property-card-v2 .pcard-noimg{height:140px;border-radius:12px}
+.property-card-v2 .body,
+.property-card-v2 .pcard-body,
+.property .body{padding:10px 4px 6px}
+.property-card-v2 h3,
+.property h3{font-size:14px;line-height:1.25;margin:4px 0 2px;font-weight:700}
+.property-card-v2 .price,
+.property .price{font-size:14px;font-weight:750}
+.property-card-v2 .specs,
+.property .specs{font-size:12px}
+.property-card-v2 .actions{gap:6px;margin-top:8px}
+.property-card-v2 .actions .primary,
+.property-card-v2 .actions .secondary{padding:7px 10px;font-size:12px}
+.invest-badge{top:auto!important;bottom:10px;left:8px;right:auto!important;background:#1f6b3b!important;color:#fff!important;font-size:11px!important;font-weight:750!important;padding:4px 8px!important;border-radius:8px!important}
+.pozo-badge{top:36px!important;left:8px!important;right:auto!important;background:#BF4E32!important;color:#fff!important;font-size:11px!important;font-weight:750!important;padding:4px 8px!important;border-radius:8px!important}
+.grid.properties,
+.properties-grid,
+section#propiedades .grid{gap:14px}

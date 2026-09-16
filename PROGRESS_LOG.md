@@ -1,3 +1,12 @@
+## 2026-09-16 — search_cards_v3 (diff real sobre 1a70667)
+
+Base: git clone origin/main @ 1a706675bc6eb3983341131b42da529bc4469694
+git diff --stat main.py: 31 insertions(+), 8 deletions(-)
+git diff --stat globals.css: 24 insertions(+)
+FFFD delta 0.
+
+---
+
 ## 2026-09-16 — Crawler admin async (202 Accepted + status)
 
 POST /admin/crawler/run → 202 + crawl_run_id; BackgroundTasks ejecuta run_crawl.
