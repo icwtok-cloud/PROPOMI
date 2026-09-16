@@ -1,6 +1,6 @@
 ﻿'use client';
 import {useEffect,useState} from 'react';
-import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,User} from 'lucide-react';
+import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,Unlock,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
 import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
@@ -239,11 +239,11 @@ export default function AgentDashboard(){
     {loadError && <div className="notice notice-error">{loadError}</div>}
 
     <div className="agentmetrics">
-      <div><b>{offersRestrictedCount!==null?offersRestrictedCount:offers.filter(o=>o.status==='SENT').length}</b><span>Ofertas nuevas</span></div>
-      <div><b>{opps?.active??0}</b><span>Oportunidades activas</span></div>
-      <div><b>{offers.filter(o=>o.contact_revealed).length}</b><span>Contactos revelados</span></div>
-      <div><b>{analytics?.properties??0}</b><span>Publicaciones</span></div>
-      <div><b>{agency?.availableCredit??agency?.freeLeadsRemaining??0}</b><span>Cupo reveal disponible</span></div>
+      <div><span className="metric-icon"><Inbox size={17}/></span><b>{offersRestrictedCount!==null?offersRestrictedCount:offers.filter(o=>o.status==='SENT').length}</b><span>Ofertas nuevas</span></div>
+      <div><span className="metric-icon"><Sparkles size={17}/></span><b>{opps?.active??0}</b><span>Oportunidades activas</span></div>
+      <div><span className="metric-icon"><Unlock size={17}/></span><b>{offers.filter(o=>o.contact_revealed).length}</b><span>Contactos revelados</span></div>
+      <div><span className="metric-icon"><Building2 size={17}/></span><b>{analytics?.properties??0}</b><span>Publicaciones</span></div>
+      <div><span className="metric-icon"><TrendingUp size={17}/></span><b>{agency?.availableCredit??agency?.freeLeadsRemaining??0}</b><span>Cupo reveal disponible</span></div>
     </div>
 
     <div className="agentdashtabs">

@@ -45,15 +45,24 @@
 .notice-ok{background:#eef8f1;color:#1f6b3b;display:flex;align-items:center;gap:6px}
 .notice-warn{background:#fff7e8;color:#8a6116;display:flex;align-items:center;gap:6px}
 .small{font-size:12.5px}
-.agentdashhead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:36px 0 22px}
-.agentdashhead h2{margin:2px 0}
-.agentmetrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
-.agentmetrics div{background:#fff;border:1px solid #e2e7ed;border-radius:14px;padding:18px}
-.agentmetrics b{display:block;font-size:26px;color:#102033}
-.agentmetrics span{font-size:12px;color:#7a8796}
-.agentdashtabs{display:flex;gap:8px;margin-bottom:20px}
-.agentdashtabs .tab{border-color:#d9e1e9;color:#536174}
+.agentdashhead{position:relative;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:28px 0 26px;padding:30px 32px;border-radius:22px;background:linear-gradient(135deg,#0b192c,#122842);color:#fff;overflow:hidden}
+.agentdashhead::after{content:'';position:absolute;inset:0;background:radial-gradient(circle at 85% 10%,rgba(191,78,50,.28),transparent 40%);pointer-events:none}
+.agentdashhead .eyebrow{color:#C96B4A}
+.agentdashhead h2{margin:4px 0 6px;font-size:clamp(26px,3vw,36px);letter-spacing:-1.2px;color:#fff}
+.agentdashhead .muted{color:#b9c7d9}
+.agentdashhead .secondary{position:relative;z-index:1;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.24);color:#fff}
+.agentdashhead .secondary:hover{background:rgba(255,255,255,.16)}
+.agentmetrics{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:26px}
+.agentmetrics div{background:#fff;border:1px solid #e2e7ed;border-radius:18px;padding:20px 18px;box-shadow:0 8px 22px rgba(16,32,51,.05);transition:transform .15s,box-shadow .15s}
+.agentmetrics div:hover{transform:translateY(-2px);box-shadow:0 14px 32px rgba(16,32,51,.09)}
+.agentmetrics .metric-icon{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;background:#F7EAE4;color:#BF4E32;margin-bottom:10px}
+.agentmetrics b{display:block;font-size:28px;color:#102033;letter-spacing:-.5px}
+.agentmetrics span{font-size:12.5px;color:#7a8796}
+.agentdashtabs{display:flex;gap:8px;margin-bottom:24px;flex-wrap:wrap}
+.agentdashtabs .tab{border-color:#e2e7ed;color:#536174;border-radius:999px;padding:9px 16px;font-weight:600;transition:all .15s}
+.agentdashtabs .tab:hover{border-color:#BF4E32;color:#9E3F28}
 .agentdashtabs .tab.active{background:#102033;color:#fff;border-color:#102033}
+@media(max-width:700px){.agentmetrics{grid-template-columns:1fr 1fr}}
 .agentdashpane{display:grid;gap:14px}
 .offercard{background:#fff;border:1px solid #e2e7ed;border-radius:14px;padding:18px}
 .offercardhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
