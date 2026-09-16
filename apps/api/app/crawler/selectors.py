@@ -94,7 +94,7 @@ SOURCES: dict[str, SourceConfig] = {
         id="mercadolibre",
         name="Mercado Libre Inmuebles",
         base_url="https://inmuebles.mercadolibre.com.ar",
-        list_urls_fn=lambda: iter([]),  # TODO: agregar generador de listado en queries.py
+        list_urls_fn=queries.mercadolibre_list_urls,
         enabled=True,
         # Confirmado 2026-09-15: 403 Forbidden con la página de error propia
         # de MercadoLibre incluso pidiendo /robots.txt — bot protection fuerte
@@ -116,7 +116,7 @@ SOURCES: dict[str, SourceConfig] = {
         id="inmoup",
         name="InmoUp",
         base_url="https://inmoup.com.ar",
-        list_urls_fn=queries.mercadolibre_list_urls,
+        list_urls_fn=queries.inmoup_list_urls,
         enabled=True,
         robots_note="Confirmado 2026-09-15: Allow general (bloquea /panel/ /json/ maps de ficha). HTML real 200 sin challenge; JSON-LD schema.org RealEstateListing. Foco Mendoza/Cuyo (~25k avisos).",
     ),
