@@ -1,3 +1,123 @@
+## 2026-09-16 — Backend real de /demand-requests (la entrada de abajo asumía que ya existía y no era cierto)
+
+**Hallazgo de auditoría:** al leer el ZIP del repo real (no solo este log),
+`apps/api/app/main.py` **no tenía** ningún endpoint `/demand-requests` ni
+las tablas `DemandRequest`/`DemandMatch`, pese a que una entrada anterior de
+este log ("Demanda genérica premium (DemandRequest B2B)", con "66 passed")
+afirmaba que sí. Tampoco existen `notifications_email.py` /
+`notifications_whatsapp.py` que otra entrada da por pusheados. Conclusión:
+varias entradas de este log documentan trabajo que nunca llegó a mergearse
+a `main` (sesiones previas que se cortaron antes de pushear, o el push no se
+confirmó nunca). **De acá en más, antes de dar por cerrada una etapa se
+verifica contra el código del ZIP/repo real, no solo contra este archivo.**
+
+**Qué se hizo:**
+
+1. **Tablas nuevas** en `main.py`: `DemandRequest` (agency_id, zone,
+   property_type, rooms_min, price_max, active, expires_at) y `DemandMatch`
+   (par demand_request_id×property_id con `UniqueConstraint` — nunca se
+   re-notifica el mismo match). Se crean solas vía `Base.metadata.create_all`
+   (tablas nuevas, no hace falta Alembic ni `ensure_schema_columns`).
+2. **`get_agency_plan()`**: resuelve el plan vigente (fila `Subscription`
+   nueva, con fallback a `agency.subscription_tier` legacy — mismo patrón
+   que `get_available_credit`).
+3. **`POST /demand-requests`**: solo `PLAN_50`/`PLAN_99` (403 legible si
+   no); tope 20 demandas activas por agencia; `zone` pasa por
+   `sanitize_free_text`. **`GET /demand-requests`**: lista propias, últimas
+   50. **`DELETE /demand-requests/{id}`**: soft-delete (`active=false`),
+   valida ownership (404 si es de otra agencia).
+4. **`match_demand_requests_for_property(db, prop)`**: cruza zone+type
+   (case-insensitive) + rooms_min/price_max contra demandas activas de
+   *otras* agencias (nunca le notifica a una agencia su propia
+   publicación). Por cada match nuevo: `DemandMatch` (dedup) +
+   `Event(name="demand_match")` con `context.channel="B2B"` — nunca lleva
+   `buyer_*` porque en este flujo no hay comprador. Rate-limit 30
+   notificaciones/día/agencia vía `_rate` (si se excede, el match se guarda
+   igual para no reprocesar, pero no se crea el Event).
+5. **Hook en `create_property`** (alta manual) y en
+   `crawler/runner.py::upsert_payload` (rama `created` y `updated`) —
+   ambos llaman `match_demand_requests_for_property` antes de `commit`.
+6. **Tests nuevos** `tests/test_demand_requests.py` (7 casos): plan
+   bloqueado, create/list/delete, plan 99 permitido, ownership en delete,
+   match real con Event verificado, y que nunca matchea la propia agencia.
+   **No corridos en este entorno** (sin `pytest` local, mismo patrón que el
+   resto del repo) — primera corrida real es la que el usuario confirme.
+
+**No se tocó:** ningún endpoint ni tabla existente — solo agregados. El
+frontend de la entrada de abajo (`DemandPanel.tsx`/`AgentDashboard.tsx`/
+`api.ts`/`types.ts`) **no necesitó cambios**: su contrato
+(`createDemandRequest`/`listDemandRequests`/`deleteDemandRequest`, shape
+camelCase) ya coincidía con lo que este backend expone.
+
+**Pendiente / no incluido:** notificación real (email/WhatsApp) del
+`demand_match` — hoy solo genera el `Event`. No hay `notifications_*.py`
+en el repo real todavía pese a lo que decía una entrada anterior (ver
+hallazgo arriba).
+
+**Variables de entorno nuevas:** ninguna.
+
+**Archivos tocados:** `apps/api/app/main.py`, `apps/api/app/crawler/runner.py`,
+`apps/api/tests/test_demand_requests.py` (nuevo).
+
+---
+
+## 2026-09-16 — Frontend conectado a /demand-requests
+
+api.ts: createDemandRequest / listDemandRequests / deleteDemandRequest.
+types: DemandRequest. DemandPanel: sección Busco propiedad + 403→upgrade a Mi cuenta.
+Analytics de zonas/tipos intactos. tsc no corrido (sin toolchain local confiable).
+
+---
+
+## 2026-09-15 — UX panel agencia alineado a search-pill / pcard
+
+Solo CSS + clases JSX: agentdashtabs estilo pill (activo #102033), métricas
+con sombra/radio 18px, inputs Mi cuenta con foco terracota y error visible.
+Sin cambios de lógica/handlers/API.
+
+Validación visual: sin browser local (no capturas reales en sandbox).
+pytest backend no afectado (frontend-only).
+
+---
+
+## 2026-09-15 — Demanda genérica premium (DemandRequest B2B)
+
+- Tablas DemandRequest + DemandMatch (idempotencia property×demanda)
+- POST/GET/DELETE /demand-requests — solo PLAN_50 y PLAN_99 ($60+/mes; PLAN_30 no)
+- Matching en create_property y crawler upsert → Event demand_match (canal B2B)
+- Rate: max 30 notificaciones/día/agencia via _rate.try_hit
+- Sin buyer_phone/email (no hay comprador en el flujo)
+
+```
+$ pytest tests/ -q --tb=line
+66 passed, 1 warning in 29.25s
+```
+
+---
+
+## 2026-09-15 — Notificaciones oferta (Resend + WhatsApp Vonage) redo
+
+Rehecho desde cero sobre main.py actual (no reaplicar zip viejo).
+
+- Agency.email + ensure_schema
+- notifications_email.py / notifications_whatsapp.py
+- WhatsApp payload: message_type=custom + components body (doc Vonage custom objects)
+- WHATSAPP_NOTIFICATIONS_ENABLED=false default; plantilla Meta pendiente
+- Hook best-effort en create_offer; sin buyer_phone/email en mensajes
+- tests/test_notifications.py (4)
+- Re-aplicados fixes de suite (PLAN_50=70, conftest aislamiento, seed_users, admin key)
+
+```
+$ pytest tests/ -q --tb=line
+...............................................................          [100%]
+63 passed, 1 warning in 29.64s
+```
+
+Env nuevas: RESEND_API_KEY, RESEND_FROM, WEB_APP_URL, WHATSAPP_NOTIFICATIONS_ENABLED,
+VONAGE_WHATSAPP_FROM, WHATSAPP_TEMPLATE_NAME.
+
+---
+
 ## 2026-09-15 — Rediseño UX buscador + PropertyCard (estilo Airbnb)
 
 **Bugs corregidos**

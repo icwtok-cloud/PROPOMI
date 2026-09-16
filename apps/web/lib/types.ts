@@ -10,6 +10,7 @@ export type LeadCredit={id:string;agencyId:string;cupo:number;consumido:number;a
 export type Agency={id:string;name:string;city:string;verified:boolean;claimed:boolean;phone?:string|null;verificationStatus?:string;instagram?:string|null;websiteLink?:string|null;freeLeadsRemaining?:number;slug?:string|null;subscriptionTier?:string|null;planLeadQuota?:number|null;leadsUsedCurrentPeriod?:number;subscriptionStartedAt?:string|null;availableCredit?:number;subscription?:Subscription|null;leadCredit?:LeadCredit|null};
 export type Opportunity={id:number;property_id?:string;user_id?:string;event:string;created_at:string;context:Record<string,unknown>};
 export type BuyerProfile={name:string;phone:string;email?:string;phoneVerified?:boolean;googleVerified?:boolean};
+export type DemandRequest={id:string;agencyId:string;zone:string;propertyType:string;roomsMin:number|null;priceMax:number|null;active:boolean;createdAt:string|null;expiresAt:string|null};
 export type DemandSummary={sampleSize:number;topZones:{zone:string;count:number}[];topTypes:{type:string;count:number}[];topOperations:{operation:string;count:number}[];avgResultCount:number|null};
 export type PendingAgency={id:string;name:string;city:string;phone?:string|null;claimed:boolean;instagram?:string|null;websiteLink?:string|null;verificationStatus:string;verificationPriority:number;verificationNotes?:string|null;verificationReviewedAt?:string|null};
 export type ReviewQueueItem={property:Property;candidate:Property|null};

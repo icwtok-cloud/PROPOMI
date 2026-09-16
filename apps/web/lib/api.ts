@@ -1,4 +1,4 @@
-import {Agency,BuyerProfile,DemandSummary,EventName,Intent,Lead,Offer,Opportunity,PendingAgency,Property,ReviewQueueItem,Role,Session} from './types';
+import {Agency,BuyerProfile,DemandRequest,DemandSummary,EventName,Intent,Lead,Offer,Opportunity,PendingAgency,Property,ReviewQueueItem,Role,Session} from './types';
 export type {PendingAgency,ReviewQueueItem} from './types';
 
 import {PROPERTIES} from './data';
@@ -123,6 +123,26 @@ export async function getAnalytics(session?:Session|null){if(!base)return {prope
 // que ya se vienen guardando desde GET /properties (Etapa 3 v1). En modo
 // demo (sin NEXT_PUBLIC_API_URL) devuelve un shape vacío pero válido para
 // no romper el panel mientras no hay backend real conectado.
+
+export type DemandRequestCreate={zone:string;property_type?:string;rooms_min?:number|null;price_max?:number|null};
+
+/** POST /demand-requests — 403 si plan <$60 (mensaje legible en Error.message). */
+export async function createDemandRequest(payload:DemandRequestCreate,session:Session){
+  return req<DemandRequest>('/demand-requests',{method:'POST',body:JSON.stringify({
+    zone:payload.zone,
+    property_type:payload.property_type||'Departamento',
+    rooms_min:payload.rooms_min??null,
+    price_max:payload.price_max??null,
+  })},session.token);
+}
+
+export async function listDemandRequests(session:Session){
+  return req<DemandRequest[]>('/demand-requests',undefined,session.token);
+}
+
+export async function deleteDemandRequest(id:string,session:Session){
+  return req<{id:string;active:boolean}>(`/demand-requests/${id}`,{method:'DELETE'},session.token);
+}
 export async function getAnalyticsDemand(session?:Session|null){if(!base)return {sampleSize:0,topZones:[],topTypes:[],topOperations:[],avgResultCount:null} as DemandSummary;if(!session)throw new Error('Sesión de agente requerida');return req<DemandSummary>('/analytics/demand',undefined,session.token)}
 
 // Etapa 013: panel de administración interno. Usa X-Admin-Key en vez del

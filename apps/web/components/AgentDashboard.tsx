@@ -92,6 +92,7 @@ export default function AgentDashboard(){
   const [busy,setBusy]=useState(false);
 
   useEffect(()=>{const s=getAgentSession();setSession(s);setReady(true)},[]);
+  useEffect(()=>{const h=()=>setSection('cuenta');window.addEventListener('propomi:goto-cuenta',h);return()=>window.removeEventListener('propomi:goto-cuenta',h)},[]);
   useEffect(()=>{if(!session)return;(async()=>{
     const [a,o,opp,an,props]=await Promise.all([
       getAgency(session.user.agency_id,session),
@@ -222,7 +223,7 @@ export default function AgentDashboard(){
 
   const storefrontPath=agency?.slug?`/tienda/${agency.slug}`:null;
 
-  return <div className="container">
+  return <div className="container agent-panel">
     <div className="agentdashhead">
       <div>
         <span className="eyebrow">Panel de agencia</span>
@@ -373,9 +374,9 @@ export default function AgentDashboard(){
           </div>
         </div>
         <div className="account-form-grid">
-          <label>Nombre de la agencia<input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}/></label>
-          <label>Instagram (requerido para verificarte)<input value={instagramDraft} onChange={e=>setInstagramDraft(e.target.value)} placeholder="@tuagencia"/></label>
-          <label className="account-span-2">Sitio web (opcional)<input value={websiteDraft} onChange={e=>setWebsiteDraft(e.target.value)} placeholder="https://tuagencia.com"/></label>
+          <label className="agent-field">Nombre de la agencia<input value={nameDraft} onChange={e=>setNameDraft(e.target.value)}/></label>
+          <label className="agent-field">Instagram (requerido para verificarte)<input value={instagramDraft} onChange={e=>setInstagramDraft(e.target.value)} placeholder="@tuagencia"/></label>
+          <label className="agent-field account-span-2">Sitio web (opcional)<input value={websiteDraft} onChange={e=>setWebsiteDraft(e.target.value)} placeholder="https://tuagencia.com"/></label>
         </div>
         {agency?.verificationStatus!=='VERIFIED' && (
           <div className="notice" style={{marginTop:12}}>

@@ -146,7 +146,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
 
 def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
     """Upsert de un único payload ya normalizado. Devuelve 'created'|'updated'|'skipped'."""
-    from app.main import Property, MAX_PROPERTY_IMAGES
+    from app.main import Property, MAX_PROPERTY_IMAGES, match_demand_requests_for_property
     from sqlalchemy import select as sa_select
 
     src_url = payload.get("source_url") or ""
@@ -187,6 +187,7 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
             existing.priority_score = float(payload["priority_score"])
         if payload.get("origin_published_at"):
             existing.origin_published_at = payload["origin_published_at"]
+        match_demand_requests_for_property(db, existing)
         return "updated"
 
     prop = Property(
@@ -216,6 +217,8 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         priority_score=float(payload.get("priority_score") or 0),
     )
     db.add(prop)
+    db.flush()
+    match_demand_requests_for_property(db, prop)
     return "created"
 
 

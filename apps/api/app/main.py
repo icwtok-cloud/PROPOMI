@@ -25,7 +25,7 @@ from google.oauth2 import id_token as google_id_token
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, create_engine, select, text, inspect, or_
+from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, create_engine, select, text, inspect, or_
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from .sms_vonage import VonageSMSError, send_otp_sms
@@ -362,6 +362,35 @@ class LeadCredit(Base):
     consumido: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class DemandRequest(Base):
+    """Demanda gen�rica B2B: una agencia con plan PLAN_50/PLAN_99 publica que
+    busca cierto tipo de propiedad para un comprador propio, sin exponer datos
+    de ese comprador. Al entrar una propiedad nueva/actualizada (alta manual o
+    crawler) que matchea, se genera un DemandMatch + Event('demand_match')
+    para la agencia due�a de la demanda � canal agente-a-agente, siempre
+    gratis (no consume cupo de reveal, no expone buyer_*)."""
+    __tablename__ = "demand_requests"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    agency_id: Mapped[str] = mapped_column(String(40), index=True)
+    zone: Mapped[str] = mapped_column(String(120))
+    property_type: Mapped[str] = mapped_column(String(60), default="Departamento")
+    rooms_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    price_max: Mapped[float | None] = mapped_column(Float, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class DemandMatch(Base):
+    """Idempotencia property x demanda: nunca se re-notifica el mismo par."""
+    __tablename__ = "demand_matches"
+    __table_args__ = (UniqueConstraint("demand_request_id", "property_id", name="uq_demand_match_pair"),)
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    demand_request_id: Mapped[str] = mapped_column(String(40), index=True)
+    property_id: Mapped[str] = mapped_column(String(40), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class User(Base):
@@ -737,6 +766,78 @@ def get_lead_credit(db: Session, agency_id: str) -> LeadCredit | None:
 
 def get_subscription(db: Session, agency_id: str) -> Subscription | None:
     return db.scalar(select(Subscription).where(Subscription.agency_id == agency_id))
+
+
+def get_agency_plan(db: Session, agency: Agency) -> str:
+    """Plan vigente resuelto: fila Subscription nueva, con fallback a la
+    columna DEPRECATED agency.subscription_tier (mismo patr�n que
+    get_available_credit/consume_reveal_credit)."""
+    sub = get_subscription(db, agency.id)
+    if sub:
+        return sub.plan
+    return agency.subscription_tier or SubscriptionPlan.PAY_PER_LEAD.value
+
+
+DEMAND_REQUEST_ALLOWED_PLANS = {SubscriptionPlan.PLAN_50.value, SubscriptionPlan.PLAN_99.value}
+DEMAND_REQUEST_MAX_ACTIVE_PER_AGENCY = 20
+DEMAND_REQUEST_TTL_DAYS = 30
+DEMAND_MATCH_DAILY_LIMIT_PER_AGENCY = 30
+
+
+def match_demand_requests_for_property(db: Session, prop: "Property") -> int:
+    """Cruza una propiedad reci�n creada/actualizada (alta manual o crawler)
+    contra demand_requests activas de OTRAS agencias. Crea DemandMatch +
+    Event('demand_match') por cada match nuevo (idempotente por
+    UniqueConstraint). Nunca expone buyer_* (no hay comprador en este flujo,
+    es agencia-a-agencia). Rate-limit de notificaciones: 30/d�a/agencia via
+    _rate, para no saturar a una agencia con muchas demandas activas."""
+    if not prop.zone or not prop.type:
+        return 0
+    now = datetime.now(timezone.utc)
+    candidates = db.scalars(
+        select(DemandRequest).where(
+            DemandRequest.active == True,  # noqa: E712
+            DemandRequest.zone.ilike(prop.zone.strip()),
+            DemandRequest.property_type.ilike((prop.type or "").strip()),
+        )
+    ).all()
+    created = 0
+    for demand in candidates:
+        if prop.agency_id and demand.agency_id == prop.agency_id:
+            continue  # nunca notificarle a la agencia su propia publicaci�n
+        if demand.expires_at and demand.expires_at < now:
+            continue
+        if demand.rooms_min is not None and (prop.rooms or 0) < demand.rooms_min:
+            continue
+        if demand.price_max is not None and (prop.price or 0) > demand.price_max:
+            continue
+        already = db.scalar(
+            select(DemandMatch).where(
+                DemandMatch.demand_request_id == demand.id,
+                DemandMatch.property_id == prop.id,
+            )
+        )
+        if already:
+            continue
+        db.add(DemandMatch(id=f"dm-{uuid.uuid4().hex[:12]}", demand_request_id=demand.id, property_id=prop.id))
+        try:
+            _rate.check(f"demand-match:{demand.agency_id}", limit=DEMAND_MATCH_DAILY_LIMIT_PER_AGENCY, window=86400)
+            db.add(Event(
+                name="demand_match",
+                property_id=prop.id,
+                agency_id=demand.agency_id,
+                context={
+                    "demand_request_id": demand.id,
+                    "zone": demand.zone,
+                    "property_type": demand.property_type,
+                    "matched_agency_id": prop.agency_id,
+                    "channel": "B2B",
+                },
+            ))
+        except HTTPException:
+            pass  # tope diario alcanzado: se guarda el match pero no se re-notifica
+        created += 1
+    return created
 
 
 def get_available_credit(db: Session, agency_id: str) -> int:
@@ -1324,6 +1425,9 @@ ALLOWED_EVENTS = {
     # abajo) y tambi�n queda permitido ac� por si el frontend alguna vez
     # necesita loguearlo manual v�a POST /events.
     "search_performed",
+    # Etapa demanda gen�rica B2B: se crea autom�ticamente desde el matching
+    # en create_property/crawler upsert, nunca manual v�a POST /events.
+    "demand_match",
 }
 
 
@@ -1475,6 +1579,13 @@ class AgencyUpdate(BaseModel):
 
 class PhoneIn(BaseModel):
     phone: str = Field(min_length=6, max_length=40)
+
+
+class DemandRequestIn(BaseModel):
+    zone: str = Field(min_length=2, max_length=120)
+    property_type: str = Field(default="Departamento", max_length=60)
+    rooms_min: int | None = Field(default=None, ge=0, le=20)
+    price_max: float | None = Field(default=None, ge=0)
 
 
 def ensure_seed(db: Session) -> None:
@@ -2042,10 +2153,88 @@ def create_property(payload: PropertyCreateIn, session: dict[str, Any] = Depends
             listing_group_id=group_id,
         )
         db.add(prop)
+        db.flush()
+        match_demand_requests_for_property(db, prop)
         db.commit()
         db.refresh(prop)
         return prop_dict(prop)
 
+
+def demand_request_dict(d: DemandRequest) -> dict[str, Any]:
+    return {
+        "id": d.id,
+        "agencyId": d.agency_id,
+        "zone": d.zone,
+        "propertyType": d.property_type,
+        "roomsMin": d.rooms_min,
+        "priceMax": d.price_max,
+        "active": d.active,
+        "createdAt": d.created_at.isoformat() if d.created_at else None,
+        "expiresAt": d.expires_at.isoformat() if d.expires_at else None,
+    }
+
+
+@app.post("/demand-requests", status_code=201)
+def create_demand_request(payload: DemandRequestIn, session: dict[str, Any] = Depends(require_agent)):
+    """Demanda gen�rica B2B (plan maestro / Etapa Intelligence): solo agencias
+    con PLAN_50 o PLAN_99 (>= $60/mes) pueden publicar qu� est�n buscando para
+    recibir un aviso cuando entra o se actualiza una propiedad compatible de
+    OTRA agencia. Nunca hay comprador ni buyer_* en este flujo."""
+    with Session(engine) as db:
+        agency = db.get(Agency, session["agency_id"])
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+        plan = get_agency_plan(db, agency)
+        if plan not in DEMAND_REQUEST_ALLOWED_PLANS:
+            raise HTTPException(
+                status_code=403,
+                detail="Esta funci�n requiere plan PLAN_50 o PLAN_99. Actualiz� tu plan desde Mi cuenta.",
+            )
+        active_count = len(db.scalars(
+            select(DemandRequest.id).where(DemandRequest.agency_id == agency.id, DemandRequest.active == True)  # noqa: E712
+        ).all())
+        if active_count >= DEMAND_REQUEST_MAX_ACTIVE_PER_AGENCY:
+            raise HTTPException(status_code=400, detail=f"Llegaste al m�ximo de {DEMAND_REQUEST_MAX_ACTIVE_PER_AGENCY} demandas activas.")
+        zone = sanitize_free_text(payload.zone.strip(), campo="zone") or payload.zone.strip()
+        now = datetime.now(timezone.utc)
+        d = DemandRequest(
+            id=f"dr-{uuid.uuid4().hex[:12]}",
+            agency_id=agency.id,
+            zone=zone,
+            property_type=payload.property_type.strip() or "Departamento",
+            rooms_min=payload.rooms_min,
+            price_max=payload.price_max,
+            active=True,
+            created_at=now,
+            expires_at=now + timedelta(days=DEMAND_REQUEST_TTL_DAYS),
+        )
+        db.add(d)
+        db.commit()
+        db.refresh(d)
+        return demand_request_dict(d)
+
+
+@app.get("/demand-requests")
+def list_demand_requests(session: dict[str, Any] = Depends(require_agent)):
+    with Session(engine) as db:
+        rows = db.scalars(
+            select(DemandRequest)
+            .where(DemandRequest.agency_id == session["agency_id"])
+            .order_by(DemandRequest.created_at.desc())
+            .limit(50)
+        ).all()
+        return [demand_request_dict(d) for d in rows]
+
+
+@app.delete("/demand-requests/{demand_id}")
+def delete_demand_request(demand_id: str, session: dict[str, Any] = Depends(require_agent)):
+    with Session(engine) as db:
+        d = db.get(DemandRequest, demand_id)
+        if not d or d.agency_id != session["agency_id"]:
+            raise HTTPException(status_code=404, detail="Demanda no encontrada")
+        d.active = False
+        db.commit()
+        return {"id": d.id, "active": d.active}
 
 
 @app.post("/events", status_code=201)
