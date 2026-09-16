@@ -1,8 +1,8 @@
-﻿'use client';
+'use client';
 import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,Unlock,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -34,6 +34,11 @@ function LoginForm({onLoggedIn}:{onLoggedIn:(s:Session)=>void}){
   const [devCode,setDevCode]=useState<string|undefined>();
   const [error,setError]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);
+  const [suggestForId,setSuggestForId]=useState<string|null>(null);
+  const [suggestQuery,setSuggestQuery]=useState('');
+  const [suggestResults,setSuggestResults]=useState<Property[]>([]);
+  const [suggestBusy,setSuggestBusy]=useState(false);
+
 
   async function sendCode(){
     setError(null);
@@ -141,6 +146,32 @@ export default function AgentDashboard(){
   })().catch((e:any)=>{setLoadError(e?.message||'No pudimos cargar el panel de agencia.')})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
+
+  async function openSuggest(propertyId:string){
+    setSuggestForId(propertyId);
+    setSuggestQuery('');
+    setSuggestResults([]);
+    setSuggestBusy(true);
+    try{
+      const rows=await getProperties({exclude_agency_id:session?.user.agency_id||''});
+      setSuggestResults(Array.isArray(rows)?rows.slice(0,40):[]);
+    }catch(e:any){
+      notify(e?.message||'No pudimos cargar propiedades de otras agencias.');
+      setSuggestForId(null);
+    }finally{setSuggestBusy(false)}
+  }
+
+  async function confirmSuggest(suggestedId:string){
+    if(!session||!suggestForId)return;
+    setSuggestBusy(true);
+    try{
+      await suggestProperty(suggestForId,suggestedId,session);
+      notify('Sugerencia enviada al comprador.');
+      setSuggestForId(null);
+    }catch(e:any){
+      notify(e?.message||'No se pudo sugerir.');
+    }finally{setSuggestBusy(false)}
+  }
 
   async function copyShareLink(propertyId:string){
     const origin=agency?.slug||'agente';
@@ -364,6 +395,9 @@ export default function AgentDashboard(){
               <span>{p.currency} {Number(p.price).toLocaleString('en-US')}</span>
               <button type="button" className="secondary" style={{padding:'6px 10px',fontSize:12}} onClick={()=>copyShareLink(p.id)}>
                 <Copy size={13}/> Copiar link
+              </button>
+              <button type="button" className="secondary" style={{padding:'6px 10px',fontSize:12}} onClick={()=>openSuggest(p.id)}>
+                Sugerir a otro comprador
               </button>
             </div>
           </div>
@@ -596,6 +630,44 @@ export default function AgentDashboard(){
       </div>
     </div>}
 
-    {toast && <div className="toast"><Check size={17}/>{toast}</div>}
+    {suggestForId && (
+      <div className="modalback" onClick={()=>setSuggestForId(null)}>
+        <div className="modal" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
+          <div className="modalhead">
+            <div>
+              <div className="eyebrow">Sugerir a otro comprador</div>
+              <h2 style={{fontSize:20,margin:0}}>Elegí una propiedad de otra agencia</h2>
+            </div>
+            <button type="button" className="close" onClick={()=>setSuggestForId(null)}>×</button>
+          </div>
+          <p className="muted small">Solo se sugiere si hay un comprador activo (oferta) sobre tu propiedad. No se comparte su contacto con la otra agencia hasta que se interese.</p>
+          <label className="agent-field">Filtrar
+            <input value={suggestQuery} onChange={e=>setSuggestQuery(e.target.value)} placeholder="Zona o título…"/>
+          </label>
+          {suggestBusy && <p className="muted small">Cargando…</p>}
+          <div style={{maxHeight:320,overflow:'auto',display:'grid',gap:8,marginTop:12}}>
+            {suggestResults
+              .filter(r=>{
+                const q=suggestQuery.trim().toLowerCase();
+                if(!q)return true;
+                return (r.title||'').toLowerCase().includes(q)||(r.zone||'').toLowerCase().includes(q);
+              })
+              .map(r=>(
+                <div key={r.id} className="opprow" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
+                  <div>
+                    <strong>{r.title}</strong>
+                    <div className="muted small">{r.zone} · USD {Number(r.price||0).toLocaleString('en-US')}</div>
+                  </div>
+                  <button type="button" className="primary" disabled={suggestBusy} onClick={()=>confirmSuggest(r.id)}>Sugerir</button>
+                </div>
+              ))}
+            {!suggestBusy && suggestResults.length===0 && (
+              <div className="empty">No hay otras propiedades en el catálogo.</div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+{toast && <div className="toast"><Check size={17}/>{toast}</div>}
   </div>;
 }

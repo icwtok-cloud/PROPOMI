@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import hashlib
 import hmac
@@ -118,6 +118,7 @@ ADMIN_KEY = ADMIN_KEY or "dev-only-admin-key"
 # ---------------------------------------------------------------------------
 RATE_OTP_PER_PHONE = int(os.getenv("RATE_OTP_PER_PHONE", "5"))   # /15 min
 RATE_OTP_PER_IP = int(os.getenv("RATE_OTP_PER_IP", "20"))         # /15 min
+RATE_SUGGESTIONS_PER_AGENCY_DAILY = int(os.getenv("RATE_SUGGESTIONS_PER_AGENCY_DAILY", "20"))  # /24h
 RATE_AUTH_PER_IP = int(os.getenv("RATE_AUTH_PER_IP", "30"))       # /15 min
 RATE_ADMIN_PER_IP = int(os.getenv("RATE_ADMIN_PER_IP", "60"))     # /15 min
 _RATE_WINDOW_SEC = 15 * 60
@@ -603,6 +604,23 @@ class ContactRequest(Base):
     billable: Mapped[bool] = mapped_column(Boolean, default=True)
     shared_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+
+class PropertySuggestion(Base):
+    """Sugerencia B2B: Agencia 1 muestra al comprador una propiedad de Agencia 2.
+    El contacto del comprador NO se filtra a Agencia 2 hasta ENGAGED (Event en Oportunidades)."""
+    __tablename__ = "property_suggestions"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    source_offer_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_property_id: Mapped[str] = mapped_column(String(40), index=True)
+    suggested_property_id: Mapped[str] = mapped_column(String(40), index=True)
+    suggesting_agency_id: Mapped[str] = mapped_column(String(40), index=True)
+    target_agency_id: Mapped[str] = mapped_column(String(40), index=True)
+    buyer_session_id: Mapped[str] = mapped_column(String(40), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="SENT")  # SENT | VIEWED | ENGAGED | DISMISSED
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+    engaged_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 
@@ -2061,6 +2079,7 @@ def properties(
     zone: str | None = None, city: str | None = None, type: str | None = None, operation: str | None = None,
     rooms: int | None = None, max_price: float | None = None, parking: bool | None = None,
     credit: bool | None = None, agency_id: str | None = None,
+    exclude_agency_id: str | None = None,
     # Etapa 3 (secci�n 10 / fase Intelligence): session_id opcional del
     # frontend para poder agrupar b�squedas de una misma sesi�n an�nima sin
     # necesitar login (mismo campo que ya usa POST /events). authorization
@@ -2094,6 +2113,7 @@ def properties(
         if parking is not None: stmt = stmt.where(Property.parking == parking)
         if credit is not None: stmt = stmt.where(Property.credit == credit)
         if agency_id: stmt = stmt.where(Property.agency_id == agency_id)
+        if exclude_agency_id: stmt = stmt.where(Property.agency_id != exclude_agency_id)
         # Ocultas por antig�edad (MAX_AGE_DAYS): solo admin con include_hidden.
         if not (include_hidden and admin_ok):
             stmt = stmt.where(Property.hidden_at.is_(None))
@@ -3165,6 +3185,110 @@ def offer_action(offer_id: str, action: str, session: dict[str, Any] = Depends(r
             db.add(Event(name="negotiation_started", property_id=offer.property_id, user_id=offer.user_id, agency_id=prop.agency_id))
         db.commit()
         return {"status": status}
+
+
+
+class PropertySuggestIn(BaseModel):
+    suggested_property_id: str = Field(min_length=1, max_length=40)
+
+
+@app.post("/properties/{property_id}/suggest", status_code=201)
+def suggest_property(property_id: str, payload: PropertySuggestIn, session: dict[str, Any] = Depends(require_agent)):
+    """Agencia dueña de property_id sugiere al comprador activo otra propiedad de OTRA agencia."""
+    with Session(engine) as db:
+        source = db.get(Property, property_id)
+        if not source or source.agency_id != session["agency_id"]:
+            raise HTTPException(status_code=404, detail="Propiedad no encontrada o no te pertenece")
+        target = db.get(Property, payload.suggested_property_id)
+        if not target or target.hidden_at is not None:
+            raise HTTPException(status_code=404, detail="Propiedad sugerida no encontrada")
+        if not target.agency_id or target.agency_id == session["agency_id"]:
+            raise HTTPException(status_code=400, detail="La propiedad sugerida debe pertenecer a otra agencia")
+
+        _rate.check(
+            f"suggest:{session['agency_id']}",
+            RATE_SUGGESTIONS_PER_AGENCY_DAILY,
+            window=24 * 3600,
+        )
+
+        offer = db.scalars(
+            select(Offer).where(Offer.property_id == source.id).order_by(Offer.created_at.desc())
+        ).first()
+        if not offer:
+            raise HTTPException(status_code=400, detail="No hay comprador activo sobre esta propiedad para sugerirle algo")
+
+        sug_id = f"psg-{uuid.uuid4().hex[:12]}"
+        db.add(PropertySuggestion(
+            id=sug_id,
+            source_offer_id=offer.id,
+            source_property_id=source.id,
+            suggested_property_id=target.id,
+            suggesting_agency_id=session["agency_id"],
+            target_agency_id=target.agency_id,
+            buyer_session_id=offer.user_id,
+            status="SENT",
+        ))
+        db.add(Event(
+            name="property_suggested",
+            property_id=target.id,
+            user_id=offer.user_id,
+            agency_id=session["agency_id"],
+            context={
+                "source_property_id": source.id,
+                "target_agency_id": target.agency_id,
+                "suggestion_id": sug_id,
+            },
+        ))
+        db.commit()
+        return {"id": sug_id, "status": "SENT"}
+
+
+@app.get("/buyers/me/suggestions")
+def my_suggestions(session: dict[str, Any] = Depends(current_session)):
+    with Session(engine) as db:
+        rows = db.scalars(
+            select(PropertySuggestion)
+            .where(PropertySuggestion.buyer_session_id == session["user_id"])
+            .where(PropertySuggestion.status.in_(["SENT", "VIEWED"]))
+            .order_by(PropertySuggestion.created_at.desc())
+        ).all()
+        out = []
+        for r in rows:
+            target = db.get(Property, r.suggested_property_id)
+            if not target or target.hidden_at is not None:
+                continue
+            agency = db.get(Agency, r.suggesting_agency_id)
+            out.append({
+                "id": r.id,
+                "property": prop_dict(target),
+                "suggested_by_agency_name": agency.name if agency else None,
+                "source_property_id": r.source_property_id,
+                "status": r.status,
+            })
+        return {"suggestions": out}
+
+
+@app.post("/property-suggestions/{suggestion_id}/engage")
+def engage_suggestion(suggestion_id: str, session: dict[str, Any] = Depends(current_session)):
+    with Session(engine) as db:
+        sug = db.get(PropertySuggestion, suggestion_id)
+        if not sug or sug.buyer_session_id != session["user_id"]:
+            raise HTTPException(status_code=404, detail="Sugerencia no encontrada")
+        if sug.status != "ENGAGED":
+            sug.status = "ENGAGED"
+            sug.engaged_at = datetime.now(timezone.utc)
+            db.add(Event(
+                name="suggestion_engaged",
+                property_id=sug.suggested_property_id,
+                user_id=session["user_id"],
+                agency_id=sug.target_agency_id,
+                context={
+                    "suggestion_id": sug.id,
+                    "suggesting_agency_id": sug.suggesting_agency_id,
+                },
+            ))
+            db.commit()
+        return {"status": sug.status}
 
 
 @app.post("/contact-requests", status_code=201)

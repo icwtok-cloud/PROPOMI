@@ -1,3 +1,22 @@
+## 2026-09-16 — Agente→Agente: Sugerir otra propiedad (primera implementación)
+
+Estado previo: solo docs/AGENTE_A_AGENTE_DISENO.md; PropertySuggestion no existía en main.
+Implementado sobre d38b754:
+- Modelo PropertySuggestion + RATE_SUGGESTIONS_PER_AGENCY_DAILY (default 20/24h)
+- POST /properties/{id}/suggest (hidden_at target → 404; misma agencia → 400; sin oferta → 400)
+- GET /buyers/me/suggestions (omite hidden_at; sin buyer PII)
+- POST /property-suggestions/{id}/engage → Event suggestion_engaged para target_agency_id
+- GET /properties?exclude_agency_id=
+- Frontend: api.ts, tarjeta en modal page.tsx, botón AgentDashboard Propiedades
+- tests/test_property_suggestions.py: 6 passed
+
+Validado de verdad:
+- pytest tests/test_property_suggestions.py → 6 passed
+- pytest tests/ completo → 67 passed, 8 failed (fallos preexistentes en main: PLAN_50 cupo 60vs70, aislamiento security, icasas links, admin key, notifications mock, demand manual create) — no introducidos por este feature
+- npm run build: NO corrido (sin toolchain Next confiable en sandbox)
+
+---
+
 ## 2026-09-16 — Alta de agencia desde cero + canal WhatsApp para OTP + diseño Agente→Agente
 
 **1. Alta de agencia desde cero (bloqueo real encontrado y resuelto).**

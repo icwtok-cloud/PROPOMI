@@ -5,7 +5,7 @@ import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarC
 import PropertyCard from '../components/PropertyCard';
 import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
-import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters} from '../lib/api';
+import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters,getMySuggestions,engageSuggestion} from '../lib/api';
 import {Property,Offer} from '../lib/types';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
@@ -32,6 +32,10 @@ export default function Home(){
   const [compared,setCompared]=useState<string[]>([]);
   const [wizard,setWizard]=useState<{p:Property;mode:WizardMode}|null>(null);
   const [detail,setDetail]=useState<Property|null>(null);
+  const [buyerSuggestions,setBuyerSuggestions]=useState<Array<{id:string;property:Property;suggested_by_agency_name:string|null;source_property_id:string;status:string}>>([]);
+  useEffect(()=>{
+    getMySuggestions().then(r=>setBuyerSuggestions(r.suggestions||[])).catch(()=>setBuyerSuggestions([]));
+  },[]);
   const [photoIdx,setPhotoIdx]=useState(0);
   const [offers,setOffers]=useState<Offer[]>([]);
   const [toast,setToast]=useState('');
@@ -444,6 +448,30 @@ export default function Home(){
           <div className="specs large">{detail.surface} m² · {detail.rooms} ambientes · {detail.bedrooms} dormitorios · {detail.bathrooms} baño</div>
           <div className="tags"><span>Fuente: {detail.source}</span><span>{detail.freshness}</span></div>
           <div className="detailactions">
+            {buyerSuggestions.filter(s=>s.source_property_id===detail.id).map(s=>(
+              <div key={s.id} className="summarycard" style={{marginBottom:12,padding:'14px 16px'}}>
+                <div className="eyebrow">Te puede interesar</div>
+                <p className="muted small" style={{margin:'6px 0 10px'}}>
+                  Te sugerimos esta propiedad de <strong>{s.suggested_by_agency_name||'otra agencia'}</strong> porque puede ajustarse mejor a tu búsqueda.
+                </p>
+                <div style={{display:'flex',gap:12,alignItems:'center',flexWrap:'wrap'}}>
+                  {(s.property.images?.[0]||s.property.image) ? (
+                    <img src={s.property.images?.[0]||s.property.image} alt="" style={{width:72,height:72,objectFit:'cover',borderRadius:10}}/>
+                  ) : null}
+                  <div style={{flex:1,minWidth:140}}>
+                    <strong>{s.property.title}</strong>
+                    <div className="muted small">{s.property.zone} · USD {Number(s.property.price||0).toLocaleString('en-US')}</div>
+                  </div>
+                  <button type="button" className="primary" onClick={async()=>{
+                    try{await engageSuggestion(s.id)}catch{}
+                    setDetail(s.property);
+                    setPhotoIdx(0);
+                    ev('property_view',s.property.id);
+                    getMySuggestions().then(r=>setBuyerSuggestions(r.suggestions||[])).catch(()=>{});
+                  }}>Ver propiedad</button>
+                </div>
+              </div>
+            ))}
             <button className="secondary" onClick={()=>{setDetail(null);setWizard({p:detail,mode:'question'})}}><MessageSquare size={15}/> Hacer pregunta</button>
             <button className="secondary" onClick={()=>{setDetail(null);setWizard({p:detail,mode:'visit'})}}><CalendarDays size={15}/> Pedir visita</button>
             <button className="primary" onClick={()=>{setDetail(null);setWizard({p:detail,mode:'offer'})}}>Proponer precio</button>

@@ -4,6 +4,29 @@ export type {PendingAgency,ReviewQueueItem} from './types';
 import {PROPERTIES} from './data';
 const base=process.env.NEXT_PUBLIC_API_URL;
 async function req<T>(path:string,init?:RequestInit,token?:string):Promise<T>{const r=await fetch(`${base}${path}`,{...init,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{}) ,...(init?.headers||{})},cache:'no-store'});if(!r.ok){let message=`Error ${r.status}`;let detail:any=undefined;try{const body=await r.json();detail=body?.detail;message=typeof detail==='string'?detail:(detail?.message||JSON.stringify(detail)||message)}catch{try{message=await r.text()||message}catch{}}const err:any=new Error(message);err.status=r.status;err.detail=detail;throw err}return r.json()}
+
+export async function suggestProperty(propertyId: string, suggestedPropertyId: string, session?: Session | null) {
+  if (!base) return { id: `demo-suggest-${Date.now()}`, status: 'SENT' };
+  return req<{id:string;status:string}>(`/properties/${propertyId}/suggest`, {
+    method: 'POST',
+    body: JSON.stringify({ suggested_property_id: suggestedPropertyId }),
+  }, session?.token);
+}
+
+export async function getMySuggestions(session?: Session | null) {
+  if (!base) return { suggestions: [] as Array<{id:string;property:Property;suggested_by_agency_name:string|null;source_property_id:string;status:string}> };
+  const s = session || await getOrCreateBuyerSession();
+  if (!s) throw new Error('Sesión requerida');
+  return req<{ suggestions: Array<{ id: string; property: Property; suggested_by_agency_name: string | null; source_property_id: string; status: string }> }>('/buyers/me/suggestions', undefined, s.token);
+}
+
+export async function engageSuggestion(suggestionId: string, session?: Session | null) {
+  if (!base) return { status: 'ENGAGED' };
+  const s = session || await getOrCreateBuyerSession();
+  if (!s) throw new Error('Sesión requerida');
+  return req<{status:string}>(`/property-suggestions/${suggestionId}/engage`, { method: 'POST' }, s.token);
+}
+
 export async function getProperties(filters?:Record<string,string|number|boolean>){if(!base){const agencyId=filters?.agency_id;return agencyId?PROPERTIES.filter(p=>p.agencyId===agencyId):PROPERTIES}const qs=new URLSearchParams();Object.entries(filters||{}).forEach(([k,v])=>v!==''&&v!==undefined&&qs.set(k,String(v)));return req<Property[]>(`/properties?${qs}`)}
 export async function getProperty(id:string){if(!base)return PROPERTIES.find(p=>p.id===id)!;return req<Property>(`/properties/${id}`)}
 export async function getPropertyFilters(){if(!base){const byCity:Record<string,string[]>={};PROPERTIES.forEach(p=>{byCity[p.city]=Array.from(new Set([...(byCity[p.city]||[]),p.zone]))});return {cities:Object.keys(byCity),zonesByCity:byCity}}return req<{cities:string[];zonesByCity:Record<string,string[]>}>('/properties/filters')}
