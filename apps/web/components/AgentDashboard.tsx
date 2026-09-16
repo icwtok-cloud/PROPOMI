@@ -34,11 +34,6 @@ function LoginForm({onLoggedIn}:{onLoggedIn:(s:Session)=>void}){
   const [devCode,setDevCode]=useState<string|undefined>();
   const [error,setError]=useState<string|null>(null);
   const [busy,setBusy]=useState(false);
-  const [suggestForId,setSuggestForId]=useState<string|null>(null);
-  const [suggestQuery,setSuggestQuery]=useState('');
-  const [suggestResults,setSuggestResults]=useState<Property[]>([]);
-  const [suggestBusy,setSuggestBusy]=useState(false);
-
 
   async function sendCode(){
     setError(null);
@@ -128,6 +123,10 @@ export default function AgentDashboard(){
   const [instagramDraft,setInstagramDraft]=useState('');
   const [websiteDraft,setWebsiteDraft]=useState('');
   const [busy,setBusy]=useState(false);
+  const [suggestForId,setSuggestForId]=useState<string|null>(null);
+  const [suggestQuery,setSuggestQuery]=useState('');
+  const [suggestResults,setSuggestResults]=useState<Property[]>([]);
+  const [suggestBusy,setSuggestBusy]=useState(false);
 
   useEffect(()=>{const s=getAgentSession();setSession(s);setReady(true)},[]);
   useEffect(()=>{const h=()=>setSection('cuenta');window.addEventListener('propomi:goto-cuenta',h);return()=>window.removeEventListener('propomi:goto-cuenta',h)},[]);
