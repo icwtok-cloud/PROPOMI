@@ -1,3 +1,27 @@
+## 2026-09-16 — Fix quirúrgico tanda1 v2 (mercadolibre/inmoup list_urls + links)
+
+- mercadolibre.list_urls_fn = queries.mercadolibre_list_urls (enabled=True)
+- inmoup.list_urls_fn = queries.inmoup_list_urls (ya no mercadolibre_list_urls)
+- links.py: una sola _mercadolibre (dominios listing + /MLA- relativo; sin CDN)
+- docstring selectors: 9 enabled reales
+- discover live ML Córdoba: 30 hrefs reales
+
+pytest: 75 passed, 9 failed (ver README_ENTREGA v2)
+
+---
+
+## 2026-09-16 — Crawler expansión AR+PY+UY (tanda 1)
+
+Nuevas enabled=True: infocasas_py, infocasas_uy, bienesonline (parsers + queries + links + fixtures + tests).
+Cola enabled=False documentada: remax_ar/py/uy, gallito_uy (CF), nestoria_ar (401), infocasas_ar (DNS), century21_ar.
+docs/FUENTES_CANDIDATAS_v2.md. No se tocó runner ni crawl_queue_priority.
+Techo real: lejos de 15/país sin anti-bot — 3 nuevas scrapeables esta tanda.
+
+pytest test_infocasas_regional + test_bienesonline_parser → 5 passed
+suite completa: ver README.
+
+---
+
 ## 2026-09-16 — crawl_queue_priority (orden de fuentes en corrida automática)
 
 Nuevo apps/api/app/crawler/crawl_queue_priority.py:

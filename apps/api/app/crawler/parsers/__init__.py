@@ -1,6 +1,8 @@
 from . import (
     argenprop,
+    bienesonline,
     cordobaprop,
+    infocasas,
     inmoup,
     inmoclick,
     mercadolibre,
@@ -20,6 +22,9 @@ PARSERS = {
     "properati": properati.parse_detail,
     "inmoup": inmoup.parse_detail,
     "inmoclick": inmoclick.parse_detail,
+    "infocasas_py": infocasas.parse_detail_py,
+    "infocasas_uy": infocasas.parse_detail_uy,
+    "bienesonline": bienesonline.parse_detail,
 }
 
 

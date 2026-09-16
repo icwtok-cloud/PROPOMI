@@ -84,27 +84,35 @@ def _mercado_unico(html: str, base_url: str) -> list[str]:
 
 
 def _mercadolibre(html: str, base_url: str) -> list[str]:
-    hrefs = re.findall(r'href="(https?://[^"]*MLA-?\d{8,}[^"]*)"', html)
-    return _dedupe(hrefs)
-
+    """Detalle MLA desde listado real (solo dominios *.mercadolibre.com.ar / path /MLA-)."""
+    hrefs = re.findall(
+        r'href="(https?://(?:inmueble|casa|departamento)\.mercadolibre\.com\.ar/[^"]*MLA-?\d+[^"]*)"',
+        html,
+    )
+    hrefs += re.findall(r'href="(/(?:MLA-?\d{8,14})[^"]*)"', html)
+    ids = re.findall(
+        r"(?:inmueble|casa|departamento)\.mercadolibre\.com\.ar/(MLA-?\d+)",
+        html,
+    )
+    ids += re.findall(r'href="/(MLA-?\d{8,14})"', html)
+    out = [urljoin(base_url, h) for h in hrefs]
+    for i in ids:
+        mid = i if i.startswith("MLA") else f"MLA-{i}"
+        mid = re.sub(r"MLA-+", "MLA-", mid)
+        out.append(f"https://inmueble.mercadolibre.com.ar/{mid}")
+    clean = []
+    for u in out:
+        u = u.split("#")[0].split("?")[0]
+        if "mlstatic.com" in u:
+            continue
+        clean.append(u)
+    return _dedupe(clean)
 
 
 def _inmoclick(html: str, base_url: str) -> list[str]:
     hrefs = re.findall(r'href="([^"]+/inmuebles/\d+/ficha/[^"]+)"', html)
     return _dedupe([urljoin(base_url, h) for h in hrefs])
 
-
-def _mercadolibre(html: str, base_url: str) -> list[str]:
-    # MLA ids en listado
-    ids = re.findall(r"(?:inmueble|casa|departamento)\.mercadolibre\.com\.ar/(MLA-?\d+)", html)
-    ids += re.findall(r"/(MLA-?\d{8,14})", html)
-    out = []
-    for i in ids:
-        mid = i if i.startswith("MLA") else f"MLA-{i}"
-        mid = mid.replace("MLA", "MLA-") if "MLA-" not in mid else mid
-        mid = re.sub(r"MLA-+", "MLA-", mid)
-        out.append(f"https://inmueble.mercadolibre.com.ar/{mid}")
-    return _dedupe(out)
 
 def _inmoup(html: str, base_url: str) -> list[str]:
     # Patrón real: /{agency-id}-{slug}/inmuebles/{n}/ficha/{slug-detalle}
@@ -117,6 +125,26 @@ def _properati(html: str, base_url: str) -> list[str]:
     return _dedupe([urljoin(base_url, h) for h in hrefs])
 
 
+
+def _infocasas(html: str, base_url: str) -> list[str]:
+    """InfoCasas: URLs en __NEXT_DATA__ o href absolutos con id numérico final."""
+    import json
+    urls: list[str] = []
+    m = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.S)
+    if m:
+        blob = m.group(1)
+        urls.extend(re.findall(r'https://www\.infocasas\.com\.(?:py|uy)/[^"\\]+/\d{6,}', blob))
+        for rel in re.findall(r'"link"\s*:\s*"(/[^"]+/\d{6,})"', blob):
+            urls.append(urljoin(base_url, rel))
+    urls.extend(re.findall(r'href="(https://www\.infocasas\.com\.(?:py|uy)/[^"]+/\d{6,})"', html))
+    return _dedupe(urls)
+
+
+def _bienesonline(html: str, base_url: str) -> list[str]:
+    hrefs = re.findall(r'href="(https://bienesonline\.ai/[^"]*/propiedad/\d+[^"]*)"', html)
+    hrefs += re.findall(r'href="(/es/[^"]*/propiedad/\d+[^"]*)"', html)
+    return _dedupe([urljoin(base_url, h) for h in hrefs])
+
 EXTRACTORS = {
     "zonaprop": _zonaprop,
     "argenprop": _argenprop,
@@ -125,9 +153,11 @@ EXTRACTORS = {
     "mercado_unico": _mercado_unico,
     "inmoclick": _inmoclick,
     "mercadolibre": _mercadolibre,
-    "mercadolibre": _mercadolibre,
     "properati": _properati,
     "inmoup": _inmoup,
+    "infocasas_py": _infocasas,
+    "infocasas_uy": _infocasas,
+    "bienesonline": _bienesonline,
 }
 
 

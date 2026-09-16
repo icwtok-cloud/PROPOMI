@@ -1,8 +1,11 @@
-"""Configuración por fuente: dominio, generador de URLs de listado, y si
-el robots.txt ya fue verificado manualmente (curl) antes de habilitarla.
+"""Configuración por fuente: dominio, generador de URLs de listado, robots_note.
 
-IMPORTANTE: `enabled=False` hasta confirmar robots.txt con curl manual
-(ver tarea 4 del roadmap). run_crawl() salta las fuentes no habilitadas.
+Estado 2026-09-16 (tanda 1 expansión AR/PY/UY):
+  enabled=True (9): cordobaprop, mendozaprop, mercado_unico, mercadolibre,
+    inmoup, inmoclick, infocasas_py, infocasas_uy, bienesonline.
+  enabled=False: zonaprop/argenprop/properati (anti-bot histórico) + cola
+    remax_*/gallito_uy/nestoria_ar/infocasas_ar/century21_ar (triage 2026-09-16).
+run_crawl() salta fuentes con enabled=False.
 """
 from __future__ import annotations
 
@@ -96,10 +99,7 @@ SOURCES: dict[str, SourceConfig] = {
         base_url="https://inmuebles.mercadolibre.com.ar",
         list_urls_fn=queries.mercadolibre_list_urls,
         enabled=True,
-        # Confirmado 2026-09-15: 403 Forbidden con la página de error propia
-        # de MercadoLibre incluso pidiendo /robots.txt — bot protection fuerte
-        # como se esperaba. No confirmable con curl simple.
-        robots_note="2026-09-15 re-eval: list+detail 200 sin challenge; JSON-LD Product viable. enabled=True.",
+        robots_note="2026-09-15 re-eval: list+detail 200 sin challenge; JSON-LD Product viable. list_urls=mercadolibre_list_urls. enabled=True.",
     ),
     "properati": SourceConfig(
         id="properati",
@@ -118,7 +118,7 @@ SOURCES: dict[str, SourceConfig] = {
         base_url="https://inmoup.com.ar",
         list_urls_fn=queries.inmoup_list_urls,
         enabled=True,
-        robots_note="Confirmado 2026-09-15: Allow general (bloquea /panel/ /json/ maps de ficha). HTML real 200 sin challenge; JSON-LD schema.org RealEstateListing. Foco Mendoza/Cuyo (~25k avisos).",
+        robots_note="Confirmado 2026-09-15: Allow general (bloquea /panel/ /json/ maps de ficha). HTML real 200 sin challenge; JSON-LD schema.org RealEstateListing. Foco Mendoza/Cuyo (~25k avisos). list_urls=inmoup_list_urls.",
     ),
     "inmoclick": SourceConfig(
         id="inmoclick",
@@ -130,4 +130,87 @@ SOURCES: dict[str, SourceConfig] = {
     ),
 
     
+
+    "infocasas_py": SourceConfig(
+        id="infocasas_py",
+        name="InfoCasas Paraguay",
+        base_url="https://www.infocasas.com.py",
+        list_urls_fn=queries.infocasas_py_list_urls,
+        enabled=True,
+        robots_note="2026-09-16: robots 200 Allow; list/detail SSR __NEXT_DATA__; fichas /{slug}/{id}. País completo PY.",
+    ),
+    "infocasas_uy": SourceConfig(
+        id="infocasas_uy",
+        name="InfoCasas Uruguay",
+        base_url="https://www.infocasas.com.uy",
+        list_urls_fn=queries.infocasas_uy_list_urls,
+        enabled=True,
+        robots_note="2026-09-16: robots 200 Allow; mismo backend que PY; list/detail __NEXT_DATA__. País completo UY.",
+    ),
+    "bienesonline": SourceConfig(
+        id="bienesonline",
+        name="BienesOnline Argentina",
+        base_url="https://bienesonline.ai",
+        list_urls_fn=queries.bienesonline_list_urls,
+        enabled=True,
+        robots_note="2026-09-16: bienesonline.com.ar → bienesonline.ai; robots 200; listado con href /propiedad/{id}; ficha JSON-LD RealEstateListing. Cobertura AR multi-provincia.",
+    ),
+    # --- Cola anti-bot / no viable (2026-09-16 triage) — enabled=False ---
+    "remax_ar": SourceConfig(
+        id="remax_ar",
+        name="RE/MAX Argentina",
+        base_url="https://www.remax.com.ar",
+        list_urls_fn=lambda: iter([]),
+        enabled=False,
+        robots_note="2026-09-16: robots 200 pero listados /listings/buy y /propiedades son shell sin hrefs de ficha ni JSON-LD/__NEXT_DATA__ (SPA). Sin discovery estático.",
+    ),
+    "remax_py": SourceConfig(
+        id="remax_py",
+        name="RE/MAX Paraguay",
+        base_url="https://www.remax.com.py",
+        list_urls_fn=lambda: iter([]),
+        enabled=False,
+        robots_note="2026-09-16: robots 200 Allow; homepage/listado ~2.5KB sin fichas (vacío o bloqueo soft). No extractable.",
+    ),
+    "remax_uy": SourceConfig(
+        id="remax_uy",
+        name="RE/MAX Uruguay",
+        base_url="https://www.remax.com.uy",
+        list_urls_fn=lambda: iter([]),
+        enabled=False,
+        robots_note="2026-09-16: robots 200 (mismo patrón AR); pendiente validar listado — asumir SPA como AR hasta re-eval.",
+    ),
+    "gallito_uy": SourceConfig(
+        id="gallito_uy",
+        name="Gallito Uruguay",
+        base_url="https://www.gallito.com.uy",
+        list_urls_fn=lambda: iter([]),
+        enabled=False,
+        robots_note="2026-09-16: robots 200 Allow+sitemap; listado /inmuebles → 403 Cloudflare challenge.",
+    ),
+    "nestoria_ar": SourceConfig(
+        id="nestoria_ar",
+        name="Nestoria Argentina",
+        base_url="https://www.nestoria.com.ar",
+        list_urls_fn=lambda: iter([]),
+        enabled=False,
+        robots_note="2026-09-16: robots.txt 401 Access Denied (bloqueo de borde).",
+    ),
+    "infocasas_ar": SourceConfig(
+        id="infocasas_ar",
+        name="InfoCasas Argentina",
+        base_url="https://www.infocasas.com.ar",
+        list_urls_fn=lambda: iter([]),
+        enabled=False,
+        robots_note="2026-09-16: DNS no resuelve www.infocasas.com.ar desde el entorno de triage (ERR). Re-evaluar; mismo producto que PY/UY si vuelve.",
+    ),
+    "century21_ar": SourceConfig(
+        id="century21_ar",
+        name="Century21 Argentina",
+        base_url="https://www.century21.com.ar",
+        list_urls_fn=lambda: iter([]),
+        enabled=False,
+        robots_note="2026-09-16: robots 200; /propiedades 404; home 200 sin patrón de ficha claro en triage — pendiente URL de listado real.",
+    ),
+
 }
