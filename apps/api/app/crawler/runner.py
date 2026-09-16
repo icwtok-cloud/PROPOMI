@@ -258,11 +258,18 @@ def run_source(db, source: SourceConfig) -> dict[str, Any]:
     return {"discovered": len(detail_urls), **stats}
 
 
-def run_crawl(db, source_ids: list[str] | None = None) -> dict[str, Any]:
+def run_crawl(
+    db,
+    source_ids: list[str] | None = None,
+    on_progress: Any | None = None,
+) -> dict[str, Any]:
     """Ejecuta crawl de las fuentes indicadas (default: habilitadas por prioridad).
 
     Sin source_ids (cron/automático): orden vía compute_source_priority(db).
     Con source_ids explícito (admin): se respeta el orden del caller sin reordenar.
+
+    on_progress(opcional): callable(dict) con estado parcial
+      {phase, current_source, completed_sources, sources, ok}.
     """
     if source_ids is not None:
         ids = list(source_ids)
@@ -273,17 +280,39 @@ def run_crawl(db, source_ids: list[str] | None = None) -> dict[str, Any]:
         except Exception:
             logger.exception("crawl_queue_priority failed; fallback a orden SOURCES")
             ids = [sid for sid, s in SOURCES.items() if s.enabled]
-    report: dict[str, Any] = {"sources": {}, "ok": True}
+    report: dict[str, Any] = {"sources": {}, "ok": True, "planned_sources": list(ids)}
+    completed: list[str] = []
 
+    def _emit(phase: str, current: str | None = None) -> None:
+        if not on_progress:
+            return
+        try:
+            on_progress({
+                "phase": phase,
+                "current_source": current,
+                "completed_sources": list(completed),
+                "planned_sources": list(ids),
+                "sources": dict(report["sources"]),
+                "ok": report["ok"],
+            })
+        except Exception:
+            logger.exception("on_progress callback failed")
+
+    _emit("started", None)
     for sid in ids:
         source = SOURCES.get(sid)
         if not source:
             report["sources"][sid] = {"error": "unknown source"}
             report["ok"] = False
+            completed.append(sid)
+            _emit("source_done", sid)
             continue
         if not source.enabled:
             report["sources"][sid] = {"skipped": True, "reason": source.robots_note or "disabled"}
+            completed.append(sid)
+            _emit("source_done", sid)
             continue
+        _emit("source_start", sid)
         try:
             stats = run_source(db, source)
             report["sources"][sid] = stats
@@ -292,5 +321,9 @@ def run_crawl(db, source_ids: list[str] | None = None) -> dict[str, Any]:
             logger.exception("crawler source=%s failed", sid)
             report["sources"][sid] = {"error": str(exc)}
             report["ok"] = False
+        completed.append(sid)
+        _emit("source_done", sid)
 
+    logger.info("crawler report=%s", report)
+    _emit("finished", None)
     return report

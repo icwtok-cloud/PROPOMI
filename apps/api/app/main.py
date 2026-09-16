@@ -22,7 +22,7 @@ import phonenumbers
 from google.auth import exceptions as google_auth_exceptions
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, create_engine, select, text, inspect, or_
@@ -139,6 +139,76 @@ class _RateLimiter:
             raise HTTPException(status_code=429, detail="Demasiados intentos. Prob� m�s tarde.")
         q.append(now)
 
+
+
+
+# Estado en memoria de corridas de crawler (admin). No persiste entre deploys.
+_CRAWL_RUNS: dict[str, dict[str, Any]] = {}
+_CRAWL_RUNS_LOCK = __import__("threading").Lock()
+_CRAWL_RUNS_MAX = 30
+
+
+def _crawl_run_upsert(run_id: str, **fields: Any) -> dict[str, Any]:
+    with _CRAWL_RUNS_LOCK:
+        row = _CRAWL_RUNS.get(run_id) or {
+            "crawl_run_id": run_id,
+            "status": "queued",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "source_ids": None,
+            "planned_sources": [],
+            "completed_sources": [],
+            "current_source": None,
+            "sources": {},
+            "ok": True,
+            "error": None,
+            "report": None,
+        }
+        row.update(fields)
+        row["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _CRAWL_RUNS[run_id] = row
+        # LRU simple: borrar los más viejos si hay demasiados
+        if len(_CRAWL_RUNS) > _CRAWL_RUNS_MAX:
+            ordered = sorted(_CRAWL_RUNS.items(), key=lambda kv: kv[1].get("created_at") or "")
+            for rid, _ in ordered[: max(0, len(_CRAWL_RUNS) - _CRAWL_RUNS_MAX)]:
+                _CRAWL_RUNS.pop(rid, None)
+        return dict(row)
+
+
+def _run_crawl_job(run_id: str, source_ids: list[str] | None) -> None:
+    """Worker de background: abre su propia sesión DB y actualiza _CRAWL_RUNS."""
+    from .crawler import run_crawl
+
+    def on_progress(snap: dict[str, Any]) -> None:
+        status = "running"
+        if snap.get("phase") == "finished":
+            status = "completed"
+        _crawl_run_upsert(
+            run_id,
+            status=status,
+            current_source=snap.get("current_source"),
+            completed_sources=snap.get("completed_sources") or [],
+            planned_sources=snap.get("planned_sources") or [],
+            sources=snap.get("sources") or {},
+            ok=snap.get("ok", True),
+        )
+
+    _crawl_run_upsert(run_id, status="running")
+    try:
+        with Session(engine) as db:
+            report = run_crawl(db, source_ids, on_progress=on_progress)
+        _crawl_run_upsert(
+            run_id,
+            status="completed",
+            current_source=None,
+            report=report,
+            sources=(report or {}).get("sources") or {},
+            planned_sources=(report or {}).get("planned_sources") or [],
+            completed_sources=list(((report or {}).get("sources") or {}).keys()),
+            ok=(report or {}).get("ok", True),
+        )
+    except Exception as exc:
+        _crawl_run_upsert(run_id, status="failed", error=str(exc), ok=False)
 
 _rate = _RateLimiter()
 
@@ -4294,24 +4364,69 @@ def admin_expire_stale_properties(request: Request, _: None = Depends(require_ad
     return result
 
 
-@app.post("/admin/crawler/run")
+@app.post("/admin/crawler/run", status_code=202)
 def admin_run_crawler(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
     sources: str | None = None,
+    source: str | None = None,
 ):
-    """Disparo manual del crawler (protegido por ADMIN_KEY). sources=zonaprop,argenprop"""
+    """Disparo asíncrono del crawler (ADMIN_KEY).
+
+    Responde 202 de inmediato con crawl_run_id. El trabajo corre en BackgroundTasks.
+    Query:
+      - sources=a,b,c  varias fuentes
+      - source=mercadolibre  atajo de una sola fuente (debug)
+    Sin params: todas las enabled (orden crawl_queue_priority).
+    Estado: GET /admin/crawler/status/{crawl_run_id}
+    """
     if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
-        raise HTTPException(status_code=401, detail="Admin key inv�lida")
+        raise HTTPException(status_code=401, detail="Admin key inválida")
     _rate.check(f"admin:ip:{_client_ip(request)}", RATE_ADMIN_PER_IP)
-    from .crawler import run_crawl
-    source_ids = [s.strip() for s in (sources or "").split(",") if s.strip()] or None
-    with Session(engine) as db:
-        report = run_crawl(db, source_ids)
+
+    source_ids: list[str] | None = None
+    if source and source.strip():
+        source_ids = [source.strip()]
+    elif sources and sources.strip():
+        source_ids = [s.strip() for s in sources.split(",") if s.strip()] or None
+
+    run_id = f"crun-{uuid.uuid4().hex[:12]}"
+    _crawl_run_upsert(run_id, status="queued", source_ids=source_ids)
+    background_tasks.add_task(_run_crawl_job, run_id, source_ids)
     log_admin_action(
         "crawler_run",
         "/admin/crawler/run",
-        detail={"sources": source_ids, "report_keys": list(report.keys()) if isinstance(report, dict) else []},
+        detail={"crawl_run_id": run_id, "sources": source_ids, "async": True},
         ip=_client_ip(request),
     )
-    return report
+    return {
+        "status": "accepted",
+        "crawl_run_id": run_id,
+        "sources": source_ids,
+        "message": "Crawl encolado. Consultá GET /admin/crawler/status/{crawl_run_id}",
+    }
+
+
+@app.get("/admin/crawler/status")
+@app.get("/admin/crawler/status/{crawl_run_id}")
+def admin_crawler_status(
+    request: Request,
+    crawl_run_id: str | None = None,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
+    """Progreso de una corrida (o la más reciente si no se pasa id)."""
+    if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
+        raise HTTPException(status_code=401, detail="Admin key inválida")
+    _rate.check(f"admin:ip:{_client_ip(request)}", RATE_ADMIN_PER_IP)
+    with _CRAWL_RUNS_LOCK:
+        if crawl_run_id:
+            row = _CRAWL_RUNS.get(crawl_run_id)
+            if not row:
+                raise HTTPException(status_code=404, detail="crawl_run_id desconocido")
+            return dict(row)
+        if not _CRAWL_RUNS:
+            return {"status": "idle", "message": "No hay corridas registradas en este proceso"}
+        latest = max(_CRAWL_RUNS.values(), key=lambda r: r.get("created_at") or "")
+        return dict(latest)
+

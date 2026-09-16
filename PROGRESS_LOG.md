@@ -1,3 +1,12 @@
+## 2026-09-16 — Crawler admin async (202 Accepted + status)
+
+POST /admin/crawler/run → 202 + crawl_run_id; BackgroundTasks ejecuta run_crawl.
+GET /admin/crawler/status[/{id}] progreso en memoria.
+Query source= y sources=a,b. Log final: crawler report={...}
+pytest test_crawler_async → 2 passed
+
+---
+
 ## 2026-09-16 — Fix quirúrgico tanda1 v2 (mercadolibre/inmoup list_urls + links)
 
 - mercadolibre.list_urls_fn = queries.mercadolibre_list_urls (enabled=True)
