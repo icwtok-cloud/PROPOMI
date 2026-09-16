@@ -259,8 +259,20 @@ def run_source(db, source: SourceConfig) -> dict[str, Any]:
 
 
 def run_crawl(db, source_ids: list[str] | None = None) -> dict[str, Any]:
-    """Ejecuta crawl de las fuentes indicadas (default: todas las habilitadas)."""
-    ids = source_ids or [sid for sid, s in SOURCES.items() if s.enabled]
+    """Ejecuta crawl de las fuentes indicadas (default: habilitadas por prioridad).
+
+    Sin source_ids (cron/automático): orden vía compute_source_priority(db).
+    Con source_ids explícito (admin): se respeta el orden del caller sin reordenar.
+    """
+    if source_ids is not None:
+        ids = list(source_ids)
+    else:
+        try:
+            from .crawl_queue_priority import compute_source_priority
+            ids = compute_source_priority(db)
+        except Exception:
+            logger.exception("crawl_queue_priority failed; fallback a orden SOURCES")
+            ids = [sid for sid, s in SOURCES.items() if s.enabled]
     report: dict[str, Any] = {"sources": {}, "ok": True}
 
     for sid in ids:

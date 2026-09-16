@@ -1,3 +1,17 @@
+## 2026-09-16 — crawl_queue_priority (orden de fuentes en corrida automática)
+
+Nuevo apps/api/app/crawler/crawl_queue_priority.py:
+  score = age_hours + 24 * demand_hits
+  demand_hits = DemandRequest activos cuya zone aparece en Property.source de la fuente
+  (proxy por inventario real; sin mapa estático fuente↔zona)
+run_crawl(db) sin source_ids usa compute_source_priority; con source_ids respeta el caller.
+Sin schema nuevo. CrawlCursor.error rate fuera de alcance.
+
+pytest tests/test_crawl_queue_priority.py → 4 passed
+suite completa: reportar en README.
+
+---
+
 ## 2026-09-16 — Agente→Agente: Sugerir otra propiedad (primera implementación)
 
 Estado previo: solo docs/AGENTE_A_AGENTE_DISENO.md; PropertySuggestion no existía en main.
