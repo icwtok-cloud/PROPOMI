@@ -1,4 +1,60 @@
-## 2026-09-16 — Backend real de /demand-requests (la entrada de abajo asumía que ya existía y no era cierto)
+## 2026-09-16 — Panel de agencia: pasada visual completa (Airbnb-style) + limpieza de huérfanos
+
+**Contexto:** el dueño reportó que `propomi.lat/agencia` se veía genérico
+("muy blanco") comparado con el home, que sí tiene el tratamiento Airbnb
+desde la etapa del 15/09. Se confirmó por comparación directa de CSS que el
+código deployado coincidía con el repo — no era un problema de build ni de
+dominio (`propomi.lat` y `propomi.vercel.app` mostraban lo mismo), sino que
+el rediseño de esa etapa nunca había tocado el panel de agencia en sí.
+
+**Cambios (solo `apps/web/app/globals.css` + íconos en `AgentDashboard.tsx`,
+sin tocar lógica/handlers/API):**
+1. `.agentdashhead` — pasa de texto plano a tarjeta oscura con el mismo
+   degradé/acento terracota del hero del home.
+2. `.agentmetrics` — de cajas chatas a tarjetas con ícono acento circular,
+   sombra y hover con elevación.
+3. `.agentdashtabs .tab` — pills redondeadas con hover terracota (antes
+   bordes rectos).
+4. `.account-usage-metrics` — borde acento terracota a la izquierda en vez
+   de gris plano.
+5. `.pricing-card` — fondo cálido (no blanco puro); "recomendado" y
+   "actual" con degradé terracota real (antes solo borde de color); ícono
+   sólido en esas dos; bullets con check terracota; CTA sólida terracota en
+   vez de blanca.
+6. `.reveal-single-card` — degradé cálido en vez de gris.
+7. `.offercard` / `.opprow` — borde-acento izquierdo, sombra y hover con
+   elevación (mismo lenguaje que las property cards del home).
+8. `.empty` (compartido en todo el sitio — home, admin, tienda, demanda) —
+   fondo cálido y borde punteado terracota en vez de gris/blanco.
+
+**Hallazgo de higiene de repo (no relacionado al código, pero relevante
+para el flujo de trabajo):** en la carpeta local del usuario habían quedado
+dos elementos huérfanos de sesiones anteriores:
+- `dashboard_dump.txt` — volcado viejo de `AgentDashboard.tsx` con el bug
+  de encoding ya corregido; era solo un archivo de trabajo, nunca formó
+  parte del repo.
+- `PROPOMI_cuenta_pricing_v1/` — carpeta de preparación de la entrega
+  "Mi cuenta — rediseño visual" del 15/09. Se verificó que su contenido
+  YA estaba aplicado en `main` (coincide con `account-usage-metrics` y
+  `pricing-grid` ya presentes) — o sea, esa entrega sí se había pusheado
+  bien en su momento, solo faltó borrar la carpeta de preparación después.
+  **No era trabajo pendiente.** Se le indicó al usuario borrarla.
+
+**Lección de proceso (para agregar a `CLAUDE.md` si se repite):** conviene
+correr `git status` al cerrar cada etapa para detectar carpetas de
+preparación sin limpiar antes de que se acumulen y generen falsas alarmas
+de "esto no se pusheó".
+
+**Validado:** comparación visual contra capturas reales de
+`propomi.lat/agencia` en dos momentos de la sesión (antes y después).
+No hay tsc ni pytest corridos (sin cambios de backend ni de tipos).
+
+**Archivos tocados:** `apps/web/app/globals.css`,
+`apps/web/components/AgentDashboard.tsx` (imports + íconos por métrica).
+
+---
+
+
 
 **Hallazgo de auditoría:** al leer el ZIP del repo real (no solo este log),
 `apps/api/app/main.py` **no tenía** ningún endpoint `/demand-requests` ni
