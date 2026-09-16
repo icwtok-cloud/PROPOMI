@@ -103,6 +103,14 @@ export async function createProperty(payload:PropertyCreatePayload,session:Sessi
 }
 
 export async function requestOtp(phone:string){if(!base)return {ok:true,message:'Código demo generado.',dev_code:'123456'};return req<{ok:boolean;message:string;dev_code?:string}>('/auth/otp/request',{method:'POST',body:JSON.stringify({phone})})}
+
+// Alta de agencia desde cero (sin propiedades previas descubiertas por el
+// crawler) — resuelve el 403 de /auth/otp/verify cuando el teléfono no
+// tiene ninguna Agency asociada todavía.
+export async function registerAgency(phone:string,name:string,city:string){
+  if(!base)return {agencyId:'demo-agency',message:'Agencia demo creada.'};
+  return req<{agencyId:string;message:string}>('/auth/agency/register',{method:'POST',body:JSON.stringify({phone,name,city})});
+}
 export async function verifyOtp(phone:string,code:string){if(!base)return {token:'demo-token',user:{id:'demo-agent',phone,role:'AGENTE' as const,agency_id:'a1'},relinked_count:2};return req<{token:string;user:Session['user'];relinked_count:number}>('/auth/otp/verify',{method:'POST',body:JSON.stringify({phone,code})})}
 
 // Etapa 2 (sección 6.2.1): verificación de celular del COMPRADOR — mismo

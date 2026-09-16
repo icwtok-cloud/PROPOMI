@@ -316,7 +316,7 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
           {identityError&&<div className="notice notice-error" style={{marginTop:10}}>{identityError}</div>}
           <div style={{marginTop:12}}>
             {!otpSent
-              ?<button className="secondary" disabled={otpBusy} onClick={sendOtp}>{otpBusy?'Enviando…':'Enviar código por SMS'}</button>
+              ?<button className="secondary" disabled={otpBusy} onClick={sendOtp}>{otpBusy?'Enviando…':'Enviar código por WhatsApp'}</button>
               :<div className="formgrid" style={{gridTemplateColumns:'1fr auto',gap:8,alignItems:'center'}}>
                 <input value={otpCode} onChange={e=>setOtpCode(e.target.value)} placeholder="Código de 6 dígitos" inputMode="numeric" maxLength={6}/>
                 <button className="primary" disabled={otpBusy||otpCode.trim().length<4} onClick={confirmOtp}>{otpBusy?'Verificando…':'Verificar'}</button>

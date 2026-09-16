@@ -130,7 +130,7 @@ export default function OnboardingPage(){
               )}
               {stage==="code" && (
                 <>
-                  <label>Código SMS<input value={code} onChange={e=>setCode(e.target.value)} placeholder="6 dígitos"/></label>
+                  <label>Código de WhatsApp<input value={code} onChange={e=>setCode(e.target.value)} placeholder="6 dígitos"/></label>
                   {devCode && <p className="muted small">Código de desarrollo: {devCode}</p>}
                   <button className="primary" disabled={busy} onClick={confirmCode}>Confirmar</button>
                 </>

@@ -1,4 +1,81 @@
-## 2026-09-16 — Panel de agencia: pasada visual completa (Airbnb-style) + limpieza de huérfanos
+## 2026-09-16 — Alta de agencia desde cero + canal WhatsApp para OTP + diseño Agente→Agente
+
+**1. Alta de agencia desde cero (bloqueo real encontrado y resuelto).**
+`/auth/otp/verify` devolvía 403 si el teléfono no estaba ya asociado a una
+`Agency` — no existía forma de que un agente sin propiedades previas
+crawleadas se registrara (el único camino existente, `/onboarding/{token}`,
+depende de que el crawler haya descubierto la agencia primero). Se agregó:
+- `POST /auth/agency/register` (`phone`,`name`,`city`) — crea `Agency` con
+  `verification_status=PENDING`, `claimed=true`. 409 si el teléfono ya tiene
+  agencia. Reutiliza `find_agency_by_phone`/`ensure_agency_slugs` existentes.
+- Después de este alta, el login sigue siendo el mismo flujo de OTP de
+  siempre (`/auth/otp/request` + `/auth/otp/verify`) — ya no rebota porque
+  `find_agency_by_phone` ahora encuentra la fila recién creada.
+- Frontend: `LoginForm` en `AgentDashboard.tsx` con toggle "¿Recién
+  arrancás? Creá tu agencia" que pide nombre+ciudad+teléfono y encadena
+  `registerAgency()` → `requestOtp()`. Nueva función `registerAgency` en
+  `lib/api.ts`.
+- Queda en PENDING igual que cualquier agencia — no salta la revisión
+  manual ni la exigencia de Instagram para verificarse.
+
+**2. Canal WhatsApp para OTP (a pedido — el usuario va a pagar plan Vonage).**
+Nuevo `apps/api/app/whatsapp_vonage.py`: Vonage **Messages API** (JWT RS256
+con `VONAGE_APPLICATION_ID`/`VONAGE_PRIVATE_KEY`, distinta de la SMS API
+classic que usa api_key+secret). Soporta modo `text` (solo válido en
+Sandbox de Vonage o dentro de sesión de 24hs) y modo `template` (requerido
+en producción — **Meta exige plantilla pre-aprobada para mensajes que
+inicia la empresa, como un OTP**; la aprobación la hace Meta, no Vonage, y
+no es instantánea). Selector nuevo en `main.py`:
+`OTP_SMS_PROVIDER=vonage_whatsapp` → `VonageWhatsappSender`. No se tocó el
+proveedor SMS existente (sigue con `OTP_SMS_PROVIDER=vonage`) ni el login
+de admin (`/admin/auth/login`), que sigue hardcodeado a SMS a propósito
+(canal separado para el dueño del producto).
+Dependencia nueva: `cryptography==44.0.0` (requerida por PyJWT para firmar
+RS256).
+Labels actualizados de "SMS" a "WhatsApp": botón del wizard del comprador
+(`IntentWizard.tsx`) y label de código en `onboarding/[token]/page.tsx`.
+**Pendiente del lado del usuario, no de código:** crear la Application en
+el dashboard de Vonage (par de claves), vincular el número de WhatsApp
+Business, y someter la plantilla de OTP a aprobación de Meta antes de
+pasar `OTP_SMS_PROVIDER=vonage_whatsapp` en producción.
+
+**3. Diseño completo de Agente→Agente ("Sugerir otra propiedad").**
+Se confirmó que es solo copy de marketing en el home — no existe backend.
+Diseño completo (modelo `PropertySuggestion`, 3 endpoints, reglas de
+privacidad/anti-abuso, UI en detalle de propiedad + `AgentDashboard`) en
+`docs/AGENTE_A_AGENTE_DISENO.md`. **No se construyó** — queda listo para
+pasar a una sesión de implementación dedicada (es una feature nueva de
+punta a punta, no un ajuste chico).
+
+**Aclaración sobre cobertura de crawler (pregunta del usuario en esta
+sesión):** las 4 provincias del piloto (Córdoba, Buenos Aires, Santa Fe,
+Mendoza) SÍ están cubiertas por las 6 fuentes `enabled=True` — no faltó
+alcance ahí. El límite de "pocas propiedades" es operativo: `render.yaml`
+tiene los cron jobs comentados por defecto (Render free no corre cron
+nativo) y `MAX_DETAILS_PER_SOURCE=80` × 6 fuentes ≈ 480 por corrida. La
+meta original de 15 portales por provincia (`docs/FUENTES_CANDIDATAS.md`)
+no es alcanzable en la práctica: de 50+ dominios evaluados, solo 6 pasan
+challenge/bot-protection sin herramientas pagas. Acción pendiente (gratis,
+sin código): dar de alta los 2 jobs de `docs/CRON_EXTERNO.md` en
+cron-job.org.
+
+**No se tocó:** endpoints de ofertas/reveal/pricing existentes. El OTP del
+comprador en `IntentWizard.tsx` ya estaba conectado de una sesión anterior
+(`requestOtp`/`verifyOtpBuyer`/`setBuyerSession`) — la nota de "pendiente"
+en `docs/PLAN_MAESTRO.md` sección 2.1 está desactualizada en ese punto.
+
+**Archivos tocados:** `apps/api/app/whatsapp_vonage.py` (nuevo),
+`apps/api/app/main.py`, `apps/api/requirements.txt`, `apps/web/lib/api.ts`,
+`apps/web/components/AgentDashboard.tsx`, `apps/web/components/IntentWizard.tsx`,
+`apps/web/app/onboarding/[token]/page.tsx`, `docs/AGENTE_A_AGENTE_DISENO.md` (nuevo).
+
+**No corrido en este entorno:** pytest (sin acceso), tsc (sin toolchain
+local confiable) — mismo patrón que el resto del repo. Revisión manual de
+sintaxis/imports aplicada.
+
+---
+
+
 
 **Contexto:** el dueño reportó que `propomi.lat/agencia` se veía genérico
 ("muy blanco") comparado con el home, que sí tiene el tratamiento Airbnb

@@ -2,7 +2,7 @@
 import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,Unlock,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency} from '../lib/api';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -25,8 +25,11 @@ function VerificationBadge({status}:{status?:string}){
 }
 
 function LoginForm({onLoggedIn}:{onLoggedIn:(s:Session)=>void}){
+  const [mode,setMode]=useState<'login'|'register'>('login');
   const [phone,setPhone]=useState('');
   const [code,setCode]=useState('');
+  const [agencyName,setAgencyName]=useState('');
+  const [agencyCity,setAgencyCity]=useState('');
   const [stage,setStage]=useState<'phone'|'code'>('phone');
   const [devCode,setDevCode]=useState<string|undefined>();
   const [error,setError]=useState<string|null>(null);
@@ -38,6 +41,18 @@ function LoginForm({onLoggedIn}:{onLoggedIn:(s:Session)=>void}){
     setBusy(true);
     try{const r=await requestOtp(phone.trim());setDevCode(r.dev_code);setStage('code')}
     catch(e:any){setError(e?.message||'No pudimos enviar el código.')}
+    finally{setBusy(false)}
+  }
+  async function createAgencyAndSendCode(){
+    setError(null);
+    if(phone.trim().length<6){setError('Ingresá un teléfono válido.');return}
+    if(agencyName.trim().length<2){setError('Ingresá el nombre de tu agencia.');return}
+    if(agencyCity.trim().length<2){setError('Ingresá tu ciudad.');return}
+    setBusy(true);
+    try{
+      await registerAgency(phone.trim(),agencyName.trim(),agencyCity.trim());
+      await sendCode();
+    }catch(e:any){setError(e?.message||'No pudimos crear la agencia.')}
     finally{setBusy(false)}
   }
   async function confirmCode(){
@@ -55,14 +70,32 @@ function LoginForm({onLoggedIn}:{onLoggedIn:(s:Session)=>void}){
 
   return <div className="agentlogin">
     <div className="eyebrow">Acceso de agencia</div>
-    <h3>Ingresá con tu celular</h3>
-    <p className="muted small">Usamos tu teléfono para vincular automáticamente las publicaciones que ya te pertenecen.</p>
-    {stage==='phone' ? (
+    <h3>{mode==='login'?'Ingresá con tu celular':'Creá tu agencia en Propomi'}</h3>
+    <p className="muted small">
+      {mode==='login'
+        ?'Usamos tu teléfono para vincular automáticamente las publicaciones que ya te pertenecen.'
+        :'Con tu teléfono, nombre de agencia y ciudad alcanza para arrancar. Después completás Instagram para verificarte.'}
+    </p>
+    {stage==='phone' && (
+      <button type="button" className="secondary" style={{marginBottom:12}} onClick={()=>{setMode(mode==='login'?'register':'login');setError(null)}}>
+        {mode==='login'?'¿Recién arrancás? Creá tu agencia':'¿Ya tenés cuenta? Iniciá sesión'}
+      </button>
+    )}
+    {stage==='phone' && mode==='register' && (
+      <div className="agentloginrow" style={{flexDirection:'column',alignItems:'stretch',gap:8}}>
+        <input value={agencyName} onChange={e=>setAgencyName(e.target.value)} placeholder="Nombre de tu agencia"/>
+        <input value={agencyCity} onChange={e=>setAgencyCity(e.target.value)} placeholder="Ciudad"/>
+        <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Ej: 11 5555 0101" inputMode="tel"/>
+        <button className="primary" disabled={busy} onClick={createAgencyAndSendCode}>{busy?'Creando…':'Crear agencia y enviar código'}</button>
+      </div>
+    )}
+    {stage==='phone' && mode==='login' && (
       <div className="agentloginrow">
         <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Ej: 11 5555 0101" inputMode="tel"/>
         <button className="primary" disabled={busy} onClick={sendCode}>{busy?'Enviando…':'Enviar código'}</button>
       </div>
-    ) : (
+    )}
+    {stage==='code' && (
       <div className="agentloginrow">
         <input value={code} onChange={e=>setCode(e.target.value)} placeholder="Código de 6 dígitos" inputMode="numeric"/>
         <button className="primary" disabled={busy} onClick={confirmCode}>{busy?'Verificando…':'Ingresar'}</button>

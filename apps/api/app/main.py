@@ -29,6 +29,7 @@ from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, Un
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from .sms_vonage import VonageSMSError, send_otp_sms
+from .whatsapp_vonage import VonageWhatsappError, send_otp_whatsapp
 
 # --------------------------------------------------------------------------
 # Filtro anti-fuga de contacto (ver doc 05 de la especificaci�n de negocio).
@@ -930,10 +931,20 @@ class VonageSmsSender:
             raise HTTPException(status_code=502, detail=f"No pudimos enviar el SMS: {exc}") from exc
 
 
+class VonageWhatsappSender:
+    def send(self, phone: str, code: str) -> None:
+        try:
+            send_otp_whatsapp(phone, code)
+        except VonageWhatsappError as exc:
+            raise HTTPException(status_code=502, detail=f"No pudimos enviar el código por WhatsApp: {exc}") from exc
+
+
 OTP_SMS_PROVIDER = os.getenv("OTP_SMS_PROVIDER", "dev").strip().lower()
 
 
 def _select_sms_sender() -> SmsSender:
+    if OTP_SMS_PROVIDER == "vonage_whatsapp":
+        return VonageWhatsappSender()
     if OTP_SMS_PROVIDER == "vonage":
         return VonageSmsSender()
     return MockSmsSender()
@@ -1624,6 +1635,59 @@ def guest_session():
         db.add(user)
         db.commit()
         return {"token": create_token(user), "user": {"id": user.id, "phone": user.phone, "role": user.role, "agency_id": user.agency_id}}
+
+
+class AgencyRegisterIn(BaseModel):
+    phone: str = Field(min_length=6, max_length=30)
+    name: str = Field(min_length=2, max_length=180)
+    city: str = Field(min_length=2, max_length=100)
+
+
+@app.post("/auth/agency/register", status_code=201)
+def register_agency(payload: AgencyRegisterIn, request: Request):
+    """Alta de agencia desde cero, sin depender de que el crawler la haya
+    'descubierto' antes (a diferencia del flujo /onboarding/{token}, pensado
+    para agencias con propiedades ya crawleadas). Un agente nuevo sin
+    inventario todavía no tenía forma de entrar: /auth/otp/verify devuelve
+    403 si el teléfono no está asociado a ninguna Agency. Este endpoint solo
+    crea el registro de Agency+teléfono; el login sigue siendo el mismo
+    flujo de OTP de siempre (request → verify), sin contraseña.
+
+    Queda en verification_status=PENDING igual que cualquier otra agencia
+    recién claimeada — dashboard básico, sin poder revelar contactos ni
+    publicar hasta que Instagram + revisión manual la pasen a VERIFIED
+    (mismo criterio que ya rige para el resto de las agencias)."""
+    phone = normalize_phone(payload.phone)
+    ip = _client_ip(request)
+    _rate.check(f"agency-register:ip:{ip}", RATE_AUTH_PER_IP)
+    if not phone:
+        raise HTTPException(status_code=400, detail="Ingresá un teléfono válido.")
+    name = payload.name.strip()
+    city = payload.city.strip()
+    if not name or not city:
+        raise HTTPException(status_code=400, detail="Completá nombre de la agencia y ciudad.")
+    with Session(engine) as db:
+        if find_agency_by_phone(db, phone):
+            raise HTTPException(
+                status_code=409,
+                detail="Ya existe una agencia registrada con este teléfono. Iniciá sesión normalmente pidiendo el código.",
+            )
+        agency = Agency(
+            id=f"ag-{uuid.uuid4().hex[:12]}",
+            name=name,
+            city=city,
+            phone=phone,
+            claimed=True,
+            verification_status="PENDING",
+        )
+        db.add(agency)
+        db.flush()
+        ensure_agency_slugs(db)
+        db.commit()
+        return {
+            "agencyId": agency.id,
+            "message": "Agencia creada. Ahora pedí el código a este mismo teléfono para entrar.",
+        }
 
 
 @app.post("/auth/otp/request")
