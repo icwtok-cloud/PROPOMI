@@ -111,3 +111,38 @@ def mercadolibre_list_urls() -> Iterator[str]:
     for prov in ("cordoba", "mendoza", "santa-fe", "buenos-aires"):
         yield f"https://inmuebles.mercadolibre.com.ar/casas/venta/{prov}/"
         yield f"https://inmuebles.mercadolibre.com.ar/departamentos/venta/{prov}/"
+
+
+def infocasas_py_list_urls() -> Iterator[str]:
+    """InfoCasas Paraguay — listados por ciudad principal (SSR + __NEXT_DATA__)."""
+    for path in (
+        "venta/inmuebles/asuncion",
+        "venta/inmuebles/san-lorenzo",
+        "venta/inmuebles/luque",
+        "venta/inmuebles/ciudad-del-este",
+        "venta",
+    ):
+        yield f"https://www.infocasas.com.py/{path}"
+
+
+def infocasas_uy_list_urls() -> Iterator[str]:
+    """InfoCasas Uruguay — listados por ciudad principal."""
+    for path in (
+        "venta/inmuebles/montevideo",
+        "venta/inmuebles/canelones",
+        "venta/inmuebles/maldonado",
+        "venta",
+    ):
+        yield f"https://www.infocasas.com.uy/{path}"
+
+
+def bienesonline_list_urls() -> Iterator[str]:
+    """BienesOnline AR — listado nacional + provinciales con href /propiedad/{id}."""
+    for path in (
+        "es/argentina",
+        "es/argentina/buenos-aires",
+        "es/argentina/cordoba",
+        "es/argentina/santa-fe",
+        "es/argentina/mendoza",
+    ):
+        yield f"https://bienesonline.ai/{path}"
