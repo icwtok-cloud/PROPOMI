@@ -5,7 +5,7 @@ import json
 import re
 from typing import Any
 
-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
+from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
 
 SOURCE = "cordobaprop"
 
@@ -105,7 +105,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         bathrooms=bathrooms,
         rooms=bedrooms,
         property_type=ptype,
-        operation="Venta",
+        operation=detect_operation_from_signals(url=url, html=html, title=title),
         images=images,
         agency_name=agency,
         origin_published_at=origin,

@@ -4,25 +4,71 @@ from __future__ import annotations
 import json
 import re
 
-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
+from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
 
 SOURCE = "mercadolibre"
 
 
 def _province_from_url_or_html(url: str, html: str) -> str:
+    """Mapeo exhaustivo de provincias AR (scale-inventory).
+
+    capital-federal / caba → "CABA" (no colapsar a Buenos Aires).
+    Orden: señales más específicas primero (CABA antes que Buenos Aires).
+    """
     u = url.lower()
-    h = html.lower()
-    for key, name in [
+    h = html.lower()[:8000]
+    # (key_in_url_or_html, canonical_name) — CABA primero
+    pairs = [
+        ("capital-federal", "CABA"),
+        ("capital_federal", "CABA"),
+        ("caba", "CABA"),
+        ("ciudad-autonoma", "CABA"),
+        ("ciudad-autónoma", "CABA"),
         ("cordoba", "Córdoba"),
         ("c%C3%B3rdoba", "Córdoba"),
+        ("córdoba", "Córdoba"),
         ("mendoza", "Mendoza"),
         ("santa-fe", "Santa Fe"),
         ("santa_fe", "Santa Fe"),
         ("buenos-aires", "Buenos Aires"),
-        ("capital-federal", "Buenos Aires"),
-        ("caba", "Buenos Aires"),
-    ]:
-        if key in u or key in h[:5000]:
+        ("bs-as", "Buenos Aires"),
+        ("provincia-de-buenos-aires", "Buenos Aires"),
+        ("catamarca", "Catamarca"),
+        ("chaco", "Chaco"),
+        ("chubut", "Chubut"),
+        ("corrientes", "Corrientes"),
+        ("entre-rios", "Entre Ríos"),
+        ("entre_rios", "Entre Ríos"),
+        ("entrerios", "Entre Ríos"),
+        ("formosa", "Formosa"),
+        ("jujuy", "Jujuy"),
+        ("la-pampa", "La Pampa"),
+        ("la_pampa", "La Pampa"),
+        ("la-rioja", "La Rioja"),
+        ("la_rioja", "La Rioja"),
+        ("misiones", "Misiones"),
+        ("neuquen", "Neuquén"),
+        ("neuquén", "Neuquén"),
+        ("rio-negro", "Río Negro"),
+        ("rio_negro", "Río Negro"),
+        ("río-negro", "Río Negro"),
+        ("salta", "Salta"),
+        ("san-juan", "San Juan"),
+        ("san_juan", "San Juan"),
+        ("san-luis", "San Luis"),
+        ("san_luis", "San Luis"),
+        ("santa-cruz", "Santa Cruz"),
+        ("santa_cruz", "Santa Cruz"),
+        ("santiago-del-estero", "Santiago del Estero"),
+        ("santiago_del_estero", "Santiago del Estero"),
+        ("tierra-del-fuego", "Tierra del Fuego"),
+        ("tierra_del_fuego", "Tierra del Fuego"),
+        ("tucuman", "Tucumán"),
+        ("tucumán", "Tucumán"),
+        ("tucum%C3%A1n", "Tucumán"),
+    ]
+    for key, name in pairs:
+        if key in u or key in h:
             return name
     return "Buenos Aires"
 
@@ -135,7 +181,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         province=province,
         rooms=rooms,
         property_type="Casa" if "casa" in (title + url).lower() else "Departamento",
-        operation="Venta",
+        operation=detect_operation_from_signals(url=url, html=html, title=title),
         images=images[:5],
         origin_published_at=origin or None,
     )

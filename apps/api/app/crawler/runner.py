@@ -40,6 +40,22 @@ MAX_LIST_PAGES_PER_SOURCE = 5
 MAX_DETAILS_PER_SOURCE = 80
 REQUEST_DELAY_SECONDS = 1.0
 
+# Overrides por fuente (scale-inventory): permiten subir topes en fuentes
+# con alto volumen / robots permisivos sin tocar el default global.
+MAX_LIST_PAGES_PER_SOURCE_OVERRIDE: dict[str, int] = {
+    "cordobaprop": 8,
+    "mercadolibre": 6,
+    "mendozaprop": 6,
+    "bienesonline": 6,
+}
+MAX_DETAILS_PER_SOURCE_OVERRIDE: dict[str, int] = {
+    "mercadolibre": 120,
+    "mendozaprop": 100,
+    "cordobaprop": 100,
+    "bienesonline": 100,
+    "mercado_unico": 90,
+}
+
 # Tope de paginación por fuente (robots.txt / cortesía). Al llegar se reinicia.
 SOURCE_MAX_PAGE: dict[str, int] = {
     "zonaprop": 5,  # robots.txt: solo páginas 1-5
@@ -47,6 +63,16 @@ SOURCE_MAX_PAGE: dict[str, int] = {
     "cordobaprop": 10,
     "inmoup": 5,
 }
+
+
+def max_list_pages_for(source_id: str) -> int:
+    """Tope de páginas de listado por corrida (override → default)."""
+    return MAX_LIST_PAGES_PER_SOURCE_OVERRIDE.get(source_id, MAX_LIST_PAGES_PER_SOURCE)
+
+
+def max_details_for(source_id: str) -> int:
+    """Tope de fichas por corrida (override → default)."""
+    return MAX_DETAILS_PER_SOURCE_OVERRIDE.get(source_id, MAX_DETAILS_PER_SOURCE)
 
 
 def _get(url: str, timeout: int = 20) -> str:
@@ -116,7 +142,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
     absolute_page = start_idx  # 0-based index in all_list_urls
 
     for list_url in list_slice:
-        if pages_fetched >= MAX_LIST_PAGES_PER_SOURCE:
+        if pages_fetched >= max_list_pages_for(source.id):
             break
         try:
             html = _get(list_url)
@@ -129,7 +155,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
         absolute_page += 1
         time.sleep(REQUEST_DELAY_SECONDS)
         try:
-            found = extract_detail_urls(source.id, html, source.base_url, limit=MAX_DETAILS_PER_SOURCE)
+            found = extract_detail_urls(source.id, html, source.base_url, limit=max_details_for(source.id))
         except KeyError:
             logger.warning("crawler source=%s sin extractor de links", source.id)
             break
@@ -137,7 +163,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
             if u not in seen:
                 seen.add(u)
                 urls.append(u)
-        if len(urls) >= MAX_DETAILS_PER_SOURCE:
+        if len(urls) >= max_details_for(source.id):
             break
 
     if cursor is not None:
@@ -150,7 +176,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
         cursor.total_seen = (cursor.total_seen or 0) + len(urls)
         db.flush()
 
-    return urls[:MAX_DETAILS_PER_SOURCE]
+    return urls[:max_details_for(source.id)]
 
 
 def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
@@ -174,7 +200,6 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         # podía corregir datos malos (ej. el mojibake de encoding) ni
         # reflejar cambios reales del portal de origen.
         existing.type = payload["type"] or existing.type
-        existing.operation = payload["operation"] or existing.operation
         existing.currency = payload["currency"] or existing.currency
         existing.zone = payload["zone"] or existing.zone
         existing.city = payload["city"] or existing.city
@@ -194,16 +219,31 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
             existing.images = payload["images"][:MAX_PROPERTY_IMAGES]
             existing.image = payload["images"][0]
         existing.last_seen_at = now
-        # Si el aviso reaparece en el portal, re-mostrar (plan maestro secc. 7)
-        existing.hidden_at = None
         if payload.get("priority_score") is not None:
             existing.priority_score = float(payload["priority_score"])
         if payload.get("origin_published_at"):
             existing.origin_published_at = payload["origin_published_at"]
+
+        # Gate de operación también en actualización: si ahora se detecta
+        # no-Venta, ocultar (hidden_at) sin borrar. Si sigue siendo Venta,
+        # re-mostrar (plan maestro secc. 7).
+        op = (payload.get("operation") or existing.operation or "Venta").strip()
+        existing.operation = op
+        if op != "Venta":
+            existing.hidden_at = now
+            logger.info(
+                "hiding existing listing source=%s url=%s operation=%s",
+                source_id,
+                src_url,
+                op,
+            )
+            return "updated"
+
+        existing.hidden_at = None
         match_demand_requests_for_property(db, existing)
         return "updated"
 
-    # Gate de operación: solo Venta entra al catálogo (solo altas nuevas).
+    # Gate de operación: solo Venta entra al catálogo (altas nuevas).
     # Protege contra parsers que hardcodean o filtran mal por URL.
     op = (payload.get("operation") or "Venta").strip()
     if op != "Venta":

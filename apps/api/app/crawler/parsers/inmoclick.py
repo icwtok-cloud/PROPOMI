@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
+from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
 
 SOURCE = "inmoclick"
 
@@ -90,6 +90,6 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         bathrooms=bathrooms,
         rooms=bedrooms,
         property_type="Casa" if re.search(r"casa|duplex|dúplex", title, re.I) else "Departamento",
-        operation="Venta",
+        operation=detect_operation_from_signals(url=url, html=html, title=title),
         images=images[:5],
     )

@@ -4,7 +4,7 @@ from __future__ import annotations
 import html as html_lib
 import re
 
-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
+from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
 
 SOURCE = "argenprop"
 
@@ -88,7 +88,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         bedrooms=bedrooms,
         rooms=bedrooms,
         property_type="Departamento",
-        operation="Venta",
+        operation=detect_operation_from_signals(url=url, html=html, title=title),
         images=images,
         origin_published_at=origin or None,
     )
