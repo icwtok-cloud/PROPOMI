@@ -30,6 +30,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from .sms_vonage import VonageSMSError, send_otp_sms
 from .whatsapp_vonage import VonageWhatsappError, send_otp_whatsapp
+from .whatsapp_cloud import WhatsappCloudError, send_otp_whatsapp_cloud
 
 # --------------------------------------------------------------------------
 # Filtro anti-fuga de contacto (ver doc 05 de la especificación de negocio).
@@ -1074,6 +1075,17 @@ class VonageWhatsappSender:
             raise HTTPException(status_code=502, detail=f"No pudimos enviar el código por WhatsApp: {exc}") from exc
 
 
+class WhatsappCloudSender:
+    def send(self, phone: str, code: str) -> None:
+        try:
+            send_otp_whatsapp_cloud(phone, code)
+        except WhatsappCloudError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"No pudimos enviar el código por WhatsApp: {exc}",
+            ) from exc
+
+
 OTP_SMS_PROVIDER = os.getenv("OTP_SMS_PROVIDER", "dev").strip().lower()
 
 
@@ -1082,6 +1094,8 @@ def _select_sms_sender() -> SmsSender:
         return VonageWhatsappSender()
     if OTP_SMS_PROVIDER == "vonage":
         return VonageSmsSender()
+    if OTP_SMS_PROVIDER == "whatsapp_cloud":
+        return WhatsappCloudSender()
     return MockSmsSender()
 
 
