@@ -29,7 +29,7 @@ export async function engageSuggestion(suggestionId: string, session?: Session |
 
 export async function getProperties(filters?:Record<string,string|number|boolean>){if(!base){const agencyId=filters?.agency_id;return agencyId?PROPERTIES.filter(p=>p.agencyId===agencyId):PROPERTIES}const qs=new URLSearchParams();Object.entries(filters||{}).forEach(([k,v])=>v!==''&&v!==undefined&&qs.set(k,String(v)));return req<Property[]>(`/properties?${qs}`)}
 export async function getProperty(id:string){if(!base)return PROPERTIES.find(p=>p.id===id)!;return req<Property>(`/properties/${id}`)}
-export async function getPropertyFilters(){if(!base){const byCity:Record<string,string[]>={}
+export async function getPropertyFilters(){if(!base){const byCity:Record<string,string[]>={};PROPERTIES.forEach(p=>{byCity[p.city]=Array.from(new Set([...(byCity[p.city]||[]),p.zone]))});return {cities:Object.keys(byCity),zonesByCity:byCity}}return req<{cities:string[];zonesByCity:Record<string,string[]>}>('/properties/filters')}
 export type GeoCatalog={countries:string[];provincesByCountry:Record<string,string[]>;citiesByProvince:Record<string,string[]>};
 export async function getGeoCatalog():Promise<GeoCatalog>{
   if(!base){
@@ -58,7 +58,6 @@ export async function getGeoCatalog():Promise<GeoCatalog>{
   }
   return req<GeoCatalog>('/geo/catalog');
 }
-;PROPERTIES.forEach(p=>{byCity[p.city]=Array.from(new Set([...(byCity[p.city]||[]),p.zone]))});return {cities:Object.keys(byCity),zonesByCity:byCity}}return req<{cities:string[];zonesByCity:Record<string,string[]>}>('/properties/filters')}
 export async function trackEvent(name:EventName,property_id?:string,context?:Record<string,unknown>,session?:Session|null){if(!base)return;return req('/events',{method:'POST',body:JSON.stringify({name,property_id,session_id:'web-session',context})},session?.token)}
 const BUYER_KEY='propomi-buyer-session';
 function getBuyerSession():Session|null{try{const raw=localStorage.getItem(BUYER_KEY);return raw?JSON.parse(raw):null}catch{return null}}
