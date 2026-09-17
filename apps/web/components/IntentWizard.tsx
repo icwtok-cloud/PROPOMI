@@ -30,7 +30,7 @@ const VISIT_SLOTS=[
   {label:'12 a 16hs',value:'12-16'},
   {label:'16 a 20hs',value:'16-20'},
 ];
-const STEP_COUNT=5;
+const STEP_COUNT=4;
 const fmt=(n:number)=>Math.round(n).toLocaleString('en-US');
 
 function isLikelyValidPhone(raw:string):boolean{
@@ -283,25 +283,9 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
       </div>}
 
       {step===4&&<div className="wizstep">
-        <div className="qlabel">Así queda tu {mode==='offer'?'propuesta':mode==='visit'?'solicitud de visita':'consulta'}</div>
-        <div className="summarycard">
-          {hasAmount&&<div className="summaryrow"><span>Monto ofertado</span><b>USD {fmt(amount)}</b></div>}
-          {mode==='visit'&&<div className="summaryrow"><span>Visita</span><b>{visitDays.find(d=>d.iso===visitDay)?.label} · {VISIT_SLOTS.find(s=>s.value===visitSlot)?.label}</b></div>}
-          <div className="summaryrow"><span>Capital disponible</span><b>{capitalIdx!==null?CAPITAL_BUCKETS[capitalIdx].label:'—'}</b></div>
-          <div className="summaryrow"><span>Forma de pago</span><b>{paymentIdx!==null?PAYMENT_FORMS[paymentIdx].label:'—'}</b></div>
-          <div className="summaryrow"><span>Plazo</span><b>{timeframe}</b></div>
-          <div className="summaryrow"><span>Condicionantes</span><b>{conditions.length?conditions.join(', '):'Ninguno'}</b></div>
-        </div>
-        <div className="notice">🔒 Tu nombre y teléfono quedan ocultos para el agente hasta que decida revelar el contacto (pagando o con su suscripción).</div>
-        <div className="wizactions modalactions">
-          <button className="secondary" onClick={()=>setStep(3)}>Volver</button>
-          <button className="primary" onClick={()=>setStep(5)}>Continuar</button>
-        </div>
-      </div>}
-
-      {step===5&&<div className="wizstep">
         <div className="qlabel">Confirmá que sos vos</div>
         <div className="qhelp small">Último paso — esto nos permite avisarte cuando el agente responda y evitar propuestas falsas.</div>
+        <div className="notice">🔒 Tu nombre y teléfono quedan ocultos para el agente hasta que decida revelar el contacto (pagando o con su suscripción).</div>
 
         {!phoneVerified&&<div className="summarycard" style={{marginTop:10}}>
           <div className="qlabel" style={{marginTop:0}}>Nombre y apellido</div>
@@ -334,7 +318,7 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
 
         {error && <div className="notice notice-error" style={{marginTop:12}}>{error}</div>}
         <div className="wizactions modalactions">
-          <button className="secondary" onClick={()=>setStep(4)}>Volver</button>
+          <button className="secondary" onClick={()=>setStep(3)}>Volver</button>
           <button className="primary" disabled={busy||!phoneVerified} onClick={send}>{busy?'Enviando…':(mode==='offer'?'Enviar oferta':mode==='visit'?'Enviar solicitud':'Enviar consulta')}</button>
         </div>
       </div>}
