@@ -1,106 +1,30 @@
-"""Catálogo geográfico estático para el formulario de alta de agencia.
+"""Catálogo geográfico exhaustivo para el formulario de alta de agencia/propiedad.
 
-Estructura: país → provincias/departamentos → ciudades/localidades principales.
+Estructura: país → provincias/departamentos → ciudades/localidades.
+Generado a partir de fuentes oficiales / abiertas (ver README de la entrega).
 No depende de Property (a diferencia de GET /properties/filters).
-Cobertura razonable de ciudades principales; no exhaustiva de cada pueblo.
+
+Los datos viven en apps/api/app/geo_data/{ar,py,uy}.json para no inflar
+el diff de texto; este módulo solo los carga y expone get_geo_catalog().
 """
 
 from __future__ import annotations
 
-# Argentina: provincia → ciudades principales
-_AR: dict[str, list[str]] = {
-    "Buenos Aires": [
-        "La Plata", "Mar del Plata", "Bahía Blanca", "Tandil", "San Nicolás",
-        "Pilar", "Tigre", "San Isidro", "Vicente López", "Avellaneda",
-        "Quilmes", "Lomas de Zamora", "Morón", "San Martín", "Lanús",
-        "Almirante Brown", "Esteban Echeverría", "Ezeiza", "Merlo", "Moreno",
-        "José C. Paz", "Malvinas Argentinas", "San Fernando", "Escobar",
-        "Campana", "Zárate", "Necochea", "Olavarría", "Junín", "Pergamino",
-    ],
-    "CABA": ["Ciudad Autónoma de Buenos Aires"],
-    "Catamarca": ["San Fernando del Valle de Catamarca", "Belén", "Andalgalá"],
-    "Chaco": ["Resistencia", "Presidencia Roque Sáenz Peña", "Villa Ángela"],
-    "Chubut": ["Rawson", "Comodoro Rivadavia", "Puerto Madryn", "Trelew", "Esquel"],
-    "Córdoba": [
-        "Córdoba", "Villa Carlos Paz", "Río Cuarto", "Villa María",
-        "San Francisco", "Alta Gracia", "Jesús María", "La Falda",
-    ],
-    "Corrientes": ["Corrientes", "Goya", "Paso de los Libres", "Mercedes"],
-    "Entre Ríos": ["Paraná", "Concordia", "Gualeguaychú", "Concepción del Uruguay"],
-    "Formosa": ["Formosa", "Clorinda"],
-    "Jujuy": ["San Salvador de Jujuy", "Palpalá", "San Pedro"],
-    "La Pampa": ["Santa Rosa", "General Pico"],
-    "La Rioja": ["La Rioja", "Chilecito"],
-    "Mendoza": [
-        "Mendoza", "Godoy Cruz", "Guaymallén", "Maipú", "Luján de Cuyo",
-        "San Rafael", "San Martín",
-    ],
-    "Misiones": ["Posadas", "Oberá", "Eldorado", "Puerto Iguazú"],
-    "Neuquén": ["Neuquén", "Cutral Có", "Plottier", "Zapala", "San Martín de los Andes"],
-    "Río Negro": ["Viedma", "Bariloche", "General Roca", "Cipolletti", "Allen"],
-    "Salta": ["Salta", "San Ramón de la Nueva Orán", "Tartagal"],
-    "San Juan": ["San Juan", "Rawson", "Rivadavia", "Chimbas"],
-    "San Luis": ["San Luis", "Villa Mercedes"],
-    "Santa Cruz": ["Río Gallegos", "Caleta Olivia", "El Calafate", "Puerto Deseado"],
-    "Santa Fe": [
-        "Santa Fe", "Rosario", "Rafaela", "Venado Tuerto", "Reconquista",
-        "Santo Tomé", "Villa Gobernador Gálvez",
-    ],
-    "Santiago del Estero": ["Santiago del Estero", "La Banda", "Termas de Río Hondo"],
-    "Tierra del Fuego": ["Ushuaia", "Río Grande"],
-    "Tucumán": ["San Miguel de Tucumán", "Yerba Buena", "Tafí Viejo", "Concepción"],
-}
+import json
+from pathlib import Path
 
-# Paraguay: departamento → ciudades principales
-_PY: dict[str, list[str]] = {
-    "Asunción": ["Asunción"],
-    "Central": [
-        "San Lorenzo", "Luque", "Capiatá", "Lambaré", "Fernando de la Mora",
-        "Limpio", "Ñemby", "Mariano Roque Alonso", "Villa Elisa", "San Antonio",
-    ],
-    "Alto Paraná": ["Ciudad del Este", "Hernandarias", "Presidente Franco", "Mingá Guazú"],
-    "Itapúa": ["Encarnación", "Carmen del Paraná", "Hohenau"],
-    "Caaguazú": ["Coronel Oviedo", "Caaguazú"],
-    "Cordillera": ["Caacupé", "Tobatí"],
-    "Guairá": ["Villarrica"],
-    "Misiones": ["San Juan Bautista"],
-    "Paraguarí": ["Paraguarí"],
-    "San Pedro": ["San Pedro de Ycuamandiyú"],
-    "Concepción": ["Concepción"],
-    "Amambay": ["Pedro Juan Caballero"],
-    "Canindeyú": ["Salto del Guairá"],
-    "Ñeembucú": ["Pilar"],
-    "Presidente Hayes": ["Villa Hayes"],
-    "Boquerón": ["Filadelfia"],
-    "Alto Paraguay": ["Fuerte Olimpo"],
-    "Caazapá": ["Caazapá"],
-}
+_DATA_DIR = Path(__file__).resolve().parent / "geo_data"
 
-# Uruguay: departamento → ciudades principales
-_UY: dict[str, list[str]] = {
-    "Montevideo": ["Montevideo"],
-    "Canelones": [
-        "Canelones", "Ciudad de la Costa", "Las Piedras", "Pando",
-        "La Paz", "Toledo", "Progreso", "Atlántida", "Parque del Plata",
-    ],
-    "Maldonado": ["Maldonado", "Punta del Este", "San Carlos", "Piriápolis"],
-    "Colonia": ["Colonia del Sacramento", "Nueva Helvecia", "Carmelo", "Juan Lacaze"],
-    "Salto": ["Salto"],
-    "Paysandú": ["Paysandú"],
-    "Rivera": ["Rivera"],
-    "Tacuarembó": ["Tacuarembó"],
-    "Cerro Largo": ["Melo"],
-    "Rocha": ["Rocha", "La Paloma", "Chuy"],
-    "Lavalleja": ["Minas"],
-    "Florida": ["Florida"],
-    "San José": ["San José de Mayo", "Ciudad del Plata"],
-    "Soriano": ["Mercedes"],
-    "Río Negro": ["Fray Bentos"],
-    "Artigas": ["Artigas"],
-    "Durazno": ["Durazno"],
-    "Flores": ["Trinidad"],
-    "Treinta y Tres": ["Treinta y Tres"],
-}
+
+def _load_country(code: str) -> dict[str, list[str]]:
+    path = _DATA_DIR / f"{code}.json"
+    with path.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+_AR: dict[str, list[str]] = _load_country("ar")
+_PY: dict[str, list[str]] = _load_country("py")
+_UY: dict[str, list[str]] = _load_country("uy")
 
 GEO_CATALOG: dict[str, dict[str, list[str]]] = {
     "Argentina": _AR,

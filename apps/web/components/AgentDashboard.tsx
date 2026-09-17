@@ -2,7 +2,7 @@
 import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,Unlock,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,addGeoCity,GeoCatalog} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,GeoCatalog} from '../lib/api';
 import {adminUnitLabel} from '../lib/geo';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
@@ -119,11 +119,6 @@ export default function AgentDashboard(){
   const [propForm,setPropForm]=useState({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
   const [geoCatalog,setGeoCatalog]=useState<GeoCatalog|null>(null);
   const PROP_TYPES=['Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
-  const [otherCityOpen,setOtherCityOpen]=useState(false);
-  const [otherCityDraft,setOtherCityDraft]=useState('');
-  const [otherCityBusy,setOtherCityBusy]=useState(false);
-  const [otherCitySuggest,setOtherCitySuggest]=useState<string|null>(null);
-  const [otherCityError,setOtherCityError]=useState('');
   const [myProperties,setMyProperties]=useState<Property[]>([]);
   const [toast,setToast]=useState('');
   const [loadError,setLoadError]=useState<string|null>(null);
@@ -241,32 +236,6 @@ export default function AgentDashboard(){
     }
   }
 
-  async function confirmOtherCity(force=false){
-    if(!session||!propForm.country||!propForm.province)return;
-    const name=otherCityDraft.trim();
-    if(!name){setOtherCityError('Ingresá el nombre de la ciudad');return;}
-    setOtherCityBusy(true);setOtherCityError('');setOtherCitySuggest(null);
-    try{
-      const r=await addGeoCity({country:propForm.country,province:propForm.province,city:name,force},session);
-      if(r.needsConfirmation&&r.suggestion&&!force){
-        setOtherCitySuggest(r.suggestion);
-        return;
-      }
-      const finalCity=(r.city||name).trim();
-      setGeoCatalog(prev=>{
-        if(!prev)return prev;
-        const key=`${propForm.country}|${propForm.province}`;
-        const list=Array.from(new Set([...(prev.citiesByProvince[key]||[]),finalCity])).sort();
-        return {...prev,citiesByProvince:{...prev.citiesByProvince,[key]:list}};
-      });
-      setPropForm(f=>({...f,city:finalCity}));
-      setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
-    }catch(e:any){
-      setOtherCityError(e?.message||'No pudimos agregar la ciudad.');
-    }finally{
-      setOtherCityBusy(false);
-    }
-  }
 
   async function submitProperty(){
     if(!session)return;
@@ -448,7 +417,7 @@ export default function AgentDashboard(){
           <Plus size={18}/>
           <div>
             <h3 className="account-block-title">Publicar nueva</h3>
-            <p className="muted small" style={{margin:0}}>Completá los datos. País y provincia del catálogo; ciudad se puede ampliar.</p>
+            <p className="muted small" style={{margin:0}}>Completá los datos. País, provincia/departamento y ciudad del catálogo geográfico completo.</p>
           </div>
         </div>
 
@@ -470,7 +439,6 @@ export default function AgentDashboard(){
             <label className="publish-field">País
               <select value={propForm.country} onChange={e=>{
                 setPropForm(f=>({...f,country:e.target.value,province:'',city:''}));
-                setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
               }}>
                 {(geoCatalog?.countries||['Argentina','Paraguay','Uruguay']).map(c=><option key={c} value={c}>{c}</option>)}
               </select>
@@ -481,7 +449,6 @@ export default function AgentDashboard(){
                 disabled={!propForm.country}
                 onChange={e=>{
                   setPropForm(f=>({...f,province:e.target.value,city:''}));
-                  setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
                 }}
               >
                 <option value="">{propForm.country?'Elegí…':'Elegí un país primero'}</option>
@@ -492,50 +459,18 @@ export default function AgentDashboard(){
           <div className="publish-grid-2">
             <label className="publish-field">Ciudad
               <select
-                value={otherCityOpen?'__other__':propForm.city}
+                value={propForm.city}
                 disabled={!propForm.province}
-                onChange={e=>{
-                  const v=e.target.value;
-                  if(v==='__other__'){setOtherCityOpen(true);setPropForm(f=>({...f,city:''}));}
-                  else{setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);setPropForm(f=>({...f,city:v}));}
-                }}
+                onChange={e=>setPropForm(f=>({...f,city:e.target.value}))}
               >
                 <option value="">{propForm.province?'Elegí…':'Elegí provincia primero'}</option>
                 {(geoCatalog?.citiesByProvince?.[`${propForm.country}|${propForm.province}`]||[]).map(c=><option key={c} value={c}>{c}</option>)}
-                {propForm.province&&<option value="__other__">+ Otra ciudad…</option>}
               </select>
             </label>
             <label className="publish-field">Zona / barrio
               <input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo, Pocitos, Centro…"/>
             </label>
           </div>
-          {otherCityOpen&&(
-            <div className="publish-other-city">
-              <label className="publish-field">Nombre de la ciudad
-                <input value={otherCityDraft} onChange={e=>setOtherCityDraft(e.target.value)} placeholder="Ej: Libertad" disabled={otherCityBusy}/>
-              </label>
-              {otherCitySuggest&&(
-                <div className="notice" style={{marginTop:8}}>
-                  ¿Quisiste decir <strong>{otherCitySuggest}</strong>?
-                  <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
-                    <button type="button" className="primary" disabled={otherCityBusy} onClick={()=>{
-                      setPropForm(f=>({...f,city:otherCitySuggest!}));
-                      setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
-                    }}>Sí, usar esa</button>
-                    <button type="button" className="secondary" disabled={otherCityBusy} onClick={()=>confirmOtherCity(true)}>No, es una ciudad distinta</button>
-                  </div>
-                </div>
-              )}
-              {otherCityError&&<div className="notice notice-error" style={{marginTop:8}}>{otherCityError}</div>}
-              {!otherCitySuggest&&(
-                <div style={{marginTop:8}}>
-                  <button type="button" className="secondary" disabled={otherCityBusy} onClick={()=>confirmOtherCity(false)}>
-                    {otherCityBusy?'Agregando…':'Agregar ciudad'}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="publish-section">
