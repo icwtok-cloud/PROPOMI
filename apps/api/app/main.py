@@ -1359,6 +1359,7 @@ class PropertyIngestIn(BaseModel):
     zone: str = Field(min_length=1, max_length=100)
     city: str = Field(min_length=1, max_length=100)
     country: str = "Argentina"
+    province: str = ""
     surface: float = Field(gt=0)
     rooms: int = Field(ge=0)
     bedrooms: int = 1
@@ -1393,6 +1394,7 @@ class PropertyCreateIn(BaseModel):
     zone: str = Field(min_length=1, max_length=100)
     city: str = Field(min_length=1, max_length=100)
     country: str = "Argentina"
+    province: str = ""
     surface: float = Field(gt=0)
     rooms: int = Field(ge=0)
     bedrooms: int = 1
@@ -2148,6 +2150,17 @@ def is_valid_city_name(name: str | None) -> bool:
     return True
 
 
+
+@app.get("/geo/catalog")
+def geo_catalog():
+    """Catálogo geográfico estático (país → provincia → ciudad) para el
+    formulario de alta de agencia. No depende de Property: permite publicar
+    en ciudades donde el crawler todavía no scrapeó. El pill público del
+    home sigue usando GET /properties/filters (solo ciudades con inventario)."""
+    from .geo_catalog import get_geo_catalog
+    return get_geo_catalog()
+
+
 @app.get("/properties/filters")
 def properties_filters():
     """Autodetect de opciones de búsqueda territorial (Etapa 2 / bug reportado
@@ -2356,6 +2369,7 @@ def create_property(payload: PropertyCreateIn, session: dict[str, Any] = Depends
             zone=payload.zone.strip(),
             city=payload.city.strip(),
             country=payload.country,
+            province=(payload.province or "").strip(),
             surface=payload.surface,
             rooms=payload.rooms,
             bedrooms=payload.bedrooms,
