@@ -25,7 +25,7 @@ from google.oauth2 import id_token as google_id_token
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, create_engine, select, text, inspect, or_
+from sqlalchemy import Boolean, DateTime, Float, Integer, JSON, String, Text, UniqueConstraint, create_engine, select, text, inspect, or_, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from .sms_vonage import VonageSMSError, send_otp_sms
@@ -2027,8 +2027,8 @@ def relink_properties(db: Session, agency_id: str, phone: str) -> int:
     return changed
 
 
-def prop_dict(p: Property) -> dict[str, Any]:
-    return {
+def prop_dict(p: Property, group_info: dict | None = None) -> dict[str, Any]:
+    d: dict[str, Any] = {
         "id": p.id, "title": p.title, "type": p.type, "operation": p.operation, "price": p.price, "currency": p.currency,
         "zone": p.zone, "city": p.city, "country": p.country, "province": getattr(p, "province", None) or "", "underConstruction": bool(getattr(p, "under_construction", False)), "investmentOpportunity": bool(getattr(p, "investment_opportunity", False)), "surface": p.surface, "rooms": p.rooms, "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms, "parking": p.parking, "pool": p.pool, "balcony": p.balcony, "petFriendly": p.pet_friendly,
@@ -2041,6 +2041,103 @@ def prop_dict(p: Property) -> dict[str, Any]:
         "hiddenAt": p.hidden_at.isoformat() if p.hidden_at else None,
         "priorityScore": p.priority_score if p.priority_score is not None else 0.0,
     }
+    if group_info is not None:
+        d["priceMin"] = group_info["priceMin"]
+        d["priceMax"] = group_info["priceMax"]
+        d["groupMemberCount"] = group_info["groupMemberCount"]
+    return d
+
+
+def _bulk_group_info(db: Session, props: list) -> dict[str, dict]:
+    """Una sola query agregada por listing_group_id → evita N+1 del home.
+
+    Devuelve {listing_group_id: {"priceMin", "priceMax", "groupMemberCount"}}.
+    Props sin listing_group_id se ignoran.
+    """
+    group_ids = list({p.listing_group_id for p in props if getattr(p, "listing_group_id", None)})
+    if not group_ids:
+        return {}
+    rows = db.execute(
+        select(
+            Property.listing_group_id,
+            func.min(Property.price),
+            func.max(Property.price),
+            func.count(),
+        )
+        .where(Property.listing_group_id.in_(group_ids))
+        .group_by(Property.listing_group_id)
+    ).all()
+    out: dict[str, dict] = {}
+    for gid, pmin, pmax, cnt in rows:
+        if not gid:
+            continue
+        out[str(gid)] = {
+            "priceMin": float(pmin) if pmin is not None else None,
+            "priceMax": float(pmax) if pmax is not None else None,
+            "groupMemberCount": int(cnt or 0),
+        }
+    return out
+
+
+def _properties_base_stmt(
+    *,
+    zone: str | None = None,
+    city: str | None = None,
+    type: str | None = None,
+    operation: str | None = None,
+    rooms: int | None = None,
+    max_price: float | None = None,
+    parking: bool | None = None,
+    credit: bool | None = None,
+    agency_id: str | None = None,
+    exclude_agency_id: str | None = None,
+    country: str | None = None,
+    province: str | None = None,
+    under_construction: bool | None = None,
+    investment_opportunity: bool | None = None,
+    include_hidden: bool = False,
+    admin_ok: bool = False,
+):
+    """Filtros compartidos de /properties y /properties/random (sin order/limit)."""
+    stmt = select(Property)
+    if zone:
+        stmt = stmt.where(Property.zone == zone)
+    if city:
+        if city == "Sin descripción":
+            # Alias de presentación: se resuelve en Python tras el query.
+            pass
+        else:
+            stmt = stmt.where(Property.city == city)
+    if country:
+        stmt = stmt.where(Property.country == country)
+    if province:
+        stmt = stmt.where(Property.province == province)
+    if under_construction is not None:
+        stmt = stmt.where(Property.under_construction == under_construction)
+    if investment_opportunity is not None:
+        stmt = stmt.where(Property.investment_opportunity == investment_opportunity)
+    if type:
+        stmt = stmt.where(Property.type == type)
+    if operation:
+        stmt = stmt.where(Property.operation == operation)
+    if rooms:
+        stmt = stmt.where(Property.rooms == rooms)
+    if max_price:
+        stmt = stmt.where(Property.price <= max_price)
+    if parking is not None:
+        stmt = stmt.where(Property.parking == parking)
+    if credit is not None:
+        stmt = stmt.where(Property.credit == credit)
+    if agency_id:
+        stmt = stmt.where(Property.agency_id == agency_id)
+    if exclude_agency_id:
+        stmt = stmt.where(Property.agency_id != exclude_agency_id)
+    if not (include_hidden and admin_ok):
+        stmt = stmt.where(Property.hidden_at.is_(None))
+    if not agency_id:
+        freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
+        stmt = stmt.where(Property.last_seen_at >= freshness_cutoff)
+    return stmt
 
 
 def _effective_published_at(p: "Property") -> datetime:
@@ -2396,42 +2493,20 @@ def properties(
     admin_ok = bool(x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY))
     with Session(engine) as db:
         ensure_seed(db)
-        stmt = select(Property)
-        if zone: stmt = stmt.where(Property.zone == zone)
-        if city:
-            if city == "Sin descripción":
-                # Alias de presentación: propiedades cuyo city falla is_valid_city_name.
-                # Se resuelve en Python tras el query (volumen acotado por frescura).
-                pass  # filtro aplicado abajo sobre results
-            else:
-                stmt = stmt.where(Property.city == city)
-        if country: stmt = stmt.where(Property.country == country)
-        if province: stmt = stmt.where(Property.province == province)
-        if under_construction is not None: stmt = stmt.where(Property.under_construction == under_construction)
-        if investment_opportunity is not None: stmt = stmt.where(Property.investment_opportunity == investment_opportunity)
-        if type: stmt = stmt.where(Property.type == type)
-        if operation: stmt = stmt.where(Property.operation == operation)
-        if rooms: stmt = stmt.where(Property.rooms == rooms)
-        if max_price: stmt = stmt.where(Property.price <= max_price)
-        if parking is not None: stmt = stmt.where(Property.parking == parking)
-        if credit is not None: stmt = stmt.where(Property.credit == credit)
-        if agency_id: stmt = stmt.where(Property.agency_id == agency_id)
-        if exclude_agency_id: stmt = stmt.where(Property.agency_id != exclude_agency_id)
-        # Ocultas por antigüedad (MAX_AGE_DAYS): solo admin con include_hidden.
-        if not (include_hidden and admin_ok):
-            stmt = stmt.where(Property.hidden_at.is_(None))
-        # Etapa 2 (doc 05): oculta de la búsqueda pública lo que el crawler
-        # no ve hace más de PROPERTY_FRESHNESS_DAYS — no afecta a agency_id
-        # (una agencia sigue viendo sus propias publicaciones en "Mi cuenta"
-        # aunque están stale, para que pueda notar y resolver el problema).
-        if not agency_id:
-            freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
-            stmt = stmt.where(Property.last_seen_at >= freshness_cutoff)
+        stmt = _properties_base_stmt(
+            zone=zone, city=city, type=type, operation=operation, rooms=rooms,
+            max_price=max_price, parking=parking, credit=credit, agency_id=agency_id,
+            exclude_agency_id=exclude_agency_id, country=country, province=province,
+            under_construction=under_construction, investment_opportunity=investment_opportunity,
+            include_hidden=include_hidden, admin_ok=admin_ok,
+        )
         # Default: mayor probabilidad de rotación primero (encargo #2).
         stmt = stmt.order_by(Property.priority_score.desc(), Property.detected_at.desc())
-        results = db.scalars(stmt).all()
+        results = list(db.scalars(stmt).all())
         if city == "Sin descripción":
             results = [p for p in results if not is_valid_city_name(p.city)]
+
+        groups = _bulk_group_info(db, results)
 
         # Etapa 3: evento agregado y anónimo por cada búsqueda — insumo para
         # matching/recomendaciones/demanda/pricing (doc, sección 10, fase
@@ -2453,7 +2528,52 @@ def properties(
         ))
         db.commit()
 
-        return [prop_dict(p) for p in results]
+        return [
+            prop_dict(p, groups.get(p.listing_group_id) if p.listing_group_id else None)
+            for p in results
+        ]
+
+
+@app.get("/properties/random")
+def properties_random(
+    n: int = 30,
+    zone: str | None = None, city: str | None = None, type: str | None = None, operation: str | None = None,
+    rooms: int | None = None, max_price: float | None = None, parking: bool | None = None,
+    credit: bool | None = None, agency_id: str | None = None,
+    country: str | None = None, province: str | None = None,
+    under_construction: bool | None = None, investment_opportunity: bool | None = None,
+    exclude_agency_id: str | None = None,
+    include_hidden: bool = False,
+    x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
+):
+    """Preview aleatorio para la carga inicial del home (sin search_performed).
+
+    n default 30, máximo 60 (clamp silencioso). Misma política de hidden/frescura
+    que GET /properties; no registra Event search_performed.
+    """
+    if n < 1:
+        n = 1
+    if n > 60:
+        n = 60
+    admin_ok = bool(x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY))
+    with Session(engine) as db:
+        ensure_seed(db)
+        stmt = _properties_base_stmt(
+            zone=zone, city=city, type=type, operation=operation, rooms=rooms,
+            max_price=max_price, parking=parking, credit=credit, agency_id=agency_id,
+            exclude_agency_id=exclude_agency_id, country=country, province=province,
+            under_construction=under_construction, investment_opportunity=investment_opportunity,
+            include_hidden=include_hidden, admin_ok=admin_ok,
+        )
+        stmt = stmt.order_by(func.random()).limit(n)
+        results = list(db.scalars(stmt).all())
+        if city == "Sin descripción":
+            results = [p for p in results if not is_valid_city_name(p.city)]
+        groups = _bulk_group_info(db, results)
+        return [
+            prop_dict(p, groups.get(p.listing_group_id) if p.listing_group_id else None)
+            for p in results
+        ]
 
 
 @app.get("/properties/{property_id}")
