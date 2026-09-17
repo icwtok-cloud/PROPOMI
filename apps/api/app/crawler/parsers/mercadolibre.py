@@ -35,6 +35,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
     images: list[str] = []
     item_id = None
     city = zone = ""
+    origin = ""
 
     # 1) JSON-LD Product (más estable)
     for m in re.finditer(
@@ -60,6 +61,15 @@ def parse_detail(html: str, url: str) -> RawListing | None:
             sku = data.get("sku") or data.get("productID")
             if sku:
                 item_id = str(sku)
+            origin = (
+                data.get("datePublished")
+                or data.get("dateModified")
+                or data.get("releaseDate")
+                or origin
+            )
+            if isinstance(origin, dict):
+                origin = origin.get("value") or ""
+            origin = str(origin or "").strip()
 
     # 2) melidata fallback
     if price is None:
@@ -73,6 +83,13 @@ def parse_detail(html: str, url: str) -> RawListing | None:
                 zone = data.get("neighborhood") or zone
                 if data.get("item_id"):
                     item_id = data.get("item_id")
+                if not origin:
+                    origin = str(
+                        data.get("start_time")
+                        or data.get("date_created")
+                        or data.get("creation_date")
+                        or ""
+                    ).strip()
             except json.JSONDecodeError:
                 pass
 
@@ -120,4 +137,5 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         property_type="Casa" if "casa" in (title + url).lower() else "Departamento",
         operation="Venta",
         images=images[:5],
+        origin_published_at=origin or None,
     )

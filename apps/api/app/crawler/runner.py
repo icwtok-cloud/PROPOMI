@@ -25,13 +25,13 @@ import requests
 
 from .dedup import is_duplicate
 from .links import extract_detail_urls
-from .normalize import to_property_payload
+from .normalize import parse_origin_date, to_property_payload
 from .parsers import parse_by_source
 from .selectors import SOURCES, SourceConfig
 
 logger = logging.getLogger("propomi.crawler")
 
-MAX_AGE_DAYS = 60
+MAX_AGE_DAYS = 90
 USER_AGENT = "PropomiBot/0.1 (+https://propomi.lat; research)"
 
 # Límites de cortesía — evitar hammering de portales de terceros y del
@@ -202,6 +202,21 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
             existing.origin_published_at = payload["origin_published_at"]
         match_demand_requests_for_property(db, existing)
         return "updated"
+
+    # Filtro de antigüedad (solo altas nuevas — no borra filas existentes).
+    origin_dt = parse_origin_date(payload.get("origin_published_at"))
+    if origin_dt is not None:
+        age_days = (now - origin_dt).days
+        if age_days > MAX_AGE_DAYS:
+            logger.info(
+                "skip stale listing source=%s url=%s origin=%s age_days=%s max=%s",
+                source_id,
+                src_url,
+                payload.get("origin_published_at"),
+                age_days,
+                MAX_AGE_DAYS,
+            )
+            return "skipped"
 
     from app.main import normalize_phone
     from .dedup import find_cross_source_match

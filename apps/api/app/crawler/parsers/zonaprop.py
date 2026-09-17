@@ -63,6 +63,31 @@ def parse_detail(html: str, url: str) -> RawListing | None:
             price = parse_price(offers.get("price"))
             currency = offers.get("priceCurrency") or currency
 
+    # Fecha de publicación / modificación en JSON-LD (si el portal la expone)
+    origin = ""
+    if apartment:
+        origin = (
+            apartment.get("datePublished")
+            or apartment.get("dateModified")
+            or apartment.get("dateCreated")
+            or ""
+        )
+        if isinstance(origin, dict):
+            origin = origin.get("value") or origin.get("@value") or ""
+        origin = str(origin or "").strip()
+    if not origin:
+        # meta article:published_time u og
+        for pat in (
+            r'property="article:published_time"\s+content="([^"]+)"',
+            r'property="og:updated_time"\s+content="([^"]+)"',
+            r'"datePublished"\s*:\s*"([^"]+)"',
+            r'"dateModified"\s*:\s*"([^"]+)"',
+        ):
+            m = re.search(pat, html)
+            if m:
+                origin = m.group(1).strip()
+                break
+
     # Meta / title fallback
     if not title:
         tm = re.search(r"<title>([^|<]+)", html)
@@ -114,4 +139,5 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         operation="Venta",
         images=images,
         agency_phone=phone,  # no subir a Property pública; solo hint interno
+        origin_published_at=origin or None,
     )

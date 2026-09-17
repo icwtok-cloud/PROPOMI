@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from .base import RawListing
@@ -24,6 +25,43 @@ SOURCE_COUNTRY: dict[str, str] = {
     "argenprop": "Argentina",
     "properati": "Argentina",
 }
+
+
+
+def parse_origin_date(raw: str | None) -> datetime | None:
+    """Parsea fechas de publicación del portal de origen.
+
+    Soporta ISO 8601 (con o sin hora/Z/offset) y dd/mm/aaaa o dd-mm-aaaa.
+    Devuelve datetime aware (UTC) o None si no reconoce el formato.
+    Nunca lanza: un string basura no debe tumbar el parseo de la ficha.
+    """
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    # ISO 8601 (date-only or datetime)
+    try:
+        iso = s.replace("Z", "+00:00")
+        # date-only YYYY-MM-DD
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+            dt = datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
+            return dt
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except (ValueError, TypeError):
+        pass
+    # dd/mm/yyyy or dd-mm-yyyy
+    m = re.fullmatch(r"(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})", s)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        try:
+            return datetime(y, mo, d, tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
 
 
 def fix_mojibake(text: str | None) -> str:

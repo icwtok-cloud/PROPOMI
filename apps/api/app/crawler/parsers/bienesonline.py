@@ -35,6 +35,17 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         return None
 
     title = (listing or {}).get("name") or (place or {}).get("name") or ""
+    origin = ""
+    for obj in (listing, place, offer):
+        if not isinstance(obj, dict):
+            continue
+        for key in ("datePublished", "dateModified", "dateCreated"):
+            val = obj.get(key)
+            if val:
+                origin = str(val).strip()
+                break
+        if origin:
+            break
     if not title:
         og = re.search(r'property="og:title"\s+content="([^"]+)"', html)
         title = og.group(1) if og else ""
@@ -99,5 +110,6 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         operation="Venta",
         images=list(images)[:5],
         agency_name=agency or "",
+        origin_published_at=origin or None,
         extras={"country": "Argentina"},
     )

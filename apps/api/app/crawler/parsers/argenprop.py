@@ -60,6 +60,18 @@ def parse_detail(html: str, url: str) -> RawListing | None:
     if em:
         external = em.group(1)
 
+    origin = ""
+    for pat in (
+        r'property="article:published_time"\s+content="([^"]+)"',
+        r'"datePublished"\s*:\s*"([^"]+)"',
+        r'"dateModified"\s*:\s*"([^"]+)"',
+        r"Publicado\s+(?:el\s+)?(\d{1,2}[/\-]\d{1,2}[/\-]\d{4})",
+    ):
+        m = re.search(pat, html, re.I)
+        if m:
+            origin = m.group(1).strip()
+            break
+
     return RawListing(
         source=SOURCE,
         source_url=url,
@@ -78,4 +90,5 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         property_type="Departamento",
         operation="Venta",
         images=images,
+        origin_published_at=origin or None,
     )

@@ -100,6 +100,16 @@ def _parse_detail(html: str, url: str, source: str, default_country: str) -> Raw
     if isinstance(seller, dict):
         agency_name = seller.get("name") or ""
 
+    origin = ""
+    for key in (
+        "published_at", "publishedAt", "created_at", "createdAt",
+        "date_published", "publication_date", "updated_at", "updatedAt",
+    ):
+        val = data.get(key)
+        if val:
+            origin = str(val).strip()
+            break
+
     return RawListing(
         source=source,
         source_url=url,
@@ -123,6 +133,7 @@ def _parse_detail(html: str, url: str, source: str, default_country: str) -> Raw
         lat=float(data["latitude"]) if data.get("latitude") else None,
         lng=float(data["longitude"]) if data.get("longitude") else None,
         agency_name=agency_name,
+        origin_published_at=origin or None,
         extras={"country": default_country, "code": data.get("code")},
     )
 
