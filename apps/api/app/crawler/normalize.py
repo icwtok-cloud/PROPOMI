@@ -8,6 +8,44 @@ from .base import RawListing
 
 MAX_IMAGES = 5
 
+# País canónico por source_id (crawler). Override si RawListing.extras["country"].
+SOURCE_COUNTRY: dict[str, str] = {
+    "cordobaprop": "Argentina",
+    "mendozaprop": "Argentina",
+    "mercado_unico": "Argentina",
+    "mercadolibre": "Argentina",
+    "inmoup": "Argentina",
+    "inmoclick": "Argentina",
+    "icasas": "Argentina",
+    "bienesonline": "Argentina",
+    "infocasas_py": "Paraguay",
+    "infocasas_uy": "Uruguay",
+    "zonaprop": "Argentina",
+    "argenprop": "Argentina",
+    "properati": "Argentina",
+}
+
+
+def fix_mojibake(text: str | None) -> str:
+    """Repara double-encoding típico UTF-8 leído como Latin-1 (CÃ³rdoba → Córdoba).
+
+    Idempotente: si el texto ya es UTF-8 válido sin mojibake, no cambia.
+    """
+    if not text or not isinstance(text, str):
+        return text or ""
+    if "Ã" not in text and "Â" not in text:
+        return text
+    try:
+        fixed = text.encode("latin-1").decode("utf-8")
+        # Solo aceptar si mejoró (menos secuencias típicas de mojibake)
+        if fixed.count("Ã") < text.count("Ã"):
+            return fixed
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        pass
+    return text
+
+
+
 # --- Priority score (encargo #2, default reversible) ---
 # Fórmula (pesos suman ~1.0; score final 0–100 aprox.):
 #   recencia (0–40): origin_published_at ISO reciente o, si no hay, score medio
@@ -125,14 +163,35 @@ def to_property_payload(raw: RawListing | dict[str, Any], source_id: str | None 
         images = [images]
     images = [u for u in images if u][:MAX_IMAGES]
 
+    sid = (d.get("source") or source_id or "") or ""
+    extras = d.get("extras") or {}
+    if not isinstance(extras, dict):
+        extras = {}
+    country = (
+        extras.get("country")
+        or d.get("country")
+        or SOURCE_COUNTRY.get(sid)
+        or "Argentina"
+    )
+    # normalizar códigos cortos
+    _cmap = {"AR": "Argentina", "PY": "Paraguay", "UY": "Uruguay", "ar": "Argentina", "py": "Paraguay", "uy": "Uruguay"}
+    country = _cmap.get(str(country), str(country))
+    province = (d.get("province") or extras.get("province") or "")[:100]
+    zone = fix_mojibake(d.get("zone") or "")
+    city = fix_mojibake(d.get("city") or "")
+    title = fix_mojibake((d.get("title") or "Sin título")[:180])
+    description = fix_mojibake(strip_description(d.get("description")))
+
     return {
-        "title": (d.get("title") or "Sin título")[:180],
+        "title": title,
         "type": d.get("property_type") or d.get("type") or "Departamento",
         "operation": d.get("operation") or "Venta",
         "price": float(d.get("price") or 0),
         "currency": d.get("currency") or "USD",
-        "zone": d.get("zone") or "",
-        "city": d.get("city") or "",
+        "zone": zone,
+        "city": city,
+        "country": country,
+        "province": province,
         "surface": d.get("surface") or d.get("surface_covered") or 0,
         "rooms": d.get("rooms") or d.get("bedrooms") or 0,
         "bedrooms": d.get("bedrooms") or 0,
@@ -141,7 +200,7 @@ def to_property_payload(raw: RawListing | dict[str, Any], source_id: str | None 
         "credit": bool(d.get("credit")),
         "images": images,
         "image": images[0] if images else "",
-        "description": strip_description(d.get("description")),
+        "description": description,
         "source": d.get("source") or source_id,
         "source_url": d.get("source_url") or d.get("url") or "",
         "origin_published_at": d.get("origin_published_at"),

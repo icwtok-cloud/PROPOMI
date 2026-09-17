@@ -56,14 +56,23 @@ def _get(url: str, timeout: int = 20) -> str:
         timeout=timeout,
     )
     resp.raise_for_status()
-    # Bug encontrado 2026-09-14: sin esto, requests cae al default HTTP
-    # (ISO-8859-1) cuando el servidor no declara charset explícito en
-    # Content-Type. La mayoría de estos portales sirven HTML en UTF-8 real
-    # pero sin declararlo, lo que producía mojibake (ej. "CÃ³rdoba" en vez
-    # de "Córdoba") en campos de texto libre como Property.zone.
-    if resp.encoding is None or resp.encoding.lower() == "iso-8859-1":
-        resp.encoding = resp.apparent_encoding or "utf-8"
-    return resp.text
+    # Preferir UTF-8 real del body (muchos portales no declaran charset y
+    # requests asume ISO-8859-1 → mojibake). Si UTF-8 falla, apparent_encoding.
+    raw = resp.content
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        enc = resp.apparent_encoding or resp.encoding or "utf-8"
+        if enc and enc.lower() in ("iso-8859-1", "latin-1", "windows-1252"):
+            # reintentar utf-8 con replace solo si apparent también es latin
+            try:
+                return raw.decode("utf-8", errors="replace")
+            except Exception:
+                pass
+        try:
+            return raw.decode(enc, errors="replace")
+        except Exception:
+            return raw.decode("utf-8", errors="replace")
 
 
 def _get_or_create_cursor(db, source_id: str):
@@ -169,6 +178,10 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         existing.currency = payload["currency"] or existing.currency
         existing.zone = payload["zone"] or existing.zone
         existing.city = payload["city"] or existing.city
+        if payload.get("country"):
+            existing.country = payload["country"]
+        if payload.get("province") is not None:
+            existing.province = payload.get("province") or existing.province or ""
         if payload.get("surface"):
             existing.surface = payload["surface"]
         if payload.get("rooms"):
@@ -199,6 +212,8 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         currency=payload["currency"],
         zone=payload["zone"],
         city=payload["city"],
+        country=payload.get("country") or "Argentina",
+        province=payload.get("province") or "",
         surface=payload.get("surface") or 0,
         rooms=payload.get("rooms") or 0,
         bedrooms=payload.get("bedrooms") or 0,

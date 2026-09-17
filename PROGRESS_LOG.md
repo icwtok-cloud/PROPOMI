@@ -1,3 +1,11 @@
+## 2026-09-16 — country/province pipeline + mojibake + backfill
+
+Root cause: to_property_payload no persistía country/province (default Argentina / vacío).
+Fix: SOURCE_COUNTRY + payload + upsert; _get UTF-8 body; fix_mojibake; backfill dry-run/apply.
+Base: 5cbc9db
+
+---
+
 ## 2026-09-16 — search_cards_v3 (diff real sobre 1a70667)
 
 Base: git clone origin/main @ 1a706675bc6eb3983341131b42da529bc4469694

@@ -90,7 +90,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         currency=currency,
         zone=zone,
         city=city or zone,
-        province=province or "Argentina",
+        province=province or "",
         surface=surface,
         bedrooms=bedrooms,
         bathrooms=bathrooms,
@@ -99,5 +99,5 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         operation="Venta",
         images=list(images)[:5],
         agency_name=agency or "",
-        extras={"country": "AR"},
+        extras={"country": "Argentina"},
     )

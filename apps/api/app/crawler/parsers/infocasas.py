@@ -59,6 +59,23 @@ def _parse_detail(html: str, url: str, source: str, default_country: str) -> Raw
         parts = [p.strip() for p in addr.split(",") if p.strip()]
         city = parts[1] if len(parts) > 1 else parts[0]
 
+    province = ""
+    for key in ("department", "state", "province", "region"):
+        val = locs.get(key)
+        if isinstance(val, dict) and val.get("name"):
+            province = val["name"]
+            break
+        if isinstance(val, str) and val.strip():
+            province = val.strip()
+            break
+    if not province and addr:
+        parts = [p.strip() for p in addr.split(",") if p.strip()]
+        # típico: barrio, ciudad, departamento, país
+        if len(parts) >= 3:
+            province = parts[-2] if parts[-1].lower() in ("paraguay", "uruguay", "argentina") else parts[-1]
+        elif len(parts) == 2:
+            province = parts[-1]
+
     ptype = "Departamento"
     pt = data.get("property_type") or {}
     if isinstance(pt, dict) and pt.get("name"):
@@ -92,8 +109,8 @@ def _parse_detail(html: str, url: str, source: str, default_country: str) -> Raw
         price=parse_price(amount),
         currency=cur,
         zone=zone or "",
-        city=city or default_country,
-        province=city or default_country,
+        city=city or "",
+        province=province or "",
         address=addr,
         surface=parse_price(data.get("m2") or data.get("m2Built")),
         surface_covered=parse_price(data.get("m2Built") or data.get("m2apto")),

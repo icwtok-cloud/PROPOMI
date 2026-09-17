@@ -47,7 +47,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
     address = cell("Dirección") or ""
     zone = cell("Barrio") or ""
     city = cell("Localidad") or "Cordoba"
-    province = cell("Provincia") or "Cordoba"
+    province = cell("Provincia") or "Córdoba"
     surface = parse_price(cell("Superficie total / terreno") or cell("Superficie cubierta"))
     surface_cov = parse_price(cell("Superficie cubierta"))
     bedrooms = first_int(cell("Dormitorios"))
