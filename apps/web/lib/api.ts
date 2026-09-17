@@ -28,6 +28,17 @@ export async function engageSuggestion(suggestionId: string, session?: Session |
 }
 
 export async function getProperties(filters?:Record<string,string|number|boolean>){if(!base){const agencyId=filters?.agency_id;return agencyId?PROPERTIES.filter(p=>p.agencyId===agencyId):PROPERTIES}const qs=new URLSearchParams();Object.entries(filters||{}).forEach(([k,v])=>v!==''&&v!==undefined&&qs.set(k,String(v)));return req<Property[]>(`/properties?${qs}`)}
+export async function getPropertiesRandom(n:number=30,filters?:Record<string,string|number|boolean>):Promise<Property[]>{
+  if(!base){
+    const agencyId=filters?.agency_id;
+    const pool=agencyId?PROPERTIES.filter(p=>p.agencyId===agencyId):PROPERTIES;
+    return pool.slice(0,Math.max(0,n));
+  }
+  const qs=new URLSearchParams();
+  qs.set('n',String(n));
+  Object.entries(filters||{}).forEach(([k,v])=>v!==''&&v!==undefined&&qs.set(k,String(v)));
+  return req<Property[]>(`/properties/random?${qs}`);
+}
 export async function getProperty(id:string){if(!base)return PROPERTIES.find(p=>p.id===id)!;return req<Property>(`/properties/${id}`)}
 export async function getPropertyFilters(){if(!base){const byCity:Record<string,string[]>={};PROPERTIES.forEach(p=>{byCity[p.city]=Array.from(new Set([...(byCity[p.city]||[]),p.zone]))});return {cities:Object.keys(byCity),zonesByCity:byCity}}return req<{cities:string[];zonesByCity:Record<string,string[]>}>('/properties/filters')}
 export type GeoCatalog={countries:string[];provincesByCountry:Record<string,string[]>;citiesByProvince:Record<string,string[]>};
@@ -398,6 +409,20 @@ export async function getPropertiesDeduped(filters?:Record<string,string|number|
   }
   return out;
 }
+/** Dedup local por listingGroupId — sin fetch. El backend ya manda priceMin/priceMax/groupMemberCount. */
+export function dedupeByGroup(items:Property[]):Property[]{
+  const seen=new Set<string>();
+  const out:Property[]=[];
+  for(const p of items){
+    const gid=p.listingGroupId;
+    if(!gid){out.push(p);continue}
+    if(seen.has(gid))continue;
+    seen.add(gid);
+    out.push(p);
+  }
+  return out;
+}
+
 
 export type ColdStartTaskItem={
   id:string;

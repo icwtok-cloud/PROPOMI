@@ -5,7 +5,7 @@ import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarC
 import PropertyCard from '../components/PropertyCard';
 import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
-import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters,getMySuggestions,engageSuggestion} from '../lib/api';
+import {getProperties,getPropertiesRandom,dedupeByGroup,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters,getMySuggestions,engageSuggestion} from '../lib/api';
 import {Property,Offer} from '../lib/types';
 import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel} from '../lib/geo';
 
@@ -94,7 +94,7 @@ export default function Home(){
     try{
       setIsLoading(true);
       setLoadError(null);
-      const items=await getPropertiesDeduped({operation:'Venta'});
+      const items=dedupeByGroup(await getPropertiesRandom(30,{operation:'Venta'}));
       setItems(items);
       try{
         const s=await getOrCreateBuyerSession();
