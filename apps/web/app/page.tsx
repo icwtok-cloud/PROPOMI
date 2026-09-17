@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useMemo,useState} from 'react';
 import Link from 'next/link';
-import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarChart3,MessageSquare,Lock,ChevronDown,X,Building2,Home as HomeIcon,Store,Map,Briefcase} from 'lucide-react';
+import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarChart3,MessageSquare,Lock,ChevronDown,ChevronLeft,ChevronRight,X,Building2,Home as HomeIcon,Store,Map,Briefcase} from 'lucide-react';
 import PropertyCard from '../components/PropertyCard';
 import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
@@ -12,6 +12,19 @@ import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel} from '../lib/geo';
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
 const FUNNEL=['Vistas','Guardados','Comparaciones','Consultas','Visitas','Ofertas','Negociaciones','Contacto compartido','Operaciones'];
 const PROPERTY_TYPES=['Todos','Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
+
+/** Heurística espejo del backend (GET /properties/filters): ciudad válida si
+ *  tiene letras, >2 chars, no es solo dígitos, y no parece dirección. */
+function isValidCityName(name: string | null | undefined): boolean {
+  const s = (name || '').trim();
+  if (s.length <= 2) return false;
+  if (!/[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]/.test(s)) return false;
+  if (/^\d+$/.test(s)) return false;
+  if (/^(av\.?|avenida|calle|ruta|pasaje|pje\.?)\b/i.test(s)) return false;
+  if (/\d{3,5}\s*$/.test(s) && /\s/.test(s)) return false;
+  return true;
+}
+
 const COUNTRY_OPTIONS=['Todos','Argentina','Paraguay','Uruguay'];
 
 export default function Home(){
@@ -50,7 +63,7 @@ export default function Home(){
   const [isLoading,setIsLoading]=useState(true);
   const [balcony,setBalcony]=useState(false);
   const [sortBy,setSortBy]=useState<'relevance'|'price_asc'|'price_desc'|'recent'>('relevance');
-  const [openSeg,setOpenSeg]=useState<'where'|'type'|'budget'|null>(null);
+  const [openSeg,setOpenSeg]=useState<'where'|'type'|'budget'|null>('where');
   const [moreFilters,setMoreFilters]=useState(false);
   const [searchSticky,setSearchSticky]=useState(false);
 
@@ -144,7 +157,11 @@ export default function Home(){
       const pProvince=(p.province||'');
       if(country&&country!=='Todos'&&pCountry!==country) return false;
       if(province&&pProvince!==province) return false;
-      if(city&&p.city!==city) return false;
+      if(city){
+        if(city==='Sin descripción'){
+          if(isValidCityName(p.city)) return false;
+        }else if(p.city!==city) return false;
+      }
       if(zone&&p.zone!==zone) return false;
       if(ptype==='En Pozo'){ if(!p.underConstruction) return false; }
       else if(ptype!=='Todos'&&p.type!==ptype) return false;
@@ -480,7 +497,15 @@ export default function Home(){
           const current=photos[Math.min(photoIdx,Math.max(photos.length-1,0))]||detail.image;
           return (
             <div>
-              <img src={current} alt={detail.title}/>
+              <div className="detail-photo-wrap">
+                <img src={current} alt={detail.title}/>
+                {photos.length>1 && (
+                  <>
+                    <button type="button" className="detail-photo-nav prev" aria-label="Foto anterior" onClick={()=>setPhotoIdx(i=>(i-1+photos.length)%photos.length)}><ChevronLeft size={18}/></button>
+                    <button type="button" className="detail-photo-nav next" aria-label="Foto siguiente" onClick={()=>setPhotoIdx(i=>(i+1)%photos.length)}><ChevronRight size={18}/></button>
+                  </>
+                )}
+              </div>
               {photos.length>1 && (
                 <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap',alignItems:'center'}}>
                   {photos.map((src,i)=>(
