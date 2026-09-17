@@ -55,7 +55,11 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         parking=bool(data.get("parking")),
         credit=bool(data.get("credit")),
         property_type="Casa" if data.get("property_type_id") == 3 else "Departamento",
-        operation="Venta" if data.get("transaction_type_id") == 2 else "Venta",
+        # transaction_type_id confirmado 2026-09-17 contra fichas reales:
+        #   2 = Venta  (ej. /venta-duplex-.../6784734 → id 2)
+        #   1 = Alquiler (ej. /alquiler-casa-.../6778984 → id 1)
+        # Antes ambas ramas del ternario devolvían "Venta" (bug).
+        operation="Venta" if data.get("transaction_type_id") == 2 else "Alquiler",
         images=list(images)[:5],
         lat=float(data["google_lat"]) if data.get("google_lat") else None,
         lng=float(data["google_lng"]) if data.get("google_lng") else None,

@@ -203,6 +203,18 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         match_demand_requests_for_property(db, existing)
         return "updated"
 
+    # Gate de operación: solo Venta entra al catálogo (solo altas nuevas).
+    # Protege contra parsers que hardcodean o filtran mal por URL.
+    op = (payload.get("operation") or "Venta").strip()
+    if op != "Venta":
+        logger.info(
+            "skip non-venta listing source=%s url=%s operation=%s",
+            source_id,
+            src_url,
+            op,
+        )
+        return "skipped"
+
     # Filtro de antigüedad (solo altas nuevas — no borra filas existentes).
     origin_dt = parse_origin_date(payload.get("origin_published_at"))
     if origin_dt is not None:

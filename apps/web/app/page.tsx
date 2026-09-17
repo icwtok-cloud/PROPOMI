@@ -94,7 +94,7 @@ export default function Home(){
     try{
       setIsLoading(true);
       setLoadError(null);
-      const items=await getPropertiesDeduped();
+      const items=await getPropertiesDeduped({operation:'Venta'});
       setItems(items);
       try{
         const s=await getOrCreateBuyerSession();
@@ -107,7 +107,7 @@ export default function Home(){
       if(!pid)return;
       let found=items.find(p=>p.id===pid)||null;
       if(!found){
-        const all=await getProperties();
+        const all=await getProperties({operation:'Venta'});
         const raw=all.find(p=>p.id===pid);
         if(raw){
           found=raw.listingGroupId
