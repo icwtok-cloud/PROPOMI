@@ -1,3 +1,9 @@
+## 2026-09-17 — UX buscador: budget 180k, BA default, catálogos canónicos, labels PY/UY
+
+Base 8441b2c. Solo FE: page.tsx + lib/geo.ts. País Todos, ciudad BA, provincia/depto canónico, Apartamento en UY.
+
+---
+
 ## 2026-09-16 — country/province pipeline + mojibake + backfill
 
 Root cause: to_property_payload no persistía country/province (default Argentina / vacío).

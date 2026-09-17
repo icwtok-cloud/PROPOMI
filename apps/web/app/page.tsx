@@ -7,6 +7,7 @@ import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
 import {getProperties,getPropertiesDeduped,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters,getMySuggestions,engageSuggestion} from '../lib/api';
 import {Property,Offer} from '../lib/types';
+import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel} from '../lib/geo';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
 const FUNNEL=['Vistas','Guardados','Comparaciones','Consultas','Visitas','Ofertas','Negociaciones','Contacto compartido','Operaciones'];
@@ -15,7 +16,7 @@ const COUNTRY_OPTIONS=['Todos','Argentina','Paraguay','Uruguay'];
 
 export default function Home(){
   const [items,setItems]=useState<Property[]>([]);
-  const [budget,setBudget]=useState('120000');
+  const [budget,setBudget]=useState('180000');
   // Etapa 2 (bug reportado 2026-09-15): "Dónde" ya no es una lista fija de
   // barrios de Buenos Aires — city/zone se autodetectan de lo que el
   // crawler+carga manual efectivamente tienen en la base (GET
@@ -65,7 +66,12 @@ export default function Home(){
       // "Palermo" hardcodeado de antes — así el buscador arranca mostrando
       // algo que realmente existe en la base, sea Buenos Aires, Córdoba, etc.
       if(f.cities.length){
-        setCity(prev=>prev||f.cities[0]);
+        setCity(prev=>{
+        if(prev) return prev;
+        const list=f.cities||[];
+        if(list.includes('Buenos Aires')) return 'Buenos Aires';
+        return '';
+      });
       }
     }catch(e:any){console.warn('filters',e?.message||e)}
   })()},[]);
@@ -160,6 +166,14 @@ export default function Home(){
     // relevance: keep API/priority order as received
     return list;
   },[items,country,province,city,zone,ptype,rooms,budget,parking,credit,balcony,investmentOnly,sortBy]);
+
+  // Si el default Buenos Aires no tiene inventario fresco, no dejar pantalla vacía.
+  useEffect(()=>{
+    if(city!=='Buenos Aires'||!items.length) return;
+    const anyBA=items.some(p=>p.city==='Buenos Aires');
+    if(!anyBA) setCity('');
+  },[items,city]);
+
   useEffect(()=>{
     const t=setTimeout(()=>{
       trackSearchPerformed({
@@ -174,7 +188,7 @@ export default function Home(){
 
 
   const whereLabel=[country&&country!=='Todos'?country:null,province||null,city||null,zone||null].filter(Boolean).join(' · ')||'Cualquier lugar';
-  const typeLabel=ptype==='Todos'?(rooms==='Todos'?'Tipo y ambientes':`${rooms} amb.`):(rooms==='Todos'?ptype:`${ptype} · ${rooms} amb.`);
+  const typeLabel=ptype==='Todos'?(rooms==='Todos'?'Tipo y ambientes':`${rooms} amb.`):(rooms==='Todos'?propertyTypeLabel(ptype,country):`${propertyTypeLabel(ptype,country)} · ${rooms} amb.`);
   const budgetLabel=budget?`Hasta USD ${Number(budget).toLocaleString('en-US')}`:'Presupuesto';
   const typeIcon=(name:string)=>{
     if(name==='Casa')return <HomeIcon size={18}/>;
@@ -239,13 +253,18 @@ export default function Home(){
                   {COUNTRY_OPTIONS.map(c=><option key={c} value={c}>{c}</option>)}
                 </select>
               </label>
-              <label>Provincia
+              <label>{adminUnitLabel(country)}
                 <select value={province} onChange={e=>{setProvince(e.target.value);setCity('');setZone('')}}>
                   <option value="">Todas</option>
                   {(
                     country!=='Todos'
-                      ? (provincesByCountry[country]||[])
-                      : Array.from(new Set(Object.values(provincesByCountry).flat()))
+                      ? Array.from(new Set([...(canonicalAdminUnits(country)), ...(provincesByCountry[country]||[])])).sort((a,b)=>a.localeCompare(b,'es'))
+                      : Array.from(new Set([
+                          ...canonicalAdminUnits('Argentina'),
+                          ...canonicalAdminUnits('Paraguay'),
+                          ...canonicalAdminUnits('Uruguay'),
+                          ...Object.values(provincesByCountry).flat(),
+                        ])).sort((a,b)=>a.localeCompare(b,'es'))
                   ).map(pr=><option key={pr} value={pr}>{pr}</option>)}
                 </select>
               </label>
@@ -274,7 +293,7 @@ export default function Home(){
                 {PROPERTY_TYPES.map(name=>(
                   <button type="button" key={name} className={ptype===name?'type-chip selected':'type-chip'} onClick={()=>setPtype(name)}>
                     {name!=='Todos'&&typeIcon(name)}
-                    <span>{name}</span>
+                    <span>{propertyTypeLabel(name, country)}</span>
                   </button>
                 ))}
               </div>
