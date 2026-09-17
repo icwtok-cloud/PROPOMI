@@ -45,7 +45,7 @@ export default function Home(){
   const [zone,setZone]=useState('');
   const [investmentOnly,setInvestmentOnly]=useState(false);
   const [ptype,setPtype]=useState('Todos');
-  const [rooms,setRooms]=useState('2');
+  const [rooms,setRooms]=useState('Todos');
   const [parking,setParking]=useState(false);
   const [credit,setCredit]=useState(false);
   const [saved,setSaved]=useState<string[]>([]);

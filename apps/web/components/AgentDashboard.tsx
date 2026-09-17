@@ -2,7 +2,8 @@
 import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,Unlock,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,GeoCatalog} from '../lib/api';
+import {adminUnitLabel} from '../lib/geo';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -115,7 +116,9 @@ export default function AgentDashboard(){
   const [opps,setOpps]=useState<OppData|null>(null);
   const [analytics,setAnalytics]=useState<{properties:number;events:number;offers:number}|null>(null);
   const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'propiedades'|'cuenta'>('ofertas');
-  const [propForm,setPropForm]=useState({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
+  const [propForm,setPropForm]=useState({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
+  const [geoCatalog,setGeoCatalog]=useState<GeoCatalog|null>(null);
+  const PROP_TYPES=['Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
   const [myProperties,setMyProperties]=useState<Property[]>([]);
   const [toast,setToast]=useState('');
   const [loadError,setLoadError]=useState<string|null>(null);
@@ -129,6 +132,7 @@ export default function AgentDashboard(){
   const [suggestBusy,setSuggestBusy]=useState(false);
 
   useEffect(()=>{const s=getAgentSession();setSession(s);setReady(true)},[]);
+  useEffect(()=>{getGeoCatalog().then(setGeoCatalog).catch(()=>{})},[]);
   useEffect(()=>{const h=()=>setSection('cuenta');window.addEventListener('propomi:goto-cuenta',h);return()=>window.removeEventListener('propomi:goto-cuenta',h)},[]);
   useEffect(()=>{if(!session)return;(async()=>{
     const [a,o,opp,an,props]=await Promise.all([
@@ -240,12 +244,15 @@ export default function AgentDashboard(){
     }
     const title=propForm.title.trim();
     const zone=propForm.zone.trim();
-    const city=propForm.city.trim()||'Buenos Aires';
+    const city=propForm.city.trim();
+    const country=propForm.country||'Argentina';
+    const province=propForm.province.trim();
+    const type=propForm.type||'Departamento';
     const price=Number(propForm.price);
     const surface=Number(propForm.surface);
     const rooms=Number(propForm.rooms)||2;
-    if(!title||!zone||!(price>0)||!(surface>0)){
-      notify('Completá título, zona, precio y superficie.');
+    if(!title||!zone||!city||!province||!(price>0)||!(surface>0)){
+      notify('Completá título, ubicación (país/provincia/ciudad/zona), precio y superficie.');
       return;
     }
     setBusy(true);
@@ -256,12 +263,12 @@ export default function AgentDashboard(){
         .filter(s=>s.startsWith('http://')||s.startsWith('https://'))
         .slice(0,5);
       await createProperty({
-        title,zone,city,price,surface,rooms,
-        type:'Departamento',operation:'Venta',currency:'USD',
+        title,zone,city,country,province,price,surface,rooms,
+        type,operation:'Venta',currency:'USD',
         description:propForm.description.trim()||undefined,
         images,
       },session);
-      setPropForm({title:'',zone:'',city:'Buenos Aires',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
+      setPropForm({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
       notify('Propiedad publicada.');
       try{
         const [an,props]=await Promise.all([
@@ -404,28 +411,86 @@ export default function AgentDashboard(){
         );
       })}
 
-      <hr style={{border:'none',borderTop:'1px solid #e3e8ee',margin:'8px 0'}}/>
-      <strong>Publicar nueva</strong>
-      <label>Título<input value={propForm.title} onChange={e=>setPropForm(f=>({...f,title:e.target.value}))} placeholder="2 ambientes luminoso en Palermo"/></label>
-      <label>Zona<input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo"/></label>
-      <label>Ciudad<input value={propForm.city} onChange={e=>setPropForm(f=>({...f,city:e.target.value}))} placeholder="Buenos Aires"/></label>
-      <label>Precio (USD)<input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/></label>
-      <label>Superficie (m²)<input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/></label>
-      <label>Ambientes<input type="number" min={0} value={propForm.rooms} onChange={e=>setPropForm(f=>({...f,rooms:e.target.value}))}/></label>
-      <label>Fotos (opcional, una URL por línea, máx. 5)
-        <textarea
-          value={propForm.imageUrls}
-          onChange={e=>setPropForm(f=>({...f,imageUrls:e.target.value}))}
-          rows={3}
-          placeholder={"https://.../foto1.jpg\nhttps://.../foto2.jpg"}
-        />
-      </label>
-      <p className="muted small">Solo URLs http(s). Se usan en la galería del detalle.</p>
-      <label>Descripción (sin teléfonos ni links)<textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/></label>
-      <div className="modalactions" style={{justifyContent:'flex-start'}}>
-        <button className="primary" disabled={busy||agency?.verificationStatus!=='VERIFIED'} onClick={submitProperty}><Plus size={15}/> Publicar propiedad</button>
+      <div className="summarycard account-block" style={{marginTop:16}}>
+        <div className="account-block-head">
+          <Plus size={18}/>
+          <div>
+            <h3 className="account-block-title">Publicar nueva</h3>
+            <p className="muted small" style={{margin:0}}>Elegí ubicación del catálogo y completá los datos de la propiedad.</p>
+          </div>
+        </div>
+
+        <label>Título<input value={propForm.title} onChange={e=>setPropForm(f=>({...f,title:e.target.value}))} placeholder="2 ambientes luminoso en Palermo"/></label>
+
+        <div className="publish-geo-block">
+          <div className="muted small" style={{marginBottom:6,fontWeight:700}}>País</div>
+          <div className="publish-chip-row">
+            {(geoCatalog?.countries||['Argentina','Paraguay','Uruguay']).map(c=>(
+              <button type="button" key={c}
+                className={propForm.country===c?'chip active':'chip'}
+                onClick={()=>setPropForm(f=>({...f,country:c,province:'',city:''}))}
+              >{c}</button>
+            ))}
+          </div>
+          <div className="muted small" style={{margin:'12px 0 6px',fontWeight:700}}>{adminUnitLabel(propForm.country)}</div>
+          <div className="publish-chip-row">
+            {(geoCatalog?.provincesByCountry?.[propForm.country]||[]).map(p=>(
+              <button type="button" key={p}
+                className={propForm.province===p?'chip active':'chip'}
+                onClick={()=>setPropForm(f=>({...f,province:p,city:''}))}
+              >{p}</button>
+            ))}
+            {!geoCatalog && <span className="muted small">Cargando catálogo…</span>}
+          </div>
+          {propForm.province && (
+            <>
+              <div className="muted small" style={{margin:'12px 0 6px',fontWeight:700}}>Ciudad</div>
+              <div className="publish-chip-row">
+                {(geoCatalog?.citiesByProvince?.[`${propForm.country}|${propForm.province}`]||[]).map(c=>(
+                  <button type="button" key={c}
+                    className={propForm.city===c?'chip active':'chip'}
+                    onClick={()=>setPropForm(f=>({...f,city:c}))}
+                  >{c}</button>
+                ))}
+              </div>
+            </>
+          )}
+          <label style={{marginTop:12}}>Zona / barrio (texto libre)
+            <input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo, Pocitos, Centro…"/>
+          </label>
+        </div>
+
+        <div className="muted small" style={{margin:'8px 0 6px',fontWeight:700}}>Tipo</div>
+        <div className="publish-chip-row">
+          {PROP_TYPES.map(t=>(
+            <button type="button" key={t}
+              className={propForm.type===t?'chip active':'chip'}
+              onClick={()=>setPropForm(f=>({...f,type:t}))}
+            >{t}</button>
+          ))}
+        </div>
+
+        <div className="account-form-grid" style={{marginTop:12}}>
+          <label>Precio (USD)<input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/></label>
+          <label>Superficie (m²)<input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/></label>
+          <label>Ambientes<input type="number" min={0} value={propForm.rooms} onChange={e=>setPropForm(f=>({...f,rooms:e.target.value}))}/></label>
+        </div>
+
+        <label>Fotos (opcional, una URL por línea, máx. 5)
+          <textarea
+            value={propForm.imageUrls}
+            onChange={e=>setPropForm(f=>({...f,imageUrls:e.target.value}))}
+            rows={3}
+            placeholder={"https://.../foto1.jpg\nhttps://.../foto2.jpg"}
+          />
+        </label>
+        <p className="muted small">Solo URLs http(s). Se usan en la galería del detalle.</p>
+        <label>Descripción (sin teléfonos ni links)<textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/></label>
+        <div className="modalactions" style={{justifyContent:'flex-start'}}>
+          <button className="primary" disabled={busy||agency?.verificationStatus!=='VERIFIED'} onClick={submitProperty}><Plus size={15}/> Publicar propiedad</button>
+        </div>
+        <p className="muted small">La descripción no puede incluir teléfonos, emails ni links — Propomi protege el contacto de ambas partes.</p>
       </div>
-      <p className="muted small">La descripción no puede incluir teléfonos, emails ni links — Propomi protege el contacto de ambas partes.</p>
     </div>}
 
     {section==='cuenta' && <div className="agentdashpane account-layout">

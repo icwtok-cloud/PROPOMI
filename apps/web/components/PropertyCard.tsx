@@ -69,15 +69,15 @@ export default function PropertyCard({
         )}
       </div>
       <div className="pbody">
-        <div className="prow">
-          <span className="muted">{p.type} · {p.zone}{p.city ? `, ${p.city}` : ''}</span>
-        </div>
-        <h3>{p.title}</h3>
-        <strong className="price">
+        <h3 className="pcard-title">{p.title}</h3>
+        <strong className="price pcard-price">
           {p.priceMin != null && p.priceMax != null && p.priceMin !== p.priceMax
             ? <>USD {p.priceMin.toLocaleString('en-US')} – {p.priceMax.toLocaleString('en-US')}</>
             : <>USD {p.price.toLocaleString('en-US')}</>}
         </strong>
+        <div className="pcard-subtitle muted">
+          {p.zone}{p.city ? ` · ${p.city}` : ''}{p.type ? ` · ${p.type}` : ''}
+        </div>
         {p.groupMemberCount != null && p.groupMemberCount > 1 && (
           <div className="muted small">Misma propiedad publicada por {p.groupMemberCount} agentes · precio en rango</div>
         )}
