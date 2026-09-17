@@ -2115,6 +2115,39 @@ def resolve_review(property_id: str, payload: ReviewResolutionIn, _: None = Depe
         return {"id": p.id, "status": payload.action, "needsReview": p.needs_review}
 
 
+
+# Heurística de ciudad válida para el selector (presentación únicamente; no
+# modifica Property.city en la base). Rechaza basura de scraping mal matcheado.
+# Criterios (documentados en README_ENTREGA):
+#   1. vacío o longitud <= 2
+#   2. sin ninguna letra (A-Z / acentos / ñ)
+#   3. solo dígitos
+#   4. empieza con Av./Avenida/Calle/Ruta/Pasaje (parece dirección)
+#   5. contiene espacios y termina en altura numérica de 3–5 dígitos
+_CITY_ADDR_PREFIX = re.compile(
+    r"^(av\.?|avenida|calle|ruta|pasaje|pje\.?)\b",
+    re.IGNORECASE,
+)
+_CITY_HAS_LETTER = re.compile(r"[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]")
+_CITY_ONLY_DIGITS = re.compile(r"^\d+$")
+_CITY_ENDS_HEIGHT = re.compile(r"\d{3,5}\s*$")
+
+
+def is_valid_city_name(name: str | None) -> bool:
+    s = (name or "").strip()
+    if len(s) <= 2:
+        return False
+    if not _CITY_HAS_LETTER.search(s):
+        return False
+    if _CITY_ONLY_DIGITS.match(s):
+        return False
+    if _CITY_ADDR_PREFIX.match(s):
+        return False
+    if " " in s and _CITY_ENDS_HEIGHT.search(s):
+        return False
+    return True
+
+
 @app.get("/properties/filters")
 def properties_filters():
     """Autodetect de opciones de búsqueda territorial (Etapa 2 / bug reportado
@@ -2138,6 +2171,8 @@ def properties_filters():
         countries: set[str] = set()
         provinces_by_country: dict[str, set[str]] = {}
         cities_by_province: dict[str, set[str]] = {}
+        invalid_city_zones: set[str] = set()
+        has_invalid_city = False
         for country, province, city, zone in rows:
             country = (country or "Argentina").strip() or "Argentina"
             province = (province or "").strip()
@@ -2147,11 +2182,20 @@ def properties_filters():
             if province:
                 provinces_by_country.setdefault(country, set()).add(province)
             if city:
-                by_city.setdefault(city, set())
-                if zone:
-                    by_city[city].add(zone)
-                cities_by_province.setdefault(f"{country}|{province}", set()).add(city)
+                if is_valid_city_name(city):
+                    by_city.setdefault(city, set())
+                    if zone:
+                        by_city[city].add(zone)
+                    cities_by_province.setdefault(f"{country}|{province}", set()).add(city)
+                else:
+                    has_invalid_city = True
+                    if zone:
+                        invalid_city_zones.add(zone)
         cities = sorted(by_city.keys())
+        if has_invalid_city:
+            cities.append("Sin descripción")
+            by_city["Sin descripción"] = invalid_city_zones
+            # No agregamos "Sin descripción" a citiesByProvince (es un alias de presentación).
         return {
             "countries": sorted(countries) or ["Argentina", "Paraguay", "Uruguay"],
             "provincesByCountry": {c: sorted(ps) for c, ps in provinces_by_country.items()},
@@ -2194,7 +2238,13 @@ def properties(
         ensure_seed(db)
         stmt = select(Property)
         if zone: stmt = stmt.where(Property.zone == zone)
-        if city: stmt = stmt.where(Property.city == city)
+        if city:
+            if city == "Sin descripción":
+                # Alias de presentación: propiedades cuyo city falla is_valid_city_name.
+                # Se resuelve en Python tras el query (volumen acotado por frescura).
+                pass  # filtro aplicado abajo sobre results
+            else:
+                stmt = stmt.where(Property.city == city)
         if country: stmt = stmt.where(Property.country == country)
         if province: stmt = stmt.where(Property.province == province)
         if under_construction is not None: stmt = stmt.where(Property.under_construction == under_construction)
@@ -2220,6 +2270,8 @@ def properties(
         # Default: mayor probabilidad de rotación primero (encargo #2).
         stmt = stmt.order_by(Property.priority_score.desc(), Property.detected_at.desc())
         results = db.scalars(stmt).all()
+        if city == "Sin descripción":
+            results = [p for p in results if not is_valid_city_name(p.city)]
 
         # Etapa 3: evento agregado y anónimo por cada búsqueda — insumo para
         # matching/recomendaciones/demanda/pricing (doc, sección 10, fase
