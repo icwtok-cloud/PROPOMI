@@ -29,7 +29,7 @@ const COUNTRY_OPTIONS=['Todos','Argentina','Paraguay','Uruguay'];
 
 export default function Home(){
   const [items,setItems]=useState<Property[]>([]);
-  const [budget,setBudget]=useState('180000');
+  const [budget,setBudget]=useState('');
   // Etapa 2 (bug reportado 2026-09-15): "Dónde" ya no es una lista fija de
   // barrios de Buenos Aires — city/zone se autodetectan de lo que el
   // crawler+carga manual efectivamente tienen en la base (GET
@@ -75,20 +75,16 @@ export default function Home(){
       setZonesByCity(f.zonesByCity||{});
       if((f as any).provincesByCountry) setProvincesByCountry((f as any).provincesByCountry);
       if((f as any).citiesByProvince) setCitiesByProvince((f as any).citiesByProvince);
-      // Default: primera ciudad disponible (y su primera zona), en vez del
-      // "Palermo" hardcodeado de antes — así el buscador arranca mostrando
-      // algo que realmente existe en la base, sea Buenos Aires, Córdoba, etc.
-      if(f.cities.length){
-        setCity(prev=>{
-        if(prev) return prev;
-        const list=f.cities||[];
-        if(list.includes('Buenos Aires')) return 'Buenos Aires';
-        return '';
-      });
-      }
+      // Sin ciudad por defecto: el listado arranca mostrando todo el catálogo.
+      // El usuario elige país/provincia/ciudad/zona desde el pill.
     }catch(e:any){console.warn('filters',e?.message||e)}
   })()},[]);
   useEffect(()=>{
+    // Sin ciudad elegida no forzar zona (evita "El Mirador" de fábrica).
+    if(!city){
+      if(zone) setZone('');
+      return;
+    }
     const zonesForCity=zonesByCity[city]||[];
     if(!zone||!zonesForCity.includes(zone)){
       setZone(zonesForCity[0]||'');
@@ -206,7 +202,7 @@ export default function Home(){
 
   const whereLabel=[country&&country!=='Todos'?country:null,province||null,city||null,zone||null].filter(Boolean).join(' · ')||'Cualquier lugar';
   const typeLabel=ptype==='Todos'?(rooms==='Todos'?'Tipo y ambientes':`${rooms} amb.`):(rooms==='Todos'?propertyTypeLabel(ptype,country):`${propertyTypeLabel(ptype,country)} · ${rooms} amb.`);
-  const budgetLabel=budget?`Hasta USD ${Number(budget).toLocaleString('en-US')}`:'Presupuesto';
+  const budgetLabel=budget?`Hasta USD ${Number(budget).toLocaleString('en-US')}`:'Cualquier presupuesto';
   const typeIcon=(name:string)=>{
     if(name==='Casa')return <HomeIcon size={18}/>;
     if(name==='Oficina')return <Briefcase size={18}/>;
@@ -377,7 +373,7 @@ export default function Home(){
             <p className="muted">{isLoading?'Cargando…':`${filtered.length} compatibles con tus criterios actuales.`}</p></div>
         </div>
         {isLoading&&(
-          <div className="grid skeleton-grid" aria-busy="true" aria-label="Cargando propiedades">
+          <div className="properties-grid skeleton-grid" aria-busy="true" aria-label="Cargando propiedades">
             {[1,2,3,4,5,6].map(i=>(
               <div key={i} className="property skeleton-card">
                 <div className="skeleton-img"/>
@@ -389,7 +385,7 @@ export default function Home(){
           </div>
         )}
         {!isLoading&&(
-        <div className="grid">{filtered.map(p=>
+        <div className="properties-grid">{filtered.map(p=>
           <PropertyCard key={p.id} p={p} saved={saved.includes(p.id)} compared={compared.includes(p.id)}
             onSave={()=>toggleSave(p)} onCompare={()=>toggleCompare(p)}
             onOffer={()=>setWizard({p,mode:'offer'})} onView={()=>openDetail(p)}/>)}

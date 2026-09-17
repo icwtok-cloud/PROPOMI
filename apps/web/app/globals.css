@@ -310,6 +310,21 @@
 }
 .invest-badge{top:auto!important;bottom:10px;left:8px;right:auto!important;background:#1f6b3b!important;color:#fff!important;font-size:11px!important;font-weight:750!important;padding:4px 8px!important;border-radius:8px!important}
 .pozo-badge{top:36px!important;left:8px!important;right:auto!important;background:#BF4E32!important;color:#fff!important;font-size:11px!important;font-weight:750!important;padding:4px 8px!important;border-radius:8px!important}
-.grid.properties,
+/* Listado home: densidad tipo Airbnb (~5–6 cols en ~1300px). No toca .grid global (tienda, etc.). */
 .properties-grid,
-section#propiedades .grid{gap:14px}
+.grid.properties,
+section#propiedades .grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(220px,1fr));
+  gap:14px;
+}
+@media(max-width:900px){
+  .properties-grid,
+  .grid.properties,
+  section#propiedades .grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+}
+@media(max-width:620px){
+  .properties-grid,
+  .grid.properties,
+  section#propiedades .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+}
