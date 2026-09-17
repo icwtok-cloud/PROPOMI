@@ -88,13 +88,15 @@ export default function PropertyCard({
           {p.bathrooms != null && <> · {p.bathrooms} baño</>}
         </div>
         {p.originPublishedAt && <div className="muted small">{p.originPublishedAt}</div>}
-        <div className="tags">
-          {p.parking && <span>Cochera</span>}
-          {p.balcony && <span>Balcón</span>}
-          {p.credit && <span>Crédito</span>}
-          {p.pool && <span>Pileta</span>}
-          {p.petFriendly && <span>Acepta mascotas</span>}
-        </div>
+        {(p.parking||p.balcony||p.credit||p.pool||p.petFriendly)&&(
+          <div className="tags">
+            {p.parking && <span>Cochera</span>}
+            {p.balcony && <span>Balcón</span>}
+            {p.credit && <span>Crédito</span>}
+            {p.pool && <span>Pileta</span>}
+            {p.petFriendly && <span>Acepta mascotas</span>}
+          </div>
+        )}
         <div className="actions">
           <button type="button" onClick={onCompare} className={compared ? 'secondary active' : 'secondary'}>
             <GitCompare size={15}/>{compared ? 'Comparada' : 'Comparar'}
