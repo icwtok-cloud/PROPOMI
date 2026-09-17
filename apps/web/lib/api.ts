@@ -58,6 +58,17 @@ export async function getGeoCatalog():Promise<GeoCatalog>{
   }
   return req<GeoCatalog>('/geo/catalog');
 }
+export type AddGeoCityResult={created:boolean;city?:string;needsConfirmation?:boolean;suggestion?:string};
+export async function addGeoCity(
+  payload:{country:string;province:string;city:string;force?:boolean},
+  session:Session,
+):Promise<AddGeoCityResult>{
+  if(!base){
+    return {created:true,city:payload.city.trim()};
+  }
+  return req<AddGeoCityResult>('/geo/cities',{method:'POST',body:JSON.stringify(payload)},session.token);
+}
+
 export async function trackEvent(name:EventName,property_id?:string,context?:Record<string,unknown>,session?:Session|null){if(!base)return;return req('/events',{method:'POST',body:JSON.stringify({name,property_id,session_id:'web-session',context})},session?.token)}
 const BUYER_KEY='propomi-buyer-session';
 function getBuyerSession():Session|null{try{const raw=localStorage.getItem(BUYER_KEY);return raw?JSON.parse(raw):null}catch{return null}}

@@ -297,16 +297,35 @@
 .property-card-v2 .actions .primary,
 .property-card-v2 .actions .secondary{padding:7px 10px;font-size:12px}
 
-/* Chips de publicación (panel agencia) — misma paleta que el pill del home */
-.publish-geo-block{margin:10px 0 4px}
-.publish-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px}
-.publish-chip-row .chip{
-  border:1.5px solid #d9e1e9;background:#fff;border-radius:999px;
-  padding:8px 14px;font-size:13px;font-weight:600;color:#102033;cursor:pointer;
+/* Formulario Publicar nueva — secciones + selects nativos */
+.publish-card{padding-bottom:18px}
+.publish-section{margin-top:18px;padding-top:16px;border-top:1px solid #e8edf3}
+.publish-section:first-of-type{margin-top:12px;padding-top:0;border-top:0}
+.publish-section-title{
+  font-size:12px;font-weight:700;color:#536174;letter-spacing:.03em;
+  text-transform:uppercase;margin:0 0 12px;
 }
-.publish-chip-row .chip.active,
-.publish-chip-row .chip:hover{
-  border-color:#BF4E32;background:#fff0f1;color:#9E3F28;
+.publish-field{display:block;font-size:12px;font-weight:600;color:#536174;margin-bottom:12px}
+.publish-field input,
+.publish-field select,
+.publish-field textarea{
+  margin-top:8px;width:100%;border:1px solid #d9e1e9;border-radius:9px;
+  padding:11px 12px;background:#fff;color:#102033;font-size:14px;
+}
+.publish-field select:focus,
+.publish-field input:focus,
+.publish-field textarea:focus{
+  outline:0;border-color:#BF4E32;box-shadow:0 0 0 3px rgba(191,78,50,.12);
+}
+.publish-field select:disabled{opacity:.55;cursor:not-allowed;background:#f5f7fa}
+.publish-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.publish-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.publish-other-city{
+  margin-top:4px;padding:12px;background:#f8fafc;border:1px solid #e3e8ee;
+  border-radius:12px;
+}
+@media(max-width:700px){
+  .publish-grid-2,.publish-grid-3{grid-template-columns:1fr}
 }
 .invest-badge{top:auto!important;bottom:10px;left:8px;right:auto!important;background:#1f6b3b!important;color:#fff!important;font-size:11px!important;font-weight:750!important;padding:4px 8px!important;border-radius:8px!important}
 .pozo-badge{top:36px!important;left:8px!important;right:auto!important;background:#BF4E32!important;color:#fff!important;font-size:11px!important;font-weight:750!important;padding:4px 8px!important;border-radius:8px!important}

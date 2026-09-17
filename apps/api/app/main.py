@@ -383,6 +383,20 @@ class Agency(Base):
     slug: Mapped[str | None] = mapped_column(String(160), nullable=True, unique=True)
 
 
+
+class GeoCity(Base):
+    """Ciudades agregadas por agentes (extienden el catálogo estático de geo_catalog.py)."""
+    __tablename__ = "geo_cities"
+    __table_args__ = (UniqueConstraint("country", "province", "normalized", name="uq_geo_city_place"),)
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    country: Mapped[str] = mapped_column(String(100))
+    province: Mapped[str] = mapped_column(String(100))
+    city: Mapped[str] = mapped_column(String(120))
+    normalized: Mapped[str] = mapped_column(String(120))
+    created_by_agency_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class AgencyPhone(Base):
     """Telefonos adicionales de una agencia (celular personal + linea de oficina, etc.).
     Agency.phone sigue siendo el telefono principal/original; esta tabla permite sumar
@@ -2151,14 +2165,120 @@ def is_valid_city_name(name: str | None) -> bool:
 
 
 
+def _normalize_city_name(s: str) -> str:
+    """NFKD + ascii + lower + strip — misma idea que el backfill de province."""
+    nfkd = unicodedata.normalize("NFKD", (s or "").strip())
+    return nfkd.encode("ascii", "ignore").decode("ascii").lower().strip()
+
+
 @app.get("/geo/catalog")
 def geo_catalog():
-    """Catálogo geográfico estático (país → provincia → ciudad) para el
-    formulario de alta de agencia. No depende de Property: permite publicar
-    en ciudades donde el crawler todavía no scrapeó. El pill público del
-    home sigue usando GET /properties/filters (solo ciudades con inventario)."""
+    """Catálogo geográfico (estático + ciudades agregadas por agentes) para el
+    formulario de alta de agencia. Países/provincias siguen cerrados; ciudades
+    se mergean con GeoCity. El pill público sigue en GET /properties/filters."""
     from .geo_catalog import get_geo_catalog
-    return get_geo_catalog()
+    base = get_geo_catalog()
+    cities_by_province: dict[str, list[str]] = {
+        k: list(v) for k, v in (base.get("citiesByProvince") or {}).items()
+    }
+    with Session(engine) as db:
+        rows = db.scalars(select(GeoCity)).all()
+        for row in rows:
+            key = f"{row.country}|{row.province}"
+            bucket = cities_by_province.setdefault(key, [])
+            if row.city not in bucket:
+                bucket.append(row.city)
+    for key in cities_by_province:
+        cities_by_province[key] = sorted(set(cities_by_province[key]))
+    base["citiesByProvince"] = cities_by_province
+    return base
+
+
+class GeoCityIn(BaseModel):
+    country: str = Field(min_length=1, max_length=100)
+    province: str = Field(min_length=1, max_length=100)
+    city: str = Field(min_length=1, max_length=120)
+    force: bool = False
+
+
+@app.post("/geo/cities")
+def add_geo_city(payload: GeoCityIn, session: dict[str, Any] = Depends(require_agent)):
+    """Alta de ciudad por un agente. Dedup exacto + sugerencia fuzzy (ratio>=0.82)."""
+    from .geo_catalog import GEO_CATALOG
+    import difflib
+
+    country = payload.country.strip()
+    province = payload.province.strip()
+    city = payload.city.strip()
+    if not city:
+        raise HTTPException(status_code=400, detail="Ingresá el nombre de la ciudad")
+    if country not in GEO_CATALOG or province not in GEO_CATALOG.get(country, {}):
+        raise HTTPException(status_code=400, detail="País o provincia no válidos en el catálogo")
+
+    agency_id = session.get("agency_id") or ""
+    _rate.check(f"geo-city:{agency_id}", 20, 86400)
+
+    static_cities = list(GEO_CATALOG[country][province])
+    norm = _normalize_city_name(city)
+
+    # Universo canónico: estáticas + DB
+    with Session(engine) as db:
+        db_rows = db.scalars(
+            select(GeoCity).where(GeoCity.country == country, GeoCity.province == province)
+        ).all()
+        canon: list[tuple[str, str]] = []  # (display, normalized)
+        for c in static_cities:
+            canon.append((c, _normalize_city_name(c)))
+        for r in db_rows:
+            canon.append((r.city, r.normalized))
+
+        # Match exacto normalizado
+        for display, n in canon:
+            if n == norm:
+                return {"created": False, "city": display}
+
+        if not payload.force:
+            best = None
+            best_ratio = 0.0
+            for display, n in canon:
+                ratio = difflib.SequenceMatcher(None, norm, n).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best = display
+            if best is not None and best_ratio >= 0.82:
+                return {
+                    "created": False,
+                    "needsConfirmation": True,
+                    "suggestion": best,
+                }
+
+        # Insertar
+        new_id = f"gc-{uuid.uuid4().hex[:12]}"
+        row = GeoCity(
+            id=new_id,
+            country=country,
+            province=province,
+            city=city,
+            normalized=norm,
+            created_by_agency_id=agency_id or None,
+        )
+        db.add(row)
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            # carrera: otro agente insertó el mismo normalized
+            existing = db.scalars(
+                select(GeoCity).where(
+                    GeoCity.country == country,
+                    GeoCity.province == province,
+                    GeoCity.normalized == norm,
+                )
+            ).first()
+            if existing:
+                return {"created": False, "city": existing.city}
+            raise
+        return {"created": True, "city": city}
 
 
 @app.get("/properties/filters")

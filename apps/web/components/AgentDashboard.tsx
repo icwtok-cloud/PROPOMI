@@ -2,7 +2,7 @@
 import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,Unlock,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,GeoCatalog} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,addGeoCity,GeoCatalog} from '../lib/api';
 import {adminUnitLabel} from '../lib/geo';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
@@ -119,6 +119,11 @@ export default function AgentDashboard(){
   const [propForm,setPropForm]=useState({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
   const [geoCatalog,setGeoCatalog]=useState<GeoCatalog|null>(null);
   const PROP_TYPES=['Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
+  const [otherCityOpen,setOtherCityOpen]=useState(false);
+  const [otherCityDraft,setOtherCityDraft]=useState('');
+  const [otherCityBusy,setOtherCityBusy]=useState(false);
+  const [otherCitySuggest,setOtherCitySuggest]=useState<string|null>(null);
+  const [otherCityError,setOtherCityError]=useState('');
   const [myProperties,setMyProperties]=useState<Property[]>([]);
   const [toast,setToast]=useState('');
   const [loadError,setLoadError]=useState<string|null>(null);
@@ -233,6 +238,33 @@ export default function AgentDashboard(){
     }catch(e:any){
       notify(e?.message||'No pudimos iniciar el checkout.');
       setCheckoutLoadingKey(null);
+    }
+  }
+
+  async function confirmOtherCity(force=false){
+    if(!session||!propForm.country||!propForm.province)return;
+    const name=otherCityDraft.trim();
+    if(!name){setOtherCityError('Ingresá el nombre de la ciudad');return;}
+    setOtherCityBusy(true);setOtherCityError('');setOtherCitySuggest(null);
+    try{
+      const r=await addGeoCity({country:propForm.country,province:propForm.province,city:name,force},session);
+      if(r.needsConfirmation&&r.suggestion&&!force){
+        setOtherCitySuggest(r.suggestion);
+        return;
+      }
+      const finalCity=(r.city||name).trim();
+      setGeoCatalog(prev=>{
+        if(!prev)return prev;
+        const key=`${propForm.country}|${propForm.province}`;
+        const list=Array.from(new Set([...(prev.citiesByProvince[key]||[]),finalCity])).sort();
+        return {...prev,citiesByProvince:{...prev.citiesByProvince,[key]:list}};
+      });
+      setPropForm(f=>({...f,city:finalCity}));
+      setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
+    }catch(e:any){
+      setOtherCityError(e?.message||'No pudimos agregar la ciudad.');
+    }finally{
+      setOtherCityBusy(false);
     }
   }
 
@@ -411,81 +443,132 @@ export default function AgentDashboard(){
         );
       })}
 
-      <div className="summarycard account-block" style={{marginTop:16}}>
+      <div className="summarycard account-block publish-card" style={{marginTop:16}}>
         <div className="account-block-head">
           <Plus size={18}/>
           <div>
             <h3 className="account-block-title">Publicar nueva</h3>
-            <p className="muted small" style={{margin:0}}>Elegí ubicación del catálogo y completá los datos de la propiedad.</p>
+            <p className="muted small" style={{margin:0}}>Completá los datos. País y provincia del catálogo; ciudad se puede ampliar.</p>
           </div>
         </div>
 
-        <label>Título<input value={propForm.title} onChange={e=>setPropForm(f=>({...f,title:e.target.value}))} placeholder="2 ambientes luminoso en Palermo"/></label>
-
-        <div className="publish-geo-block">
-          <div className="muted small" style={{marginBottom:6,fontWeight:700}}>País</div>
-          <div className="publish-chip-row">
-            {(geoCatalog?.countries||['Argentina','Paraguay','Uruguay']).map(c=>(
-              <button type="button" key={c}
-                className={propForm.country===c?'chip active':'chip'}
-                onClick={()=>setPropForm(f=>({...f,country:c,province:'',city:''}))}
-              >{c}</button>
-            ))}
-          </div>
-          <div className="muted small" style={{margin:'12px 0 6px',fontWeight:700}}>{adminUnitLabel(propForm.country)}</div>
-          <div className="publish-chip-row">
-            {(geoCatalog?.provincesByCountry?.[propForm.country]||[]).map(p=>(
-              <button type="button" key={p}
-                className={propForm.province===p?'chip active':'chip'}
-                onClick={()=>setPropForm(f=>({...f,province:p,city:''}))}
-              >{p}</button>
-            ))}
-            {!geoCatalog && <span className="muted small">Cargando catálogo…</span>}
-          </div>
-          {propForm.province && (
-            <>
-              <div className="muted small" style={{margin:'12px 0 6px',fontWeight:700}}>Ciudad</div>
-              <div className="publish-chip-row">
-                {(geoCatalog?.citiesByProvince?.[`${propForm.country}|${propForm.province}`]||[]).map(c=>(
-                  <button type="button" key={c}
-                    className={propForm.city===c?'chip active':'chip'}
-                    onClick={()=>setPropForm(f=>({...f,city:c}))}
-                  >{c}</button>
-                ))}
-              </div>
-            </>
-          )}
-          <label style={{marginTop:12}}>Zona / barrio (texto libre)
-            <input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo, Pocitos, Centro…"/>
+        <div className="publish-section">
+          <div className="publish-section-title">Información básica</div>
+          <label className="publish-field">Título
+            <input value={propForm.title} onChange={e=>setPropForm(f=>({...f,title:e.target.value}))} placeholder="2 ambientes luminoso en Palermo"/>
+          </label>
+          <label className="publish-field">Tipo
+            <select value={propForm.type} onChange={e=>setPropForm(f=>({...f,type:e.target.value}))}>
+              {PROP_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+            </select>
           </label>
         </div>
 
-        <div className="muted small" style={{margin:'8px 0 6px',fontWeight:700}}>Tipo</div>
-        <div className="publish-chip-row">
-          {PROP_TYPES.map(t=>(
-            <button type="button" key={t}
-              className={propForm.type===t?'chip active':'chip'}
-              onClick={()=>setPropForm(f=>({...f,type:t}))}
-            >{t}</button>
-          ))}
+        <div className="publish-section">
+          <div className="publish-section-title">Ubicación</div>
+          <div className="publish-grid-2">
+            <label className="publish-field">País
+              <select value={propForm.country} onChange={e=>{
+                setPropForm(f=>({...f,country:e.target.value,province:'',city:''}));
+                setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
+              }}>
+                {(geoCatalog?.countries||['Argentina','Paraguay','Uruguay']).map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </label>
+            <label className="publish-field">{adminUnitLabel(propForm.country)}
+              <select
+                value={propForm.province}
+                disabled={!propForm.country}
+                onChange={e=>{
+                  setPropForm(f=>({...f,province:e.target.value,city:''}));
+                  setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
+                }}
+              >
+                <option value="">{propForm.country?'Elegí…':'Elegí un país primero'}</option>
+                {(geoCatalog?.provincesByCountry?.[propForm.country]||[]).map(p=><option key={p} value={p}>{p}</option>)}
+              </select>
+            </label>
+          </div>
+          <div className="publish-grid-2">
+            <label className="publish-field">Ciudad
+              <select
+                value={otherCityOpen?'__other__':propForm.city}
+                disabled={!propForm.province}
+                onChange={e=>{
+                  const v=e.target.value;
+                  if(v==='__other__'){setOtherCityOpen(true);setPropForm(f=>({...f,city:''}));}
+                  else{setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);setPropForm(f=>({...f,city:v}));}
+                }}
+              >
+                <option value="">{propForm.province?'Elegí…':'Elegí provincia primero'}</option>
+                {(geoCatalog?.citiesByProvince?.[`${propForm.country}|${propForm.province}`]||[]).map(c=><option key={c} value={c}>{c}</option>)}
+                {propForm.province&&<option value="__other__">+ Otra ciudad…</option>}
+              </select>
+            </label>
+            <label className="publish-field">Zona / barrio
+              <input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo, Pocitos, Centro…"/>
+            </label>
+          </div>
+          {otherCityOpen&&(
+            <div className="publish-other-city">
+              <label className="publish-field">Nombre de la ciudad
+                <input value={otherCityDraft} onChange={e=>setOtherCityDraft(e.target.value)} placeholder="Ej: Libertad" disabled={otherCityBusy}/>
+              </label>
+              {otherCitySuggest&&(
+                <div className="notice" style={{marginTop:8}}>
+                  ¿Quisiste decir <strong>{otherCitySuggest}</strong>?
+                  <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+                    <button type="button" className="primary" disabled={otherCityBusy} onClick={()=>{
+                      setPropForm(f=>({...f,city:otherCitySuggest!}));
+                      setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
+                    }}>Sí, usar esa</button>
+                    <button type="button" className="secondary" disabled={otherCityBusy} onClick={()=>confirmOtherCity(true)}>No, es una ciudad distinta</button>
+                  </div>
+                </div>
+              )}
+              {otherCityError&&<div className="notice notice-error" style={{marginTop:8}}>{otherCityError}</div>}
+              {!otherCitySuggest&&(
+                <div style={{marginTop:8}}>
+                  <button type="button" className="secondary" disabled={otherCityBusy} onClick={()=>confirmOtherCity(false)}>
+                    {otherCityBusy?'Agregando…':'Agregar ciudad'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <div className="account-form-grid" style={{marginTop:12}}>
-          <label>Precio (USD)<input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/></label>
-          <label>Superficie (m²)<input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/></label>
-          <label>Ambientes<input type="number" min={0} value={propForm.rooms} onChange={e=>setPropForm(f=>({...f,rooms:e.target.value}))}/></label>
+        <div className="publish-section">
+          <div className="publish-section-title">Precio y superficie</div>
+          <div className="publish-grid-3">
+            <label className="publish-field">Precio (USD)
+              <input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/>
+            </label>
+            <label className="publish-field">Superficie (m²)
+              <input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/>
+            </label>
+            <label className="publish-field">Ambientes
+              <input type="number" min={0} value={propForm.rooms} onChange={e=>setPropForm(f=>({...f,rooms:e.target.value}))}/>
+            </label>
+          </div>
         </div>
 
-        <label>Fotos (opcional, una URL por línea, máx. 5)
-          <textarea
-            value={propForm.imageUrls}
-            onChange={e=>setPropForm(f=>({...f,imageUrls:e.target.value}))}
-            rows={3}
-            placeholder={"https://.../foto1.jpg\nhttps://.../foto2.jpg"}
-          />
-        </label>
-        <p className="muted small">Solo URLs http(s). Se usan en la galería del detalle.</p>
-        <label>Descripción (sin teléfonos ni links)<textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/></label>
+        <div className="publish-section">
+          <div className="publish-section-title">Fotos y descripción</div>
+          <label className="publish-field">Fotos (opcional, una URL por línea, máx. 5)
+            <textarea
+              value={propForm.imageUrls}
+              onChange={e=>setPropForm(f=>({...f,imageUrls:e.target.value}))}
+              rows={3}
+              placeholder={"https://.../foto1.jpg\nhttps://.../foto2.jpg"}
+            />
+          </label>
+          <p className="muted small">Solo URLs http(s). Se usan en la galería del detalle.</p>
+          <label className="publish-field">Descripción (sin teléfonos ni links)
+            <textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/>
+          </label>
+        </div>
+
         <div className="modalactions" style={{justifyContent:'flex-start'}}>
           <button className="primary" disabled={busy||agency?.verificationStatus!=='VERIFIED'} onClick={submitProperty}><Plus size={15}/> Publicar propiedad</button>
         </div>
