@@ -203,6 +203,18 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         match_demand_requests_for_property(db, existing)
         return "updated"
 
+    from app.main import normalize_phone
+    from .dedup import find_cross_source_match
+    phone_raw = payload.get("contact_phone_raw") or None
+    phone_norm = normalize_phone(phone_raw) if phone_raw else None
+
+    group_id = None
+    twin = find_cross_source_match(db, payload, source_id)
+    if twin is not None:
+        group_id = twin.listing_group_id or f"lg-{uuid.uuid4().hex[:12]}"
+        if not twin.listing_group_id:
+            twin.listing_group_id = group_id
+
     prop = Property(
         id=f"c-{uuid.uuid4().hex[:12]}",
         title=payload["title"],
@@ -226,6 +238,9 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
         freshness="crawler",
         origin_published_at=payload.get("origin_published_at"),
         agency_id=None,
+        contact_phone_raw=phone_raw,
+        contact_phone_normalized=phone_norm,
+        listing_group_id=group_id,
         detected_at=now,
         last_seen_at=now,
         hidden_at=None,

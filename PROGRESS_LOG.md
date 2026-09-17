@@ -1,3 +1,11 @@
+## 2026-09-17 — Crawler expansion geo: research + phone claim + dedupe
+
+Base 2b8580a. Investigación AR/PY/UY: techo SSR real << 15/jurisdicción (CF/SPA).
+Pipeline: agency_phone→contact_phone_*; cross-source listing_group; fingerprint más fino.
+Sin parsers RE/MAX (SPA). Docs CRAWLER_EXPANSION_GEO_2026-09-17.md
+
+---
+
 ## 2026-09-17 — UX buscador: budget 180k, BA default, catálogos canónicos, labels PY/UY
 
 Base 8441b2c. Solo FE: page.tsx + lib/geo.ts. País Todos, ciudad BA, provincia/depto canónico, Apartamento en UY.

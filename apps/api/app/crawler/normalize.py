@@ -205,9 +205,9 @@ def to_property_payload(raw: RawListing | dict[str, Any], source_id: str | None 
         "source_url": d.get("source_url") or d.get("url") or "",
         "origin_published_at": d.get("origin_published_at"),
         "freshness": d.get("freshness") or "crawler",
-        # Nunca copiar el teléfono del portal a la ficha pública de Propomi
-        # (regla ya acordada: la verificación de identidad es SMS propio).
-        "contact_phone_raw": None,
+        # Teléfono de agente del portal → contact_phone_* (mismo campo que
+        # relink_properties / login OTP usa para claim). Vacío = no claimable.
+        "contact_phone_raw": (d.get("agency_phone") or d.get("contact_phone_raw") or None) or None,
         "agency_hint": d.get("agency_name") or None,
         "external_id": d.get("external_id"),
         "priority_score": compute_priority_score({
