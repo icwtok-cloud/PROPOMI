@@ -23,6 +23,7 @@ Variables de entorno:
   WHATSAPP_CLOUD_TEMPLATE_NAME    — nombre exacto de la plantilla aprobada
   WHATSAPP_CLOUD_TEMPLATE_LOCALE  — default "es_AR"
   WHATSAPP_CLOUD_API_VERSION      — default "v21.0"
+  WHATSAPP_CLOUD_KEEP_AR_NINE     — default false; si true no saca el "9" de móviles AR
 """
 from __future__ import annotations
 
@@ -36,6 +37,16 @@ WHATSAPP_CLOUD_PHONE_NUMBER_ID = os.getenv("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "")
 WHATSAPP_CLOUD_TEMPLATE_NAME = os.getenv("WHATSAPP_CLOUD_TEMPLATE_NAME", "")
 WHATSAPP_CLOUD_TEMPLATE_LOCALE = os.getenv("WHATSAPP_CLOUD_TEMPLATE_LOCALE", "es_AR")
 WHATSAPP_CLOUD_API_VERSION = os.getenv("WHATSAPP_CLOUD_API_VERSION", "v21.0")
+# Mismo patrón que VONAGE_KEEP_AR_NINE (sms_vonage.py). Meta Graph API en modo
+# de prueba matchea el destinatario del allowed list tal cual se registró
+# (a menudo sin el "9" de móviles AR E.164). Default false = sacar el "9"
+# post-54 al enviar. Poner true solo si el número de prueba en Meta quedó
+# cargado CON el "9".
+WHATSAPP_CLOUD_KEEP_AR_NINE = os.getenv("WHATSAPP_CLOUD_KEEP_AR_NINE", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
 
 
 class WhatsappCloudError(Exception):
@@ -57,6 +68,16 @@ def send_otp_whatsapp_cloud(to_e164: str, code: str) -> dict[str, Any]:
         )
 
     to_clean = to_e164.lstrip("+").replace(" ", "")
+    if to_clean.startswith("549") and not WHATSAPP_CLOUD_KEEP_AR_NINE:
+        # Meta Graph API rechaza (#131030 Recipient phone number not in
+        # allowed list) los móviles argentinos cuando el allowed list de
+        # prueba se cargó sin el "9" de E.164 y el envío va CON el "9".
+        # Confirmado en prod: mismo número, con "9" -> 131030; sin "9" ->
+        # entregado. Solo afecta el payload a Graph; el resto de la app
+        # sigue usando el E.164 completo con "9".
+        # EXCEPCIÓN: con WHATSAPP_CLOUD_KEEP_AR_NINE=true no se saca el "9",
+        # si el destinatario de prueba en Meta se registró con el "9".
+        to_clean = "54" + to_clean[3:]
     url = (
         f"https://graph.facebook.com/{WHATSAPP_CLOUD_API_VERSION}/"
         f"{WHATSAPP_CLOUD_PHONE_NUMBER_ID}/messages"
