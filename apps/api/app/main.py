@@ -1170,7 +1170,17 @@ class LemonSqueezyPaymentGateway:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
                 return body["data"]["attributes"]["url"]
-        except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError) as exc:
+        except urllib.error.HTTPError as exc:
+            try:
+                err_body = exc.read().decode("utf-8")
+            except Exception:
+                err_body = ""
+            print(
+                f"[PROPOMI LEMON SQUEEZY] Error creando checkout para ref={reference}: "
+                f"HTTP {exc.code} body={err_body}"
+            )
+            return None
+        except (urllib.error.URLError, KeyError, ValueError) as exc:
             print(f"[PROPOMI LEMON SQUEEZY] Error creando checkout para ref={reference}: {exc}")
             return None
 
@@ -3356,7 +3366,14 @@ def _ls_create_checkout_url(variant_id: str, agency_id: str, custom: dict[str, s
         with urllib.request.urlopen(req, timeout=10) as resp:
             body = json.loads(resp.read().decode("utf-8"))
             return body["data"]["attributes"]["url"]
-    except (urllib.error.URLError, urllib.error.HTTPError, KeyError, ValueError) as exc:
+    except urllib.error.HTTPError as exc:
+        try:
+            err_body = exc.read().decode("utf-8")
+        except Exception:
+            err_body = ""
+        print(f"[PROPOMI LEMON SQUEEZY] Error checkout: HTTP {exc.code} body={err_body}")
+        return None
+    except (urllib.error.URLError, KeyError, ValueError) as exc:
         print(f"[PROPOMI LEMON SQUEEZY] Error checkout: {exc}")
         return None
 
