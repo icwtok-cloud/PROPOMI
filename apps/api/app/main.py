@@ -3441,7 +3441,15 @@ if ENV != "production":
 def _ls_create_checkout_url(variant_id: str, agency_id: str, custom: dict[str, str], email: str | None = None) -> str | None:
     if not (LEMON_SQUEEZY_API_KEY and LEMON_SQUEEZY_STORE_ID and variant_id):
         return None
-    checkout_data: dict[str, Any] = {"custom": custom}
+    # Lemon exige que TODO valor en checkout_data.custom sea string (no null).
+    # Si un producto/variant heredó custom fields offer_id/lead_id como requeridos
+    # (p.ej. clonado desde el producto reveal), mandamos "" en todos los checkouts.
+    custom_str = {str(k): ("" if v is None else str(v)) for k, v in (custom or {}).items()}
+    if "offer_id" not in custom_str:
+        custom_str["offer_id"] = ""
+    if "lead_id" not in custom_str:
+        custom_str["lead_id"] = ""
+    checkout_data: dict[str, Any] = {"custom": custom_str}
     if email:
         checkout_data["email"] = email
     payload = {
@@ -3477,7 +3485,25 @@ def _ls_create_checkout_url(variant_id: str, agency_id: str, custom: dict[str, s
         except Exception:
             err_body = ""
         print(f"[PROPOMI LEMON SQUEEZY] Error checkout: HTTP {exc.code} body={err_body}")
-        return None
+        # Propagar detalle a la API (502) para no perder el motivo del 422 de Lemon.
+        detail = f"Lemon Squeezy HTTP {exc.code}"
+        try:
+            parsed = json.loads(err_body) if err_body else None
+            if isinstance(parsed, dict):
+                errors = parsed.get("errors") or []
+                if errors and isinstance(errors, list):
+                    msgs = []
+                    for e in errors[:3]:
+                        if isinstance(e, dict):
+                            msgs.append(str(e.get("detail") or e.get("title") or e))
+                    if msgs:
+                        detail = "; ".join(msgs)
+                elif parsed.get("error"):
+                    detail = str(parsed.get("error"))
+        except Exception:
+            if err_body:
+                detail = err_body[:300]
+        raise HTTPException(status_code=502, detail=f"No se pudo crear el checkout: {detail}") from exc
     except (urllib.error.URLError, KeyError, ValueError) as exc:
         print(f"[PROPOMI LEMON SQUEEZY] Error checkout: {exc}")
         return None
