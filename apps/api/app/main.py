@@ -4652,6 +4652,145 @@ def admin_list_agencies(
         }
 
 
+
+
+class SeedTestLeadsIn(BaseModel):
+    """Genera ofertas de prueba sobre propiedades de una agencia (QA del flujo reveal)."""
+    agency_id: str = Field(min_length=1, max_length=40)
+    count: int = 3
+    zero_credits: bool = True  # fuerza cupo 0 para probar checkout de pago
+
+
+@app.post("/admin/seed-test-leads")
+def admin_seed_test_leads(payload: SeedTestLeadsIn, _: None = Depends(require_admin)):
+    """Crea compradores + ofertas de prueba en propiedades de la agencia.
+
+    - La mayoría quedan con contact_revealed=False (botón Revelar activo).
+    - Una oferta queda ya revelada para ver el contador / UI de contacto abierto.
+    - Si zero_credits=True, deja free_leads y cupo de plan en 0 para forzar
+      el camino de pago (checkout Lemon) al revelar.
+    No usa datos reales de compradores; teléfonos son ficticios +54911...
+    """
+    n = max(1, min(int(payload.count or 3), 10))
+    with Session(engine) as db:
+        agency = db.get(Agency, payload.agency_id)
+        if not agency:
+            # permitir slug
+            agency = db.scalar(select(Agency).where(Agency.slug == payload.agency_id))
+        if not agency:
+            raise HTTPException(status_code=404, detail="Agencia no encontrada")
+
+        props = list(
+            db.scalars(
+                select(Property).where(
+                    Property.agency_id == agency.id,
+                    Property.hidden_at.is_(None),
+                ).order_by(Property.detected_at.desc()).limit(5)
+            ).all()
+        )
+        if not props:
+            # propiedad mínima para que el panel tenga algo sobre qué ofertar
+            pid = f"p-test-{uuid.uuid4().hex[:10]}"
+            prop = Property(
+                id=pid,
+                title="Depto de prueba Propomi (seed)",
+                zone="Palermo",
+                city="CABA",
+                country="Argentina",
+                province="CABA",
+                price=120000,
+                currency="USD",
+                surface=65,
+                rooms=3,
+                type="Departamento",
+                operation="Venta",
+                agency_id=agency.id,
+                contact_phone_raw=agency.phone or "+5491100000000",
+                contact_phone_normalized=normalize_phone(agency.phone or "+5491100000000"),
+            )
+            db.add(prop)
+            db.flush()
+            props = [prop]
+
+        if payload.zero_credits:
+            agency.free_leads_remaining = 0
+            agency.plan_lead_quota = 0
+            agency.leads_used_current_period = 0
+            agency.subscription_tier = None
+            lc = get_lead_credit(db, agency.id)
+            if lc:
+                lc.cupo = 0
+                lc.consumido = 0
+                lc.updated_at = datetime.now(timezone.utc)
+            sub = get_subscription(db, agency.id)
+            if sub:
+                sub.plan = SubscriptionPlan.PAY_PER_LEAD.value
+                sub.cupo_ciclo = 0
+                sub.consumido_ciclo = 0
+                sub.updated_at = datetime.now(timezone.utc)
+
+        created = []
+        samples = [
+            ("María Test", "+5491111110001", "maria.test@example.com", 115000, "contado"),
+            ("Juan Prueba", "+5491111110002", "juan.prueba@example.com", 110000, "crédito"),
+            ("Lucía Demo", "+5491111110003", "lucia.demo@example.com", 125000, "contado"),
+            ("Carlos QA", "+5491111110004", None, 105000, "permuta"),
+            ("Ana Seed", "+5491111110005", "ana.seed@example.com", 130000, "contado"),
+        ]
+        for i in range(n):
+            name, phone, email, amount, pay = samples[i % len(samples)]
+            # variación de teléfono para no colisionar unique users
+            phone = f"+54911111{10000 + i:05d}"
+            prop = props[i % len(props)]
+            user = User(
+                id=f"u-test-{uuid.uuid4().hex[:10]}",
+                phone=phone,
+                role=Role.COMPRADOR.value,
+                phone_verified_at=datetime.now(timezone.utc),
+            )
+            db.add(user)
+            db.flush()
+            oid = f"o-test-{uuid.uuid4().hex[:10]}"
+            revealed = i == n - 1  # última ya revelada para el counter
+            offer = Offer(
+                id=oid,
+                user_id=user.id,
+                property_id=prop.id,
+                amount=float(amount),
+                currency="USD",
+                payment_form=pay,
+                capital=float(amount) * 0.3,
+                timeframe="30-60 días",
+                comment=f"Oferta de prueba #{i + 1} (seed admin). Propiedad: {prop.title[:40]}",
+                status="SENT",
+                buyer_name=name,
+                buyer_phone_raw=phone,
+                buyer_phone_normalized=normalize_phone(phone) or phone,
+                buyer_email=email,
+                contact_revealed=revealed,
+                contact_revealed_at=datetime.now(timezone.utc) if revealed else None,
+                origin="seed-test",
+            )
+            db.add(offer)
+            created.append({
+                "offer_id": oid,
+                "buyer_name": name,
+                "property_id": prop.id,
+                "property_title": prop.title,
+                "contact_revealed": revealed,
+                "amount": amount,
+            })
+
+        db.commit()
+        return {
+            "agency_id": agency.id,
+            "agency_name": agency.name,
+            "zero_credits": payload.zero_credits,
+            "created": created,
+            "hint": "Entrá al panel /agencia → Ofertas. Revelá una no revelada para probar cupo/checkout.",
+        }
+
+
 @app.get("/admin/cold-start/pending")
 def admin_cold_start_pending(_: None = Depends(require_admin)):
     """Cola de notificaciones manuales T6.1. Único endpoint que expone el
