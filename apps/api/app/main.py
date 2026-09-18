@@ -4697,9 +4697,9 @@ def admin_seed_test_leads(payload: SeedTestLeadsIn, _: None = Depends(require_ad
                     type="Departamento",
                     operation="Venta",
                     zone="Palermo",
-                    city="CABA",
+                    city=agency.city or "CABA",
                     country="Argentina",
-                    province="CABA",
+                    province=agency.city or "CABA",
                     price=120000.0,
                     currency="USD",
                     surface=65.0,
@@ -4707,11 +4707,15 @@ def admin_seed_test_leads(payload: SeedTestLeadsIn, _: None = Depends(require_ad
                     bedrooms=2,
                     bathrooms=1,
                     freshness="seed",
+                    source="seed",
+                    source_url="seed://test-property",
+                    images=[],
                     agency_id=agency.id,
                     contact_phone_raw=agency.phone or "+5491100000000",
                     contact_phone_normalized=normalize_phone(agency.phone or "+5491100000000"),
                     detected_at=now,
                     last_seen_at=now,
+                    priority_score=0.0,
                 )
                 db.add(prop)
                 db.flush()
