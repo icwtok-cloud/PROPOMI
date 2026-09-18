@@ -49,7 +49,8 @@ export default function Home(){
   const [parking,setParking]=useState(false);
   const [credit,setCredit]=useState(false);
   const [saved,setSaved]=useState<string[]>([]);
-  const [compared,setCompared]=useState<string[]>([]);
+  const [compared,setCompared]=useState<string[]>([])
+  const [showCompare,setShowCompare]=useState(false);
   const [wizard,setWizard]=useState<{p:Property;mode:WizardMode}|null>(null);
   const [detail,setDetail]=useState<Property|null>(null);
   const [buyerSuggestions,setBuyerSuggestions]=useState<Array<{id:string;property:Property;suggested_by_agency_name:string|null;source_property_id:string;status:string}>>([]);
@@ -474,11 +475,11 @@ export default function Home(){
     </main>
 
     {compared.length>0&&<div className="comparebar">
-      <span><GitCompare size={16}/> {compared.length} para comparar</span>
-      <button onClick={()=>document.getElementById('propiedades')?.scrollIntoView({behavior:'smooth'})}>Ver comparador</button>
-      <button onClick={()=>setCompared([])}>Limpiar</button>
+      <span><GitCompare size={16}/> {compared.length} para comparar{compared.length<2?' · elegí al menos 2':''}</span>
+      <button type="button" disabled={compared.length<2} onClick={()=>setShowCompare(true)}>Ver comparador</button>
+      <button type="button" onClick={()=>{setCompared([]);setShowCompare(false)}}>Limpiar</button>
     </div>}
-    {compared.length>0&&<ComparePanel items={compareItems} onClose={()=>setCompared([])}/>}
+    {showCompare&&compared.length>0&&<ComparePanel items={compareItems} onClose={()=>setShowCompare(false)}/>}
 
     {wizard&&<IntentWizard p={wizard.p} mode={wizard.mode} onClose={()=>setWizard(null)} onDone={m=>{setWizard(null);setToast(m);refreshOffers()}}/>}
 
