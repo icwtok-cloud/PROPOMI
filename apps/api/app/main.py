@@ -30,7 +30,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from .sms_vonage import VonageSMSError, send_otp_sms
 from .whatsapp_vonage import VonageWhatsappError, send_otp_whatsapp
-from .whatsapp_cloud import WhatsappCloudError, send_otp_whatsapp_cloud
 
 # --------------------------------------------------------------------------
 # Filtro anti-fuga de contacto (ver doc 05 de la especificación de negocio).
@@ -819,32 +818,6 @@ def ensure_schema_columns() -> None:
 
 
 
-
-def ensure_schema_indexes() -> None:
-    """Índices parciales que aceleran el listado home / random / freshness.
-
-    ix_properties_hot soporta el filtro típico:
-      hidden_at IS NULL AND last_seen_at >= cutoff
-      ORDER BY priority_score DESC, detected_at DESC
-    sin seq scan de toda la tabla properties.
-
-    CREATE INDEX IF NOT EXISTS (no CONCURRENTLY): corre dentro de
-    engine.begin() al arranque; CONCURRENTLY no puede ir en transacción.
-    IF NOT EXISTS es idempotente y seguro en restarts con datos ya cargados.
-    """
-    inspector = inspect(engine)
-    if not inspector.has_table("properties"):
-        return
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "CREATE INDEX IF NOT EXISTS ix_properties_hot "
-                "ON properties (hidden_at, last_seen_at, priority_score DESC, detected_at DESC) "
-                "WHERE hidden_at IS NULL"
-            )
-        )
-
-
 def migrate_legacy_property_images() -> None:
     """Decisión explícita (doc 04.2 / 06): migrar el dato viejo en vez de
     arrancar de cero. Toda fila que todavía tenga `images` vacáo pero sí
@@ -1033,7 +1006,6 @@ def consume_reveal_credit(db: Session, agency: Agency) -> str | None:
 
 
 ensure_schema_columns()
-ensure_schema_indexes()
 migrate_legacy_property_images()
 migrate_agency_monetization()
 
@@ -1075,17 +1047,6 @@ class VonageWhatsappSender:
             raise HTTPException(status_code=502, detail=f"No pudimos enviar el código por WhatsApp: {exc}") from exc
 
 
-class WhatsappCloudSender:
-    def send(self, phone: str, code: str) -> None:
-        try:
-            send_otp_whatsapp_cloud(phone, code)
-        except WhatsappCloudError as exc:
-            raise HTTPException(
-                status_code=502,
-                detail=f"No pudimos enviar el código por WhatsApp: {exc}",
-            ) from exc
-
-
 OTP_SMS_PROVIDER = os.getenv("OTP_SMS_PROVIDER", "dev").strip().lower()
 
 
@@ -1094,8 +1055,6 @@ def _select_sms_sender() -> SmsSender:
         return VonageWhatsappSender()
     if OTP_SMS_PROVIDER == "vonage":
         return VonageSmsSender()
-    if OTP_SMS_PROVIDER == "whatsapp_cloud":
-        return WhatsappCloudSender()
     return MockSmsSender()
 
 
@@ -1242,30 +1201,6 @@ def normalize_phone(raw: str, default_country: str = "AR") -> str | None:
         return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
     except phonenumbers.NumberParseException:
         return None
-
-
-def phone_equivalents(phone: str) -> list[str]:
-    """Formas E.164 equivalentes de un mismo número argentino.
-
-    En Argentina un celular se escribe +54 9 11 XXXX XXXX o +54 11 XXXX XXXX
-    según quién lo tipee (el 9 es solo el prefijo de móvil): es la MISMA línea.
-    La persona no tiene por qué saber con cuál se registró, así que toda
-    búsqueda por teléfono compara contra ambas variantes. El primer elemento
-    siempre es el número recibido. Números no argentinos (o con largo raro)
-    se devuelven tal cual. No cambia lo que se guarda en la base, solo cómo
-    se busca."""
-    if not phone or not phone.startswith("+54"):
-        return [phone]
-    rest = phone[3:]
-    if not rest.isdigit():
-        return [phone]
-    # Nacional AR = código de área + número = 10 dígitos; con el 9 de móvil, 11.
-    # Ningún código de área argentino empieza con 9, no hay ambigüedad.
-    if len(rest) == 11 and rest.startswith("9"):
-        return [phone, "+54" + rest[1:]]
-    if len(rest) == 10 and not rest.startswith("9"):
-        return [phone, "+549" + rest]
-    return [phone]
 
 
 def slugify(name: str) -> str:
@@ -1924,15 +1859,12 @@ def verify_otp(payload: OTPVerify, request: Request):
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     with Session(engine) as db:
         consume_valid_otp(db, phone, payload.code)
-        user = find_user_by_phone(db, phone)
+        user = db.scalar(select(User).where(User.phone == phone))
         agency = find_agency_by_phone(db, phone)
         if user is None:
             if not agency:
-                raise HTTPException(
-                    status_code=403,
-                    detail="No encontramos una agencia asociada a este teléfono. Si todavía no te registraste, volvé atrás y tocá «¿Recién arrancás? Creá tu agencia».",
-                )
-            user = User(id=f"u-{uuid.uuid4().hex[:12]}", phone=agency_login_phone(db, agency, phone), role=Role.AGENTE.value, agency_id=agency.id)
+                raise HTTPException(status_code=403, detail="No encontramos una agencia asociada a este teléfono.")
+            user = User(id=f"u-{uuid.uuid4().hex[:12]}", phone=phone, role=Role.AGENTE.value, agency_id=agency.id)
             db.add(user)
             db.flush()
         elif user.role != Role.AGENTE.value:
@@ -2040,50 +1972,14 @@ def link_google_identity(payload: GoogleAuthIn, request: Request, session: dict[
 
 
 def find_agency_by_phone(db: Session, phone: str) -> Agency | None:
-    """Busca una agencia por telefono principal o por cualquiera de sus AgencyPhone.
-
-    Primero match exacto (comportamiento de siempre); si no hay, reintenta con
-    la variante con/sin el 9 de móvil argentino (ver phone_equivalents), para
-    que entrar con 11 XXXX XXXX, +54 11 XXXX XXXX o +54 9 11 XXXX XXXX dé el
-    mismo resultado sin importar con cuál se dio de alta la agencia."""
+    """Busca una agencia por telefono principal o por cualquiera de sus AgencyPhone."""
     agency = db.scalar(select(Agency).where(Agency.phone == phone))
     if agency:
         return agency
     ap = db.scalar(select(AgencyPhone).where(AgencyPhone.phone == phone))
     if ap:
         return db.get(Agency, ap.agency_id)
-    variants = phone_equivalents(phone)
-    if len(variants) > 1:
-        agency = db.scalars(select(Agency).where(Agency.phone.in_(variants)).order_by(Agency.claimed.desc())).first()
-        if agency:
-            return agency
-        ap = db.scalars(select(AgencyPhone).where(AgencyPhone.phone.in_(variants))).first()
-        if ap:
-            return db.get(Agency, ap.agency_id)
     return None
-
-
-def agency_login_phone(db: Session, agency: Agency, phone: str) -> str:
-    """El teléfono con el que la agencia YA está guardada y que equivale a
-    `phone` (puede ser el principal o un AgencyPhone). Si ninguno coincide,
-    devuelve `phone` tal cual. Se usa para que la cuenta de usuario del agente
-    quede atada siempre al mismo formato, sin duplicarse por tipear distinto."""
-    variants = set(phone_equivalents(phone))
-    for stored in all_agency_phones(db, agency.id):
-        if stored in variants:
-            return stored
-    return phone
-
-
-def find_user_by_phone(db: Session, phone: str) -> User | None:
-    """Busca un usuario por teléfono exacto o por su variante con/sin el 9 de
-    móvil argentino. Si hubiera más de una fila (formatos distintos creados en
-    el pasado), prioriza la que ya es agente con agencia."""
-    users = db.scalars(select(User).where(User.phone.in_(phone_equivalents(phone)))).all()
-    if not users:
-        return None
-    users.sort(key=lambda u: (u.role != Role.AGENTE.value, u.agency_id is None, u.phone != phone))
-    return users[0]
 
 
 def all_agency_phones(db: Session, agency_id: str) -> list[str]:
@@ -2095,7 +1991,7 @@ def all_agency_phones(db: Session, agency_id: str) -> list[str]:
 
 
 def relink_properties(db: Session, agency_id: str, phone: str) -> int:
-    rows = db.scalars(select(Property).where(Property.contact_phone_normalized.in_(phone_equivalents(phone)))).all()
+    rows = db.scalars(select(Property).where(Property.contact_phone_normalized == phone)).all()
     changed = 0
     for p in rows:
         if p.agency_id != agency_id:
@@ -2104,8 +2000,8 @@ def relink_properties(db: Session, agency_id: str, phone: str) -> int:
     return changed
 
 
-def prop_dict(p: Property, group_info: dict | None = None) -> dict[str, Any]:
-    d: dict[str, Any] = {
+def prop_dict(p: Property, group_info: dict[str, tuple[float, float, int]] | None = None) -> dict[str, Any]:
+    out = {
         "id": p.id, "title": p.title, "type": p.type, "operation": p.operation, "price": p.price, "currency": p.currency,
         "zone": p.zone, "city": p.city, "country": p.country, "province": getattr(p, "province", None) or "", "underConstruction": bool(getattr(p, "under_construction", False)), "investmentOpportunity": bool(getattr(p, "investment_opportunity", False)), "surface": p.surface, "rooms": p.rooms, "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms, "parking": p.parking, "pool": p.pool, "balcony": p.balcony, "petFriendly": p.pet_friendly,
@@ -2118,20 +2014,27 @@ def prop_dict(p: Property, group_info: dict | None = None) -> dict[str, Any]:
         "hiddenAt": p.hidden_at.isoformat() if p.hidden_at else None,
         "priorityScore": p.priority_score if p.priority_score is not None else 0.0,
     }
-    if group_info is not None:
-        d["priceMin"] = group_info["priceMin"]
-        d["priceMax"] = group_info["priceMax"]
-        d["groupMemberCount"] = group_info["groupMemberCount"]
-    return d
+    # Perf (home inicial + búsquedas): antes el frontend pedía este rango de
+    # precio grupo por grupo con un GET /properties/{id}/group por cada
+    # propiedad agrupada (N+1 secuencial, el cuello de botella real de carga
+    # del home). Ahora, si el caller nos pasa group_info (resuelto en una
+    # sola query agregada para todo el batch), lo insertamos acá y el
+    # frontend no necesita ningún request adicional.
+    if group_info and p.listing_group_id and p.listing_group_id in group_info:
+        pmin, pmax, count = group_info[p.listing_group_id]
+        out["priceMin"] = pmin
+        out["priceMax"] = pmax
+        out["groupMemberCount"] = count
+    return out
 
 
-def _bulk_group_info(db: Session, props: list) -> dict[str, dict]:
-    """Una sola query agregada por listing_group_id → evita N+1 del home.
-
-    Devuelve {listing_group_id: {"priceMin", "priceMax", "groupMemberCount"}}.
-    Props sin listing_group_id se ignoran.
-    """
-    group_ids = list({p.listing_group_id for p in props if getattr(p, "listing_group_id", None)})
+def _bulk_group_info(db, results: list["Property"]) -> dict[str, tuple[float, float, int]]:
+    """Resuelve min/max/cantidad de precio para todos los listing_group_id
+    presentes en `results`, en una sola query agregada (en vez de un
+    GET /properties/{id}/group por propiedad). El rango se calcula sobre
+    TODOS los miembros del grupo (igual que /properties/{id}/group), no solo
+    los que pasaron los filtros de esta búsqueda puntual."""
+    group_ids = {p.listing_group_id for p in results if p.listing_group_id}
     if not group_ids:
         return {}
     rows = db.execute(
@@ -2139,82 +2042,12 @@ def _bulk_group_info(db: Session, props: list) -> dict[str, dict]:
             Property.listing_group_id,
             func.min(Property.price),
             func.max(Property.price),
-            func.count(),
+            func.count(Property.id),
         )
         .where(Property.listing_group_id.in_(group_ids))
         .group_by(Property.listing_group_id)
     ).all()
-    out: dict[str, dict] = {}
-    for gid, pmin, pmax, cnt in rows:
-        if not gid:
-            continue
-        out[str(gid)] = {
-            "priceMin": float(pmin) if pmin is not None else None,
-            "priceMax": float(pmax) if pmax is not None else None,
-            "groupMemberCount": int(cnt or 0),
-        }
-    return out
-
-
-def _properties_base_stmt(
-    *,
-    zone: str | None = None,
-    city: str | None = None,
-    type: str | None = None,
-    operation: str | None = None,
-    rooms: int | None = None,
-    max_price: float | None = None,
-    parking: bool | None = None,
-    credit: bool | None = None,
-    agency_id: str | None = None,
-    exclude_agency_id: str | None = None,
-    country: str | None = None,
-    province: str | None = None,
-    under_construction: bool | None = None,
-    investment_opportunity: bool | None = None,
-    include_hidden: bool = False,
-    admin_ok: bool = False,
-):
-    """Filtros compartidos de /properties y /properties/random (sin order/limit)."""
-    stmt = select(Property)
-    if zone:
-        stmt = stmt.where(Property.zone == zone)
-    if city:
-        if city == "Sin descripción":
-            # Alias de presentación: se resuelve en Python tras el query.
-            pass
-        else:
-            stmt = stmt.where(Property.city == city)
-    if country:
-        stmt = stmt.where(Property.country == country)
-    if province:
-        stmt = stmt.where(Property.province == province)
-    if under_construction is not None:
-        stmt = stmt.where(Property.under_construction == under_construction)
-    if investment_opportunity is not None:
-        stmt = stmt.where(Property.investment_opportunity == investment_opportunity)
-    if type:
-        stmt = stmt.where(Property.type == type)
-    if operation:
-        stmt = stmt.where(Property.operation == operation)
-    if rooms:
-        stmt = stmt.where(Property.rooms == rooms)
-    if max_price:
-        stmt = stmt.where(Property.price <= max_price)
-    if parking is not None:
-        stmt = stmt.where(Property.parking == parking)
-    if credit is not None:
-        stmt = stmt.where(Property.credit == credit)
-    if agency_id:
-        stmt = stmt.where(Property.agency_id == agency_id)
-    if exclude_agency_id:
-        stmt = stmt.where(Property.agency_id != exclude_agency_id)
-    if not (include_hidden and admin_ok):
-        stmt = stmt.where(Property.hidden_at.is_(None))
-    if not agency_id:
-        freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
-        stmt = stmt.where(Property.last_seen_at >= freshness_cutoff)
-    return stmt
+    return {gid: (pmin, pmax, count) for gid, pmin, pmax, count in rows}
 
 
 def _effective_published_at(p: "Property") -> datetime:
@@ -2539,6 +2372,47 @@ def properties_filters():
         }
 
 
+def _properties_base_stmt(
+    db,
+    *,
+    zone: str | None, city: str | None, type: str | None, operation: str | None,
+    rooms: int | None, max_price: float | None, parking: bool | None,
+    credit: bool | None, agency_id: str | None,
+    country: str | None, province: str | None,
+    under_construction: bool | None, investment_opportunity: bool | None,
+    exclude_agency_id: str | None,
+    include_hidden: bool, admin_ok: bool,
+):
+    """Arma el SELECT + filtros compartido entre /properties (orden por
+    prioridad) y /properties/random (orden aleatorio, preview rápida del
+    home). Separado para no duplicar la lógica de filtros/visibilidad."""
+    stmt = select(Property)
+    if zone: stmt = stmt.where(Property.zone == zone)
+    if city and city != "Sin descripción":
+        # "Sin descripción" es un alias de presentación (propiedades cuyo
+        # city falla is_valid_city_name); se filtra en Python sobre los
+        # resultados, no acá.
+        stmt = stmt.where(Property.city == city)
+    if country: stmt = stmt.where(Property.country == country)
+    if province: stmt = stmt.where(Property.province == province)
+    if under_construction is not None: stmt = stmt.where(Property.under_construction == under_construction)
+    if investment_opportunity is not None: stmt = stmt.where(Property.investment_opportunity == investment_opportunity)
+    if type: stmt = stmt.where(Property.type == type)
+    if operation: stmt = stmt.where(Property.operation == operation)
+    if rooms: stmt = stmt.where(Property.rooms == rooms)
+    if max_price: stmt = stmt.where(Property.price <= max_price)
+    if parking is not None: stmt = stmt.where(Property.parking == parking)
+    if credit is not None: stmt = stmt.where(Property.credit == credit)
+    if agency_id: stmt = stmt.where(Property.agency_id == agency_id)
+    if exclude_agency_id: stmt = stmt.where(Property.agency_id != exclude_agency_id)
+    if not (include_hidden and admin_ok):
+        stmt = stmt.where(Property.hidden_at.is_(None))
+    if not agency_id:
+        freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
+        stmt = stmt.where(Property.last_seen_at >= freshness_cutoff)
+    return stmt
+
+
 @app.get("/properties")
 def properties(
     zone: str | None = None, city: str | None = None, type: str | None = None, operation: str | None = None,
@@ -2571,19 +2445,17 @@ def properties(
     with Session(engine) as db:
         ensure_seed(db)
         stmt = _properties_base_stmt(
-            zone=zone, city=city, type=type, operation=operation, rooms=rooms,
+            db, zone=zone, city=city, type=type, operation=operation, rooms=rooms,
             max_price=max_price, parking=parking, credit=credit, agency_id=agency_id,
-            exclude_agency_id=exclude_agency_id, country=country, province=province,
-            under_construction=under_construction, investment_opportunity=investment_opportunity,
+            country=country, province=province, under_construction=under_construction,
+            investment_opportunity=investment_opportunity, exclude_agency_id=exclude_agency_id,
             include_hidden=include_hidden, admin_ok=admin_ok,
         )
         # Default: mayor probabilidad de rotación primero (encargo #2).
         stmt = stmt.order_by(Property.priority_score.desc(), Property.detected_at.desc())
-        results = list(db.scalars(stmt).all())
+        results = db.scalars(stmt).all()
         if city == "Sin descripción":
             results = [p for p in results if not is_valid_city_name(p.city)]
-
-        groups = _bulk_group_info(db, results)
 
         # Etapa 3: evento agregado y anónimo por cada búsqueda — insumo para
         # matching/recomendaciones/demanda/pricing (doc, sección 10, fase
@@ -2605,52 +2477,54 @@ def properties(
         ))
         db.commit()
 
-        return [
-            prop_dict(p, groups.get(p.listing_group_id) if p.listing_group_id else None)
-            for p in results
-        ]
+        # Perf: rango de precio de grupo resuelto en UNA sola query agregada
+        # para todo el batch (ver _bulk_group_info) en vez de que el
+        # frontend dispare un GET /properties/{id}/group por cada propiedad
+        # agrupada — eso era el cuello de botella real de la carga del home.
+        group_info = _bulk_group_info(db, results)
+        return [prop_dict(p, group_info) for p in results]
 
 
 @app.get("/properties/random")
 def properties_random(
-    n: int = 30,
+    limit: int = 30,
     zone: str | None = None, city: str | None = None, type: str | None = None, operation: str | None = None,
     rooms: int | None = None, max_price: float | None = None, parking: bool | None = None,
     credit: bool | None = None, agency_id: str | None = None,
     country: str | None = None, province: str | None = None,
     under_construction: bool | None = None, investment_opportunity: bool | None = None,
     exclude_agency_id: str | None = None,
-    include_hidden: bool = False,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ):
-    """Preview aleatorio para la carga inicial del home (sin search_performed).
+    """Preview rápida para la carga inicial del home (encargo de perf,
+    2026-09): en vez de traer el catálogo entero antes de poder mostrar
+    algo, devuelve una muestra aleatoria chica (30 por defecto) con los
+    mismos filtros de visibilidad que /properties (frescura, hidden_at),
+    pero orden aleatorio y LIMIT en la propia query — no se trae la tabla
+    entera a Python para después recortarla.
 
-    n default 30, máximo 60 (clamp silencioso). Misma política de hidden/frescura
-    que GET /properties; no registra Event search_performed.
+    No es una "búsqueda" real: no dispara Event(search_performed). El
+    frontend usa esto solo para tener algo que mostrar apenas se abre el
+    home; la búsqueda real (con los filtros que el usuario arma) sigue
+    yendo a GET /properties.
     """
-    if n < 1:
-        n = 1
-    if n > 60:
-        n = 60
+    limit = max(1, min(limit, 60))
     admin_ok = bool(x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY))
     with Session(engine) as db:
         ensure_seed(db)
         stmt = _properties_base_stmt(
-            zone=zone, city=city, type=type, operation=operation, rooms=rooms,
+            db, zone=zone, city=city, type=type, operation=operation, rooms=rooms,
             max_price=max_price, parking=parking, credit=credit, agency_id=agency_id,
-            exclude_agency_id=exclude_agency_id, country=country, province=province,
-            under_construction=under_construction, investment_opportunity=investment_opportunity,
-            include_hidden=include_hidden, admin_ok=admin_ok,
+            country=country, province=province, under_construction=under_construction,
+            investment_opportunity=investment_opportunity, exclude_agency_id=exclude_agency_id,
+            include_hidden=False, admin_ok=admin_ok,
         )
-        stmt = stmt.order_by(func.random()).limit(n)
-        results = list(db.scalars(stmt).all())
+        stmt = stmt.order_by(func.random()).limit(limit)
+        results = db.scalars(stmt).all()
         if city == "Sin descripción":
             results = [p for p in results if not is_valid_city_name(p.city)]
-        groups = _bulk_group_info(db, results)
-        return [
-            prop_dict(p, groups.get(p.listing_group_id) if p.listing_group_id else None)
-            for p in results
-        ]
+        group_info = _bulk_group_info(db, results)
+        return [prop_dict(p, group_info) for p in results]
 
 
 @app.get("/properties/{property_id}")
