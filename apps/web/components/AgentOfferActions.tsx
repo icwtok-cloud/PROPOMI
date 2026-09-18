@@ -10,7 +10,23 @@ import {counterOffer,mockCompletePayment,offerAction,paymentStatus,revealContact
 const COUNTER_PRESETS=[3,5,8,12];
 const fmt=(n:number)=>Math.round(n).toLocaleString('en-US');
 
-export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;session:Session;onDone:(message:string)=>void}){
+type Props={
+  offer:Offer;
+  session:Session;
+  onDone:(message:string)=>void;
+  remainingReveals?:number;
+  hasPaidPlan?:boolean;
+  onCheckout?:(kind:string)=>void;
+  checkoutLoadingKey?:string|null;
+};
+
+export default function AgentOfferActions({
+  offer,session,onDone,
+  remainingReveals=0,
+  hasPaidPlan=false,
+  onCheckout,
+  checkoutLoadingKey=null,
+}:Props){
   const [pct,setPct]=useState(5);
   const [busy,setBusy]=useState(false);
   const [revealed,setRevealed]=useState<{buyer_name:string;buyer_phone:string;buyer_email?:string}|null>(
@@ -137,7 +153,42 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
         )}
       </div>
     ) : (
-      <button className="primary" disabled={busy} onClick={reveal}><Lock size={14}/> Revelar contacto</button>
+      <>
+        <button className="primary" disabled={busy} onClick={reveal}><Lock size={14}/> Revelar contacto</button>
+        {remainingReveals > 0 ? (
+          <p className="muted small offer-reveal-quota" style={{margin:0}}>
+            Cupo disponible: <strong>{remainingReveals}</strong> reveal{remainingReveals===1?'':'s'}
+            {hasPaidPlan ? ' (plan)' : ' (créditos)'}
+          </p>
+        ) : (
+          <p className="muted small offer-reveal-quota" style={{margin:0}}>
+            Sin cupo libre — este reveal pedirá pago suelto o un plan.
+          </p>
+        )}
+        {!hasPaidPlan && onCheckout && (
+          <div className="offer-plan-upsell">
+            <span className="muted small">Planes mensuales</span>
+            <div className="offer-plan-row">
+              <button type="button" className="secondary" disabled={!!checkoutLoadingKey}
+                onClick={()=>onCheckout('plan_basic')}>
+                {checkoutLoadingKey==='plan_basic'?'…':'Basic · 30/mes'}
+              </button>
+              <button type="button" className="secondary" disabled={!!checkoutLoadingKey}
+                onClick={()=>onCheckout('plan_pro')}>
+                {checkoutLoadingKey==='plan_pro'?'…':'Pro · 70/mes'}
+              </button>
+              <button type="button" className="secondary" disabled={!!checkoutLoadingKey}
+                onClick={()=>onCheckout('plan_premium')}>
+                {checkoutLoadingKey==='plan_premium'?'…':'Premium · ilim.'}
+              </button>
+              <button type="button" className="secondary" disabled={!!checkoutLoadingKey}
+                onClick={()=>onCheckout('reveal')}>
+                {checkoutLoadingKey==='reveal'?'…':'1 lead · USD 4,99'}
+              </button>
+            </div>
+          </div>
+        )}
+      </>
     )}
   </div>
 }

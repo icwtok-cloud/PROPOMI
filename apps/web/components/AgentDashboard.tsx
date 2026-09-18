@@ -314,7 +314,7 @@ export default function AgentDashboard(){
       <div><span className="metric-icon"><Sparkles size={17}/></span><b>{opps?.active??0}</b><span>Oportunidades activas</span></div>
       <div><span className="metric-icon"><Unlock size={17}/></span><b>{offers.filter(o=>o.contact_revealed).length}</b><span>Contactos revelados</span></div>
       <div><span className="metric-icon"><Building2 size={17}/></span><b>{analytics?.properties??0}</b><span>Publicaciones</span></div>
-      <div><span className="metric-icon"><TrendingUp size={17}/></span><b>{agency?.availableCredit??agency?.freeLeadsRemaining??0}</b><span>Cupo reveal disponible</span></div>
+      <div><span className="metric-icon"><TrendingUp size={17}/></span><b>{agency?.availableCredit??agency?.freeLeadsRemaining??0}</b><span>Reveals restantes</span></div>
     </div>
 
     <div className="agentdashtabs">
@@ -348,7 +348,19 @@ export default function AgentDashboard(){
         {o.origin && <p className="muted small">Origen: {o.origin}</p>}
         <div className="muted small">{o.payment_form} · {o.timeframe||'Plazo sin especificar'} · Capital: {o.capital?`USD ${o.capital.toLocaleString('en-US')}`:'—'}</div>
         {o.comment && <p className="muted small">{o.comment}</p>}
-        <AgentOfferActions offer={o} session={session} onDone={(m)=>{notify(m);refreshOffers()}}/>
+        <AgentOfferActions
+          offer={o}
+          session={session}
+          onDone={(m)=>{notify(m);refreshOffers();getAgency(session.user.agency_id,session).then(setAgency).catch(()=>{})}}
+          remainingReveals={agency?.availableCredit??agency?.freeLeadsRemaining??0}
+          hasPaidPlan={Boolean(
+            (agency?.subscription?.cupoCiclo != null && agency.subscription.cupoCiclo > 0)
+            || (agency?.planLeadQuota != null && agency.planLeadQuota > 0)
+            || (agency?.subscription?.cupoCiclo === null && agency?.subscription?.plan && agency.subscription.plan !== 'PAY_PER_LEAD')
+          )}
+          onCheckout={handleCheckout}
+          checkoutLoadingKey={checkoutLoadingKey}
+        />
       </div>)}
     </div>}
 
