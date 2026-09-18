@@ -175,6 +175,55 @@ export async function createProperty(payload:PropertyCreatePayload,session:Sessi
   return req<Property>('/properties',{method:'POST',body:JSON.stringify(payload)},session.token);
 }
 
+
+/** Sube fotos a R2 vía multipart (campo `files`). Máx 5 total, jpeg/png/webp ≤3MB. */
+export async function uploadPropertyImages(
+  propertyId: string,
+  files: File[],
+  session: Session,
+): Promise<{id: string; images: string[]; added: string[]}> {
+  if (!files.length) throw new Error("Elegí al menos una foto.");
+  if (!base) {
+    const urls = files.map((f, i) => URL.createObjectURL(f));
+    return {id: propertyId, images: urls, added: urls};
+  }
+  const form = new FormData();
+  for (const f of files) form.append("files", f);
+  const r = await fetch(`${base}/properties/${propertyId}/images`, {
+    method: "POST",
+    headers: {Authorization: `Bearer ${session.token}`},
+    body: form,
+    cache: "no-store",
+  });
+  if (!r.ok) {
+    let message = `Error ${r.status}`;
+    try {
+      const body = await r.json();
+      const detail = body?.detail;
+      message = typeof detail === "string" ? detail : (detail?.message || JSON.stringify(detail) || message);
+    } catch {
+      try { message = (await r.text()) || message; } catch {}
+    }
+    throw new Error(message);
+  }
+  return r.json();
+}
+
+/** Quita una URL de Property.images y borra en R2 si es nuestro bucket. */
+export async function deletePropertyImage(
+  propertyId: string,
+  url: string,
+  session: Session,
+): Promise<{id: string; images: string[]}> {
+  if (!base) return {id: propertyId, images: []};
+  const qs = new URLSearchParams({url});
+  return req<{id: string; images: string[]}>(
+    `/properties/${propertyId}/images?${qs}`,
+    {method: "DELETE"},
+    session.token,
+  );
+}
+
 export async function requestOtp(phone:string){if(!base)return {ok:true,message:'Código demo generado.',dev_code:'123456'};return req<{ok:boolean;message:string;dev_code?:string}>('/auth/otp/request',{method:'POST',body:JSON.stringify({phone})})}
 
 // Alta de agencia desde cero (sin propiedades previas descubiertas por el

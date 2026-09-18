@@ -513,3 +513,7 @@ section#propiedades .grid{
 
 .footer .legal-entity{margin-top:12px;font-size:12px;color:#94a6bd;line-height:1.5}
 .footer .legal-entity strong{color:#cbd5e1;font-weight:700}
+
+.spin{animation:propomi-spin 0.8s linear infinite}
+@keyframes propomi-spin{to{transform:rotate(360deg)}}
+

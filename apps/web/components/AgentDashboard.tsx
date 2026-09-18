@@ -1,8 +1,8 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,Unlock,User} from 'lucide-react';
+import {Building2,Check,Copy,ExternalLink,ImagePlus,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,Trash2,TrendingUp,Unlock,Upload,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,GeoCatalog} from '../lib/api';
+import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,GeoCatalog,uploadPropertyImages,deletePropertyImage} from '../lib/api';
 import {adminUnitLabel} from '../lib/geo';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
@@ -117,6 +117,8 @@ export default function AgentDashboard(){
   const [analytics,setAnalytics]=useState<{properties:number;events:number;offers:number}|null>(null);
   const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'propiedades'|'cuenta'>('ofertas');
   const [propForm,setPropForm]=useState({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
+  const [propFormFiles,setPropFormFiles]=useState<File[]>([]);
+  const [photoBusyId,setPhotoBusyId]=useState<string|null>(null);
   const [geoCatalog,setGeoCatalog]=useState<GeoCatalog|null>(null);
   const PROP_TYPES=['Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
   const [myProperties,setMyProperties]=useState<Property[]>([]);
@@ -263,13 +265,22 @@ export default function AgentDashboard(){
         .map(s=>s.trim())
         .filter(s=>s.startsWith('http://')||s.startsWith('https://'))
         .slice(0,5);
-      await createProperty({
+      const created=await createProperty({
         title,zone,city,country,province,price,surface,rooms,
         type,operation:'Venta',currency:'USD',
         description:propForm.description.trim()||undefined,
         images,
       },session);
+      // Si eligió archivos locales, subirlos a R2 después del alta
+      if(propFormFiles.length>0 && created?.id){
+        try{
+          await uploadPropertyImages(created.id,propFormFiles.slice(0,5),session);
+        }catch(upErr:any){
+          notify(upErr?.message||'Propiedad publicada, pero falló la subida de fotos. Podés reintentar desde el listado.');
+        }
+      }
       setPropForm({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
+      setPropFormFiles([]);
       notify('Propiedad publicada.');
       try{
         const [an,props]=await Promise.all([
@@ -286,7 +297,51 @@ export default function AgentDashboard(){
     }
   }
 
-  function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers([]);setOpps(null)}
+  
+  async function refreshMyProperties(){
+    if(!session?.user.agency_id)return;
+    try{
+      const props=await getProperties({agency_id:session.user.agency_id});
+      setMyProperties(props);
+    }catch{}
+  }
+
+  async function handleUploadFiles(propertyId:string,fileList:FileList|null){
+    if(!session||!fileList||fileList.length===0)return;
+    const files=Array.from(fileList).slice(0,5);
+    const bad=files.find(f=>!/^image\/(jpeg|png|webp)$/i.test(f.type)||f.size>3*1024*1024);
+    if(bad){
+      notify('Solo JPEG/PNG/WebP de hasta 3 MB cada una.');
+      return;
+    }
+    setPhotoBusyId(propertyId);
+    try{
+      const res=await uploadPropertyImages(propertyId,files,session);
+      setMyProperties(prev=>prev.map(p=>p.id===propertyId?{...p,images:res.images,image:res.images[0]||p.image}:p));
+      notify(res.added.length===1?'Foto subida.':`${res.added.length} fotos subidas.`);
+    }catch(e:any){
+      notify(e?.message||'No pudimos subir las fotos.');
+    }finally{
+      setPhotoBusyId(null);
+    }
+  }
+
+  async function handleDeletePhoto(propertyId:string,url:string){
+    if(!session)return;
+    if(!confirm('¿Eliminar esta foto?'))return;
+    setPhotoBusyId(propertyId);
+    try{
+      const res=await deletePropertyImage(propertyId,url,session);
+      setMyProperties(prev=>prev.map(p=>p.id===propertyId?{...p,images:res.images,image:res.images[0]||''}:p));
+      notify('Foto eliminada.');
+    }catch(e:any){
+      notify(e?.message||'No pudimos eliminar la foto.');
+    }finally{
+      setPhotoBusyId(null);
+    }
+  }
+
+function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers([]);setOpps(null)}
 
   if(!ready) return null;
 
@@ -450,6 +505,46 @@ export default function AgentDashboard(){
               </button>
             </div>
           </div>
+          {/* Fotos R2 */}
+          <div style={{width:'100%',marginTop:8,paddingTop:8,borderTop:'1px solid #eef1f5'}}>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
+              {(p.images&&p.images.length>0?p.images:(p.image?[p.image]:[])).map((url,idx)=>(
+                <div key={url+idx} style={{position:'relative',width:64,height:64,borderRadius:8,overflow:'hidden',background:'#f0ebe6',border:'1px solid #e2e7ed'}}>
+                  <img src={url} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+                  <button
+                    type="button"
+                    title="Eliminar foto"
+                    disabled={photoBusyId===p.id}
+                    onClick={()=>handleDeletePhoto(p.id,url)}
+                    style={{position:'absolute',top:2,right:2,width:22,height:22,borderRadius:6,border:'none',background:'rgba(0,0,0,.6)',color:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',padding:0}}
+                  >
+                    <Trash2 size={12}/>
+                  </button>
+                </div>
+              ))}
+              {((p.images&&p.images.length)||(p.image?1:0))<5 && (
+                <label
+                  style={{
+                    width:64,height:64,borderRadius:8,border:'1.5px dashed #c5ced8',
+                    display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                    gap:2,cursor:photoBusyId===p.id?'wait':'pointer',color:'#5a6b7d',fontSize:11,background:'#fafbfc'
+                  }}
+                >
+                  {photoBusyId===p.id ? <RefreshCw size={16} className="spin"/> : <ImagePlus size={18}/>}
+                  <span>{photoBusyId===p.id?'…':'Subir'}</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple
+                    hidden
+                    disabled={photoBusyId===p.id}
+                    onChange={e=>{handleUploadFiles(p.id,e.target.files);e.target.value='';}}
+                  />
+                </label>
+              )}
+            </div>
+            <p className="muted small" style={{margin:'6px 0 0'}}>JPEG/PNG/WebP · máx 3 MB · hasta 5 fotos</p>
+          </div>
         </div>
         );
       })}
@@ -532,15 +627,29 @@ export default function AgentDashboard(){
 
         <div className="publish-section">
           <div className="publish-section-title">Fotos y descripción</div>
-          <label className="publish-field">Fotos (opcional, una URL por línea, máx. 5)
+          <label className="publish-field">Subir fotos desde el celular o PC (opcional, máx. 5)
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              multiple
+              onChange={e=>{
+                const files=Array.from(e.target.files||[]).slice(0,5);
+                setPropFormFiles(files);
+              }}
+            />
+          </label>
+          {propFormFiles.length>0 && (
+            <p className="muted small">{propFormFiles.length} archivo(s) listo(s) para subir al publicar.</p>
+          )}
+          <label className="publish-field">O pegá URLs (una por línea, máx. 5)
             <textarea
               value={propForm.imageUrls}
               onChange={e=>setPropForm(f=>({...f,imageUrls:e.target.value}))}
-              rows={3}
+              rows={2}
               placeholder={"https://.../foto1.jpg\nhttps://.../foto2.jpg"}
             />
           </label>
-          <p className="muted small">Solo URLs http(s). Se usan en la galería del detalle.</p>
+          <p className="muted small">Archivos van a R2 al publicar. URLs se guardan tal cual. JPEG/PNG/WebP ≤ 3 MB.</p>
           <label className="publish-field">Descripción (sin teléfonos ni links)
             <textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/>
           </label>
