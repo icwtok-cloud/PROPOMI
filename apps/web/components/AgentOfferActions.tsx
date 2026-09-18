@@ -98,25 +98,27 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
   }
 
   return <div className="agent-actions">
-    <button className="secondary" disabled={busy} onClick={()=>action('accept')}><Check size={15}/> Aceptar</button>
-    <button className="secondary" disabled={busy} onClick={()=>action('reject')}><X size={15}/> Rechazar</button>
-    <button className="secondary" disabled={busy} onClick={()=>action('negotiate')}><Handshake size={15}/> Negociar</button>
+    <div className="agent-actions-row">
+      <button className="secondary" disabled={busy} onClick={()=>action('accept')}><Check size={14}/> Aceptar</button>
+      <button className="secondary" disabled={busy} onClick={()=>action('reject')}><X size={14}/> Rechazar</button>
+      <button className="secondary" disabled={busy} onClick={()=>action('negotiate')}><Handshake size={14}/> Negociar</button>
+    </div>
 
     <div className="counterline">
       <div className="quickrow">
         {COUNTER_PRESETS.map(v=>
           <button key={v} className={pct===v?'quickbtn active':'quickbtn'} onClick={()=>setPct(v)}>+{v}%</button>)}
       </div>
-      <button className="primary" disabled={busy} onClick={counter}><RefreshCw size={15}/> Contraofertar USD {fmt(counterAmount)}</button>
+      <button className="primary" disabled={busy} onClick={counter}><RefreshCw size={14}/> Contraofertar USD {fmt(counterAmount)}</button>
     </div>
 
     {revealed ? (
       <div className="reveal-box reveal-box--done">
-        <Unlock size={15}/> <strong>{revealed.buyer_name}</strong> · {revealed.buyer_phone}{revealed.buyer_email?` · ${revealed.buyer_email}`:''}
+        <Unlock size={14}/> <strong>{revealed.buyer_name}</strong> · {revealed.buyer_phone}{revealed.buyer_email?` · ${revealed.buyer_email}`:''}
       </div>
     ) : pendingPayment ? (
       <div className="reveal-box reveal-box--pending">
-        <Lock size={15}/> Pago pendiente (USD 5) para ver el contacto.
+        <Lock size={14}/> Pago pendiente (USD 5) para ver el contacto.
         {checkoutUrl ? (
           <>
             <a className="primary" href={checkoutUrl} target="_blank" rel="noopener noreferrer">
@@ -135,7 +137,7 @@ export default function AgentOfferActions({offer,session,onDone}:{offer:Offer;se
         )}
       </div>
     ) : (
-      <button className="primary" disabled={busy} onClick={reveal}><Lock size={15}/> Revelar contacto</button>
+      <button className="primary" disabled={busy} onClick={reveal}><Lock size={14}/> Revelar contacto</button>
     )}
   </div>
 }
