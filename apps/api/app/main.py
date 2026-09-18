@@ -1244,6 +1244,30 @@ def normalize_phone(raw: str, default_country: str = "AR") -> str | None:
         return None
 
 
+def phone_equivalents(phone: str) -> list[str]:
+    """Formas E.164 equivalentes de un mismo número argentino.
+
+    En Argentina un celular se escribe +54 9 11 XXXX XXXX o +54 11 XXXX XXXX
+    según quién lo tipee (el 9 es solo el prefijo de móvil): es la MISMA línea.
+    La persona no tiene por qué saber con cuál se registró, así que toda
+    búsqueda por teléfono compara contra ambas variantes. El primer elemento
+    siempre es el número recibido. Números no argentinos (o con largo raro)
+    se devuelven tal cual. No cambia lo que se guarda en la base, solo cómo
+    se busca."""
+    if not phone or not phone.startswith("+54"):
+        return [phone]
+    rest = phone[3:]
+    if not rest.isdigit():
+        return [phone]
+    # Nacional AR = código de área + número = 10 dígitos; con el 9 de móvil, 11.
+    # Ningún código de área argentino empieza con 9, no hay ambigüedad.
+    if len(rest) == 11 and rest.startswith("9"):
+        return [phone, "+54" + rest[1:]]
+    if len(rest) == 10 and not rest.startswith("9"):
+        return [phone, "+549" + rest]
+    return [phone]
+
+
 def slugify(name: str) -> str:
     """Etapa 4 (subdominios por agencia): normaliza un nombre de agencia a un
     slug apto para subdominio (minúsculas, sin acentos, solo [a-z0-9-]).
@@ -1900,12 +1924,15 @@ def verify_otp(payload: OTPVerify, request: Request):
         raise HTTPException(status_code=400, detail="Teléfono inválido")
     with Session(engine) as db:
         consume_valid_otp(db, phone, payload.code)
-        user = db.scalar(select(User).where(User.phone == phone))
+        user = find_user_by_phone(db, phone)
         agency = find_agency_by_phone(db, phone)
         if user is None:
             if not agency:
-                raise HTTPException(status_code=403, detail="No encontramos una agencia asociada a este teléfono.")
-            user = User(id=f"u-{uuid.uuid4().hex[:12]}", phone=phone, role=Role.AGENTE.value, agency_id=agency.id)
+                raise HTTPException(
+                    status_code=403,
+                    detail="No encontramos una agencia asociada a este teléfono. Si todavía no te registraste, volvé atrás y tocá «¿Recién arrancás? Creá tu agencia».",
+                )
+            user = User(id=f"u-{uuid.uuid4().hex[:12]}", phone=agency_login_phone(db, agency, phone), role=Role.AGENTE.value, agency_id=agency.id)
             db.add(user)
             db.flush()
         elif user.role != Role.AGENTE.value:
@@ -2013,14 +2040,50 @@ def link_google_identity(payload: GoogleAuthIn, request: Request, session: dict[
 
 
 def find_agency_by_phone(db: Session, phone: str) -> Agency | None:
-    """Busca una agencia por telefono principal o por cualquiera de sus AgencyPhone."""
+    """Busca una agencia por telefono principal o por cualquiera de sus AgencyPhone.
+
+    Primero match exacto (comportamiento de siempre); si no hay, reintenta con
+    la variante con/sin el 9 de móvil argentino (ver phone_equivalents), para
+    que entrar con 11 XXXX XXXX, +54 11 XXXX XXXX o +54 9 11 XXXX XXXX dé el
+    mismo resultado sin importar con cuál se dio de alta la agencia."""
     agency = db.scalar(select(Agency).where(Agency.phone == phone))
     if agency:
         return agency
     ap = db.scalar(select(AgencyPhone).where(AgencyPhone.phone == phone))
     if ap:
         return db.get(Agency, ap.agency_id)
+    variants = phone_equivalents(phone)
+    if len(variants) > 1:
+        agency = db.scalars(select(Agency).where(Agency.phone.in_(variants)).order_by(Agency.claimed.desc())).first()
+        if agency:
+            return agency
+        ap = db.scalars(select(AgencyPhone).where(AgencyPhone.phone.in_(variants))).first()
+        if ap:
+            return db.get(Agency, ap.agency_id)
     return None
+
+
+def agency_login_phone(db: Session, agency: Agency, phone: str) -> str:
+    """El teléfono con el que la agencia YA está guardada y que equivale a
+    `phone` (puede ser el principal o un AgencyPhone). Si ninguno coincide,
+    devuelve `phone` tal cual. Se usa para que la cuenta de usuario del agente
+    quede atada siempre al mismo formato, sin duplicarse por tipear distinto."""
+    variants = set(phone_equivalents(phone))
+    for stored in all_agency_phones(db, agency.id):
+        if stored in variants:
+            return stored
+    return phone
+
+
+def find_user_by_phone(db: Session, phone: str) -> User | None:
+    """Busca un usuario por teléfono exacto o por su variante con/sin el 9 de
+    móvil argentino. Si hubiera más de una fila (formatos distintos creados en
+    el pasado), prioriza la que ya es agente con agencia."""
+    users = db.scalars(select(User).where(User.phone.in_(phone_equivalents(phone)))).all()
+    if not users:
+        return None
+    users.sort(key=lambda u: (u.role != Role.AGENTE.value, u.agency_id is None, u.phone != phone))
+    return users[0]
 
 
 def all_agency_phones(db: Session, agency_id: str) -> list[str]:
@@ -2032,7 +2095,7 @@ def all_agency_phones(db: Session, agency_id: str) -> list[str]:
 
 
 def relink_properties(db: Session, agency_id: str, phone: str) -> int:
-    rows = db.scalars(select(Property).where(Property.contact_phone_normalized == phone)).all()
+    rows = db.scalars(select(Property).where(Property.contact_phone_normalized.in_(phone_equivalents(phone)))).all()
     changed = 0
     for p in rows:
         if p.agency_id != agency_id:
