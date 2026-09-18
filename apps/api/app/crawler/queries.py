@@ -79,70 +79,133 @@ def mercado_unico_list_urls() -> Iterator[str]:
 
 
 def inmoup_list_urls(provincias: list[str] | None = None, tipos: list[str] | None = None, max_page: int = 5) -> Iterator[str]:
-    """InmoUp — listados de venta por provincia (Mendoza foco piloto Cuyo).
-    Patrón real confirmado 2026-09-15: /departamentos-en-venta-en-mendoza
-    Paginación: ?page=N (1-based). Solo venta, nunca alquiler.
+    """InmoUp — listados de venta por provincia (Cuyo + vecinos).
+    Patrón: /departamentos-en-venta-en-mendoza — paginación ?page=N. Solo venta.
     """
-    provincias = provincias or ["mendoza"]
+    provincias = provincias or [
+        "mendoza", "san-juan", "san-luis", "cordoba", "la-pampa", "neuquen",
+    ]
     tipos = tipos or ["departamentos", "casas"]
-    max_page = min(max_page, 5)
+    max_page = min(max_page, 8)
     for prov, tipo in product(provincias, tipos):
-        base = f"https://inmoup.com.ar/{tipo}-en-venta-en-{prov}"
+        base_url = f"https://inmoup.com.ar/{tipo}-en-venta-en-{prov}"
         for page in range(1, max_page + 1):
-            yield base if page == 1 else f"{base}?page={page}"
+            yield base_url if page == 1 else f"{base_url}?page={page}"
 
 
 def inmoclick_list_urls() -> Iterator[str]:
-    """InmoClick — listados por provincia (HTML con hrefs /ficha/)."""
-    for path in (
-        "inmuebles-en-venta-en-cordoba",
-        "inmuebles-en-venta-en-mendoza",
+    """InmoClick — listados por provincia AR (HTML con hrefs /ficha/)."""
+    paths = (
+        "inmuebles-en-venta",
         "inmuebles-en-venta-en-capital-federal",
         "inmuebles-en-venta-en-buenos-aires",
+        "inmuebles-en-venta-en-cordoba",
         "inmuebles-en-venta-en-santa-fe",
         "inmuebles-en-venta-en-rosario",
-        "inmuebles-en-venta",
-    ):
+        "inmuebles-en-venta-en-mendoza",
+        "inmuebles-en-venta-en-tucuman",
+        "inmuebles-en-venta-en-entre-rios",
+        "inmuebles-en-venta-en-salta",
+        "inmuebles-en-venta-en-misiones",
+        "inmuebles-en-venta-en-chaco",
+        "inmuebles-en-venta-en-corrientes",
+        "inmuebles-en-venta-en-santiago-del-estero",
+        "inmuebles-en-venta-en-san-juan",
+        "inmuebles-en-venta-en-jujuy",
+        "inmuebles-en-venta-en-rio-negro",
+        "inmuebles-en-venta-en-neuquen",
+        "inmuebles-en-venta-en-formosa",
+        "inmuebles-en-venta-en-chubut",
+        "inmuebles-en-venta-en-san-luis",
+        "inmuebles-en-venta-en-catamarca",
+        "inmuebles-en-venta-en-la-rioja",
+        "inmuebles-en-venta-en-la-pampa",
+        "inmuebles-en-venta-en-santa-cruz",
+        "inmuebles-en-venta-en-tierra-del-fuego",
+    )
+    for path in paths:
         yield f"https://www.inmoclick.com.ar/{path}"
 
 
 def mercadolibre_list_urls() -> Iterator[str]:
-    """ML Inmuebles — casas y deptos en venta por provincia piloto."""
-    for prov in ("cordoba", "mendoza", "santa-fe", "buenos-aires"):
+    """ML Inmuebles — casas y deptos en venta, todas las provincias AR."""
+    provincias = (
+        "capital-federal",
+        "buenos-aires",
+        "cordoba",
+        "santa-fe",
+        "mendoza",
+        "tucuman",
+        "entre-rios",
+        "salta",
+        "misiones",
+        "chaco",
+        "corrientes",
+        "santiago-del-estero",
+        "san-juan",
+        "jujuy",
+        "rio-negro",
+        "neuquen",
+        "formosa",
+        "chubut",
+        "san-luis",
+        "catamarca",
+        "la-rioja",
+        "la-pampa",
+        "santa-cruz",
+        "tierra-del-fuego",
+    )
+    for prov in provincias:
         yield f"https://inmuebles.mercadolibre.com.ar/casas/venta/{prov}/"
         yield f"https://inmuebles.mercadolibre.com.ar/departamentos/venta/{prov}/"
 
 
 def infocasas_py_list_urls() -> Iterator[str]:
-    """InfoCasas Paraguay — listados por ciudad principal (SSR + __NEXT_DATA__)."""
+    """InfoCasas Paraguay — listados por ciudad (SSR + __NEXT_DATA__)."""
     for path in (
         "venta/inmuebles/asuncion",
         "venta/inmuebles/san-lorenzo",
         "venta/inmuebles/luque",
         "venta/inmuebles/ciudad-del-este",
+        "venta/inmuebles/fernando-de-la-mora",
+        "venta/inmuebles/lambare",
+        "venta/inmuebles/encarnacion",
         "venta",
     ):
         yield f"https://www.infocasas.com.py/{path}"
 
 
 def infocasas_uy_list_urls() -> Iterator[str]:
-    """InfoCasas Uruguay — listados por ciudad principal."""
+    """InfoCasas Uruguay — listados por ciudad / departamento."""
     for path in (
         "venta/inmuebles/montevideo",
         "venta/inmuebles/canelones",
         "venta/inmuebles/maldonado",
+        "venta/inmuebles/colonia",
+        "venta/inmuebles/salto",
+        "venta/inmuebles/paysandu",
         "venta",
     ):
         yield f"https://www.infocasas.com.uy/{path}"
 
 
 def bienesonline_list_urls() -> Iterator[str]:
-    """BienesOnline AR — listado nacional + provinciales con href /propiedad/{id}."""
+    """BienesOnline AR — nacional + provincias con href /propiedad/{id}."""
     for path in (
         "es/argentina",
         "es/argentina/buenos-aires",
+        "es/argentina/capital-federal",
         "es/argentina/cordoba",
         "es/argentina/santa-fe",
         "es/argentina/mendoza",
+        "es/argentina/tucuman",
+        "es/argentina/entre-rios",
+        "es/argentina/salta",
+        "es/argentina/misiones",
+        "es/argentina/neuquen",
+        "es/argentina/rio-negro",
+        "es/argentina/chubut",
+        "es/argentina/san-juan",
+        "es/argentina/san-luis",
     ):
         yield f"https://bienesonline.ai/{path}"

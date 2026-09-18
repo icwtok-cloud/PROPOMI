@@ -36,32 +36,39 @@ USER_AGENT = "PropomiBot/0.1 (+https://propomi.lat; research)"
 
 # Límites de cortesía — evitar hammering de portales de terceros y del
 # propio dyno free de Render. Ajustar cuando haya cron real + colas.
-MAX_LIST_PAGES_PER_SOURCE = 5
-MAX_DETAILS_PER_SOURCE = 80
-REQUEST_DELAY_SECONDS = 1.0
+MAX_LIST_PAGES_PER_SOURCE = 10
+MAX_DETAILS_PER_SOURCE = 200
+REQUEST_DELAY_SECONDS = 1.0  # no bajar: volumen con geo + cron, no martilleo
 
-# Overrides por fuente (scale-inventory): permiten subir topes en fuentes
-# con alto volumen / robots permisivos sin tocar el default global.
+# Overrides por fuente (scale-inventory AR/PY/UY).
 MAX_LIST_PAGES_PER_SOURCE_OVERRIDE: dict[str, int] = {
-    "cordobaprop": 8,
-    "mercadolibre": 6,
-    "mendozaprop": 6,
-    "bienesonline": 6,
+    "cordobaprop": 12,
+    "mercadolibre": 10,
+    "mendozaprop": 10,
+    "bienesonline": 10,
+    "inmoup": 8,
+    "inmoclick": 8,
+    "infocasas_py": 8,
+    "infocasas_uy": 8,
 }
 MAX_DETAILS_PER_SOURCE_OVERRIDE: dict[str, int] = {
-    "mercadolibre": 120,
-    "mendozaprop": 100,
-    "cordobaprop": 100,
-    "bienesonline": 100,
-    "mercado_unico": 90,
+    "mercadolibre": 250,
+    "mendozaprop": 200,
+    "cordobaprop": 200,
+    "bienesonline": 200,
+    "mercado_unico": 150,
+    "inmoup": 200,
+    "inmoclick": 200,
+    "infocasas_py": 200,
+    "infocasas_uy": 200,
 }
 
 # Tope de paginación por fuente (robots.txt / cortesía). Al llegar se reinicia.
 SOURCE_MAX_PAGE: dict[str, int] = {
     "zonaprop": 5,  # robots.txt: solo páginas 1-5
     "argenprop": 5,
-    "cordobaprop": 10,
-    "inmoup": 5,
+    "cordobaprop": 12,
+    "inmoup": 8,
 }
 
 

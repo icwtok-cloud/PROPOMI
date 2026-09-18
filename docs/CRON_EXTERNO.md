@@ -20,25 +20,39 @@ Usar esto si el plan de Render **no soporta** `type: cron` en el Blueprint
 | Schedule | todos los días a 04:00 UTC (01:00 Argentina) |
 | Body | vacío |
 
-## Job 2 — crawler semanal
+## Job 2 — crawler cada 6 horas
 
 | Campo | Valor |
 |---|---|
 | URL | `{API_URL}/admin/crawler/run` |
 | Método | `POST` |
 | Header | `X-Admin-Key: {ADMIN_KEY}` |
-| Schedule | lunes 05:00 UTC (02:00 Argentina) |
-| Body | vacío (opcional query `?sources=cordobaprop,inmoup,mendozaprop,mercado_unico`) |
-| Timeout | ≥ 10 minutos (el crawl con delay 1s puede tardar) |
+| Schedule | cada 6 horas — cron: `0 */6 * * *` |
+| Body | vacío |
+| Timeout | ≥ 15 minutos |
 
-## Por qué 7 días el crawler
+### Jobs por grupo de fuentes (recomendado en free tier)
 
-Con `MAX_AGE_DAYS=60`, un aviso tiene ~8–9 oportunidades de ser re-visto
-antes de ocultarse. Suficiente margen si una corrida falla.
+Para no saturar un solo request, creá 3 jobs en cron-job.org:
 
+| Job | Schedule (UTC) | URL |
+|-----|----------------|-----|
+| crawl-ml | `0 0,6,12,18 * * *` | `{API_URL}/admin/crawler/run?sources=mercadolibre` |
+| crawl-ar-regionales | `0 1,7,13,19 * * *` | `{API_URL}/admin/crawler/run?sources=cordobaprop,mendozaprop,inmoup,inmoclick,mercado_unico,bienesonline` |
+| crawl-py-uy | `0 2,8,14,20 * * *` | `{API_URL}/admin/crawler/run?sources=infocasas_py,infocasas_uy` |
 
-## Escalado (6+ fuentes)
+Cada job: método POST, header `X-Admin-Key`, timeout ≥ 15 min.
 
-Con 6 fuentes activas el crawl semanal (~10–15 min) cabe en un job.
-Si se superan ~12–15 fuentes: crear 4 jobs en cron-job.org, uno por provincia,
-llamando `POST /admin/crawler/run?sources=...` filtrando IDs.
+## Por qué cada 6 horas (no semanal)
+
+Con más provincias en ML/InmoClick y topes de ~200 fichas/fuente, el inventario
+acumula por upsert (`source` + `source_url`). Más corridas = más cobertura geo
+sin bajar el delay (sigue en 1.0 s para no banear IP).
+
+Con `MAX_AGE_DAYS=90`, un aviso tiene muchas oportunidades de re-crawl antes
+de ocultarse.
+
+## Escalado
+
+Si una corrida completa hace timeout del dyno: usá siempre los 3 jobs por
+grupo de arriba, nunca un solo job con todas las fuentes a la vez.

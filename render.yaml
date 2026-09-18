@@ -40,13 +40,13 @@ services:
         sync: false
 
   - type: cron
-    name: propomi-crawler-weekly
+    name: propomi-crawler-every-6h
     env: python
     rootDir: apps/api
-    schedule: "0 5 * * 1"
+    schedule: "0 */6 * * *"
     buildCommand: pip install -r requirements.txt
     startCommand: >
-      python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL'].rstrip('/')+'/admin/crawler/run', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r, timeout=600)"
+      python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL'].rstrip('/')+'/admin/crawler/run', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r, timeout=900)"
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
