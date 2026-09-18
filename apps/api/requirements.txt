@@ -11,3 +11,4 @@ cryptography==44.0.0
 requests==2.32.3
 alembic==1.14.0
 bcrypt==4.2.1
+boto3==1.35.99
