@@ -30,17 +30,18 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from .sms_vonage import VonageSMSError, send_otp_sms
 from .whatsapp_vonage import VonageWhatsappError, send_otp_whatsapp
+from .whatsapp_cloud import WhatsappCloudError, send_otp_whatsapp_cloud
 
 # --------------------------------------------------------------------------
-# Filtro anti-fuga de contacto (ver doc 05 de la especificaci√≥n de negocio).
+# Filtro anti-fuga de contacto (ver doc 05 de la especificaci+¶n de negocio).
 # Se aplica a cualquier campo de texto libre que llegue del comprador o del
 # agente (ej. comentarios de oferta/contraoferta) ANTES de guardarlo o
-# devolverlo ‚Äî nunca se persiste texto sin sanitizar.
+# devolverlo ‘«ˆ nunca se persiste texto sin sanitizar.
 # --------------------------------------------------------------------------
 _LEAK_PATTERNS = [
-    re.compile(r"(\+?54)?[\s\-\.]?9?[\s\-\.]?\(?\d{2,4}\)?[\s\-\.]?\d{3,4}[\s\-\.]?\d{3,4}"),  # tel√©fonos AR con variantes
+    re.compile(r"(\+?54)?[\s\-\.]?9?[\s\-\.]?\(?\d{2,4}\)?[\s\-\.]?\d{3,4}[\s\-\.]?\d{3,4}"),  # tel+Æfonos AR con variantes
     re.compile(r"\bwsp\b|\bwhatsapp\b|\bwapp\b", re.IGNORECASE),
-    re.compile(r"\b(cel|tel|celular|telefono|tel√©fono)\s*[:\-]?\s*\d", re.IGNORECASE),
+    re.compile(r"\b(cel|tel|celular|telefono|tel+Æfono)\s*[:\-]?\s*\d", re.IGNORECASE),
     re.compile(r"@[a-zA-Z0-9_.]{3,}"),  # menciones de usuario de redes sociales
     re.compile(r"https?://|www\.", re.IGNORECASE),  # URLs externas
     re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),  # emails sueltos en texto libre
@@ -54,14 +55,14 @@ def contains_contact_leak(texto: str | None) -> bool:
 
 
 def sanitize_free_text(texto: str | None, campo: str = "comentario") -> str | None:
-    """Devuelve el texto tal cual si est√° limpio. Si detecta un posible dato de
+    """Devuelve el texto tal cual si est+Ì limpio. Si detecta un posible dato de
     contacto, rechaza con un error claro en vez de guardarlo silenciosamente
-    filtrado ‚Äî coherente con la pol√≠tica definida para el crawler (doc 05):
+    filtrado ‘«ˆ coherente con la pol+°tica definida para el crawler (doc 05):
     bloquear y explicar el motivo, no censurar en silencio."""
     if texto and contains_contact_leak(texto):
         raise HTTPException(
             status_code=400,
-            detail=f"El campo '{campo}' no puede contener tel√©fonos, emails, usuarios de redes sociales ni links. "
+            detail=f"El campo '{campo}' no puede contener tel+Æfonos, emails, usuarios de redes sociales ni links. "
                    f"La plataforma protege el contacto de ambas partes hasta que corresponda revelarlo.",
         )
     return texto
@@ -69,10 +70,10 @@ def sanitize_free_text(texto: str | None, campo: str = "comentario") -> str | No
 def strip_contact_leaks(texto: str | None) -> str:
     """Etapa 2 (doc 05): a diferencia de `sanitize_free_text` (que RECHAZA texto
     tipeado por una persona con un error claro), el texto que trae el crawler
-    desde el portal de origen no tiene a qui√©n devolverle un error ‚Äî se limpia
-    en silencio, reemplazando cualquier coincidencia de tel√©fono/wsp/email/
+    desde el portal de origen no tiene a qui+Æn devolverle un error ‘«ˆ se limpia
+    en silencio, reemplazando cualquier coincidencia de tel+Æfono/wsp/email/
     usuario de redes por un marcador neutro, para no bloquear la ingesta
-    completa de una propiedad por un dato de contacto colado en la descripci√≥n
+    completa de una propiedad por un dato de contacto colado en la descripci+¶n
     original del portal."""
     if not texto:
         return ""
@@ -89,7 +90,7 @@ def validate_email_format(value: str | None) -> str | None:
         return None
     value = value.strip()
     if not _EMAIL_RE.match(value):
-        raise HTTPException(status_code=400, detail="Ingres√° un email v√°lido.")
+        raise HTTPException(status_code=400, detail="Ingres+Ì un email v+Ìlido.")
     return value
 
 
@@ -102,10 +103,10 @@ if ENV == "production" and not JWT_SECRET:
     raise RuntimeError("JWT_SECRET must be configured in production")
 JWT_SECRET = JWT_SECRET or "dev-only-change-me"
 JWT_ALGORITHM = "HS256"
-# Etapa 4 (secci√≥n 10 / doc 6.2 ‚Äî panel de revisi√≥n manual de agencias):
-# clave fija √∫nica, no por-usuario. Es intencionalmente simple (m√≠nimo
-# viable, seg√∫n el plan maestro) ‚Äî no reemplaza un sistema de roles de
-# equipo interno, que queda para m√°s adelante si hace falta.
+# Etapa 4 (secci+¶n 10 / doc 6.2 ‘«ˆ panel de revisi+¶n manual de agencias):
+# clave fija +¶nica, no por-usuario. Es intencionalmente simple (m+°nimo
+# viable, seg+¶n el plan maestro) ‘«ˆ no reemplaza un sistema de roles de
+# equipo interno, que queda para m+Ìs adelante si hace falta.
 ADMIN_KEY = os.getenv("ADMIN_KEY")
 if ENV == "production" and not ADMIN_KEY:
     raise RuntimeError("ADMIN_KEY must be configured in production")
@@ -136,7 +137,7 @@ class _RateLimiter:
         while q and q[0] < now - window:
             q.popleft()
         if len(q) >= limit:
-            raise HTTPException(status_code=429, detail="Demasiados intentos. Prob√° m√°s tarde.")
+            raise HTTPException(status_code=429, detail="Demasiados intentos. Prob+Ì m+Ìs tarde.")
         q.append(now)
 
 
@@ -167,7 +168,7 @@ def _crawl_run_upsert(run_id: str, **fields: Any) -> dict[str, Any]:
         row.update(fields)
         row["updated_at"] = datetime.now(timezone.utc).isoformat()
         _CRAWL_RUNS[run_id] = row
-        # LRU simple: borrar los m√°s viejos si hay demasiados
+        # LRU simple: borrar los m+Ìs viejos si hay demasiados
         if len(_CRAWL_RUNS) > _CRAWL_RUNS_MAX:
             ordered = sorted(_CRAWL_RUNS.items(), key=lambda kv: kv[1].get("created_at") or "")
             for rid, _ in ordered[: max(0, len(_CRAWL_RUNS) - _CRAWL_RUNS_MAX)]:
@@ -176,7 +177,7 @@ def _crawl_run_upsert(run_id: str, **fields: Any) -> dict[str, Any]:
 
 
 def _run_crawl_job(run_id: str, source_ids: list[str] | None) -> None:
-    """Worker de background: abre su propia sesi√≥n DB y actualiza _CRAWL_RUNS."""
+    """Worker de background: abre su propia sesi+¶n DB y actualiza _CRAWL_RUNS."""
     from .crawler import run_crawl
 
     def on_progress(snap: dict[str, Any]) -> None:
@@ -226,21 +227,21 @@ def _client_ip(request: Request) -> str:
 OTP_TTL_SECONDS = 5 * 60
 OTP_RATE_WINDOW = 10 * 60
 OTP_MAX_REQUESTS = 3
-MAX_PROPERTY_IMAGES = 5  # doc 06.1: hasta 5 fotos por propiedad, decisi√≥n ya tomada
+MAX_PROPERTY_IMAGES = 5  # doc 06.1: hasta 5 fotos por propiedad, decisi+¶n ya tomada
 FREE_LEADS_ON_VERIFICATION = 10
 # T8.7: ventana de prioridad en carrera multi-agente (ticket).
 LISTING_GROUP_REVEAL_WINDOW_WITH_SUB_HOURS = 24
 LISTING_GROUP_REVEAL_WINDOW_NO_SUB_HOURS = 6
-ONBOARDING_TOKEN_DAYS = 14  # T6.2: token de onboarding expira a los 14 d√≠as  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
-PROPERTY_FRESHNESS_DAYS = 60  # doc 05 (Etapa 2): filtro de cold-start ‚Äî una propiedad
-# que el crawler no vuelve a ver hace m√°s de 60 d√≠as se considera potencialmente
-# vendida/dada de baja en el portal de origen y se oculta de la b√∫squeda p√∫blica
+ONBOARDING_TOKEN_DAYS = 14  # T6.2: token de onboarding expira a los 14 d+°as  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
+PROPERTY_FRESHNESS_DAYS = 60  # doc 05 (Etapa 2): filtro de cold-start ‘«ˆ una propiedad
+# que el crawler no vuelve a ver hace m+Ìs de 60 d+°as se considera potencialmente
+# vendida/dada de baja en el portal de origen y se oculta de la b+¶squeda p+¶blica
 # (no se borra: sigue en la base por si el crawler la vuelve a detectar y
 # actualiza last_seen_at, momento en el que vuelve a aparecer sola).
-# Etapa 2: Google Sign-In del comprador (secci√≥n 6.2.1). El Client ID no es un
+# Etapa 2: Google Sign-In del comprador (secci+¶n 6.2.1). El Client ID no es un
 # secreto (viaja igual al frontend en cada request de Google Identity
-# Services), por eso es seguro tenerlo como default ac√° ‚Äî pero en producci√≥n
-# conviene setearlo tambi√©n como variable de entorno en Render por prolijidad.
+# Services), por eso es seguro tenerlo como default ac+Ì ‘«ˆ pero en producci+¶n
+# conviene setearlo tambi+Æn como variable de entorno en Render por prolijidad.
 GOOGLE_CLIENT_ID = os.getenv(
     "GOOGLE_CLIENT_ID",
     "872860769498-kmja44702diqc74d733ite8etttvkqp8.apps.googleusercontent.com",
@@ -282,21 +283,21 @@ class Property(Base):
     balcony: Mapped[bool] = mapped_column(Boolean, default=False)
     pet_friendly: Mapped[bool] = mapped_column(Boolean, default=False)
     credit: Mapped[bool] = mapped_column(Boolean, default=False)
-    # DEPRECATED: texto libre que mezclaba "hace cu√°nto la detectamos" con
+    # DEPRECATED: texto libre que mezclaba "hace cu+Ìnto la detectamos" con
     # "lo que el portal de origen declara". Se mantiene solo por compatibilidad
-    # de datos viejos ‚Äî usar detected_at (ya exist√≠a) + origin_published_at
+    # de datos viejos ‘«ˆ usar detected_at (ya exist+°a) + origin_published_at
     # (nuevo, abajo) para todo desarrollo nuevo. Ver doc 04.2 / 12.
     freshness: Mapped[str] = mapped_column(String(100))
-    # Antig√ºedad declarada por el portal de origen tal cual viene (ej. "publicado
-    # hace 3 d√≠as") ‚Äî se preserva sin reinterpretar, separada de detected_at
-    # (que es cu√°ndo el crawler/seed de Propomi la vio por primera vez).
+    # Antig++edad declarada por el portal de origen tal cual viene (ej. "publicado
+    # hace 3 d+°as") ‘«ˆ se preserva sin reinterpretar, separada de detected_at
+    # (que es cu+Ìndo el crawler/seed de Propomi la vio por primera vez).
     origin_published_at: Mapped[str | None] = mapped_column(String(100), nullable=True)
     source: Mapped[str] = mapped_column(String(160))
     source_url: Mapped[str] = mapped_column(String(500), default="#")
-    # DEPRECATED: una sola imagen. Se mantiene por compatibilidad hacia atr√°s
-    # (frontends viejos que todav√≠a lean `image`) ‚Äî el dato real y de uso
+    # DEPRECATED: una sola imagen. Se mantiene por compatibilidad hacia atr+Ìs
+    # (frontends viejos que todav+°a lean `image`) ‘«ˆ el dato real y de uso
     # nuevo es `images` (lista JSON de hasta 5 URLs). ensure_schema_columns
-    # migra autom√°ticamente image -> images=[image] en filas viejas.
+    # migra autom+Ìticamente image -> images=[image] en filas viejas.
     image: Mapped[str] = mapped_column(String(1000))
     images: Mapped[list[str]] = mapped_column(JSON, default=list)
     description: Mapped[str] = mapped_column(Text)
@@ -307,26 +308,26 @@ class Property(Base):
     last_seen_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
     # Etapa 2 (doc 05): dedup simple sin IA. Si el crawler ingresa una
     # propiedad que matchea la regla (mismo rango de precio + zona + surface
-    # similar) contra otra ya existente, se marca para revisi√≥n manual en vez
-    # de auto-fusionarse o auto-descartarse ‚Äî decisi√≥n expl√≠cita de no
-    # automatizar el merge/descarte todav√≠a.
+    # similar) contra otra ya existente, se marca para revisi+¶n manual en vez
+    # de auto-fusionarse o auto-descartarse ‘«ˆ decisi+¶n expl+°cita de no
+    # automatizar el merge/descarte todav+°a.
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
     possible_duplicate_of: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # Etapa 019 (plan maestro 6.1): cuando el dedup de la 011 encuentra que la
-    # publicaci√≥n "duplicada" es de OTRA agencia (no un error de carga de la
-    # misma agencia), no es un dato sucio a revisar ‚Äî es la misma propiedad
+    # publicaci+¶n "duplicada" es de OTRA agencia (no un error de carga de la
+    # misma agencia), no es un dato sucio a revisar ‘«ˆ es la misma propiedad
     # real ofrecida por varios agentes, caso ya decidido en el plan maestro
     # ("se fusionan en una ficha con precio en rango"). `listing_group_id`
-    # agrupa esas filas sin fusionarlas f√≠sicamente (cada agencia sigue
-    # due√±a de su propia fila/oferta/reveal); el rango de precio se calcula
+    # agrupa esas filas sin fusionarlas f+°sicamente (cada agencia sigue
+    # due+¶a de su propia fila/oferta/reveal); el rango de precio se calcula
     # al leer, ver `GET /properties/{id}/group`.
     listing_group_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
-    # Antig√ºedad (plan maestro secc. 7): se oculta al superar MAX_AGE_DAYS
+    # Antig++edad (plan maestro secc. 7): se oculta al superar MAX_AGE_DAYS
     # sin borrar la fila. El crawler puede resetear a None si el aviso
     # reaparece en el portal de origen (upsert idempotente).
     hidden_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, default=None)
-    # Score de prioridad de rotaci√≥n (encargo #2). Se recalcula en cada upsert.
-    # F√≥rmula documentada en crawler/normalize.py::priority_score.
+    # Score de prioridad de rotaci+¶n (encargo #2). Se recalcula en cada upsert.
+    # F+¶rmula documentada en crawler/normalize.py::priority_score.
     priority_score: Mapped[float] = mapped_column(Float, default=0.0)
 
 
@@ -347,20 +348,20 @@ class Agency(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     name: Mapped[str] = mapped_column(String(180))
     city: Mapped[str] = mapped_column(String(100))
-    # DEPRECATED en favor de verification_status ‚Äî se mantiene por compatibilidad
-    # con datos/c√≥digo viejo. Ver verification_status para el estado real.
+    # DEPRECATED en favor de verification_status ‘«ˆ se mantiene por compatibilidad
+    # con datos/c+¶digo viejo. Ver verification_status para el estado real.
     verified: Mapped[bool] = mapped_column(Boolean, default=False)
     claimed: Mapped[bool] = mapped_column(Boolean, default=False)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True, unique=True)
-    # Verificaci√≥n en dos niveles (doc 06/10, etapa 1). Una agencia reci√©n
-    # "claimeada" empieza en PENDING: ya tiene dashboard b√°sico (ve que tiene
+    # Verificaci+¶n en dos niveles (doc 06/10, etapa 1). Una agencia reci+Æn
+    # "claimeada" empieza en PENDING: ya tiene dashboard b+Ìsico (ve que tiene
     # leads esperando, sin detalle) pero no puede revelar contacto ni pagar
-    # hasta pasar a VERIFIED por revisi√≥n manual (panel interno, etapa 4).
+    # hasta pasar a VERIFIED por revisi+¶n manual (panel interno, etapa 4).
     verification_status: Mapped[str] = mapped_column(String(20), default="PENDING")  # PENDING | VERIFIED | REJECTED
     instagram: Mapped[str | None] = mapped_column(String(160), nullable=True)
     website_link: Mapped[str | None] = mapped_column(String(300), nullable=True)
-    # Prioridad de cola de verificaci√≥n: quien ya se suscribi√≥ antes de
-    # verificarse pasa primero (SLA 24hs para ese caso). Mayor = m√°s prioridad.
+    # Prioridad de cola de verificaci+¶n: quien ya se suscribi+¶ antes de
+    # verificarse pasa primero (SLA 24hs para ese caso). Mayor = m+Ìs prioridad.
     verification_priority: Mapped[int] = mapped_column(Integer, default=0)
     verification_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     verification_notes: Mapped[str | None] = mapped_column(String(300), nullable=True)
@@ -374,18 +375,18 @@ class Agency(Base):
     current_period_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # DEPRECATED
     free_leads_remaining: Mapped[int] = mapped_column(Integer, default=0)  # DEPRECATED -> LeadCredit
     # Etapa 4 del roadmap general (subdominios por agencia): identificador
-    # p√∫blico y estable para la URL de la agencia (ej. inmobiliaria-norte
-    # -> inmobiliaria-norte.propomi.lat v√≠a middleware Next.js). Se genera
+    # p+¶blico y estable para la URL de la agencia (ej. inmobiliaria-norte
+    # -> inmobiliaria-norte.propomi.lat v+°a middleware Next.js). Se genera
     # una sola vez (ensure_agency_slugs / al crear la agencia) y nunca se
     # recalcula solo, para no romper links/subdominios ya compartidos si el
-    # nombre de la agencia cambia despu√©s. Nullable por compatibilidad con
+    # nombre de la agencia cambia despu+Æs. Nullable por compatibilidad con
     # filas viejas hasta que corre el backfill.
     slug: Mapped[str | None] = mapped_column(String(160), nullable=True, unique=True)
 
 
 
 class GeoCity(Base):
-    """Ciudades agregadas por agentes (extienden el cat√°logo est√°tico de geo_catalog.py)."""
+    """Ciudades agregadas por agentes (extienden el cat+Ìlogo est+Ìtico de geo_catalog.py)."""
     __tablename__ = "geo_cities"
     __table_args__ = (UniqueConstraint("country", "province", "normalized", name="uq_geo_city_place"),)
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -411,7 +412,7 @@ class AgencyPhone(Base):
 
 
 class SubscriptionPlan(str, Enum):
-    """Planes de suscripci√≥n (doc PLAN_MAESTRO / T5).
+    """Planes de suscripci+¶n (doc PLAN_MAESTRO / T5).
     PAY_PER_LEAD = sin plan activo. PLAN_30/50/99 = packs mensuales.
     cupo: 30 / 70 / None(ilimitado). Valores reversibles si cambia pricing.
     """
@@ -430,7 +431,7 @@ PLAN_CUPO: dict[str, int | None] = {
 
 
 class Subscription(Base):
-    """Plan activo por agencia ‚Äî entidad propia (antes columnas en Agency)."""
+    """Plan activo por agencia ‘«ˆ entidad propia (antes columnas en Agency)."""
     __tablename__ = "subscriptions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     agency_id: Mapped[str] = mapped_column(String(40), index=True)
@@ -443,7 +444,7 @@ class Subscription(Base):
 
 
 class LeadCredit(Base):
-    """Cr√©ditos gratis de reveal al verificarse (antes Agency.free_leads_remaining)."""
+    """Cr+Æditos gratis de reveal al verificarse (antes Agency.free_leads_remaining)."""
     __tablename__ = "lead_credits"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     agency_id: Mapped[str] = mapped_column(String(40), index=True, unique=True)
@@ -454,11 +455,11 @@ class LeadCredit(Base):
 
 
 class DemandRequest(Base):
-    """Demanda gen√©rica B2B: una agencia con plan PLAN_50/PLAN_99 publica que
+    """Demanda gen+Ærica B2B: una agencia con plan PLAN_50/PLAN_99 publica que
     busca cierto tipo de propiedad para un comprador propio, sin exponer datos
     de ese comprador. Al entrar una propiedad nueva/actualizada (alta manual o
     crawler) que matchea, se genera un DemandMatch + Event('demand_match')
-    para la agencia due√±a de la demanda ‚Äî canal agente-a-agente, siempre
+    para la agencia due+¶a de la demanda ‘«ˆ canal agente-a-agente, siempre
     gratis (no consume cupo de reveal, no expone buyer_*)."""
     __tablename__ = "demand_requests"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -489,11 +490,11 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default=Role.COMPRADOR.value)
     agency_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
-    # Etapa 2 (secci√≥n 6.2.1): el celular se verifica reutilizando el sistema
+    # Etapa 2 (secci+¶n 6.2.1): el celular se verifica reutilizando el sistema
     # de OTP existente (ver /auth/otp/verify-buyer); Google Sign-In se pide
-    # despu√©s, como segunda prueba de identidad, reci√©n antes de "Enviar
-    # oferta". Ninguno de los dos reemplaza al otro ‚Äî el tel√©fono sigue
-    # siendo la identidad can√∫nica del sistema (regla no negociable).
+    # despu+Æs, como segunda prueba de identidad, reci+Æn antes de "Enviar
+    # oferta". Ninguno de los dos reemplaza al otro ‘«ˆ el tel+Æfono sigue
+    # siendo la identidad can+¶nica del sistema (regla no negociable).
     phone_verified_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     email: Mapped[str | None] = mapped_column(String(160), nullable=True)
     google_sub: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
@@ -529,9 +530,9 @@ class Offer(Base):
     timeframe: Mapped[str | None] = mapped_column(String(60), nullable=True)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="SENT")
-    # Contacto real del comprador ‚Äî es lo que efectivamente se "revela" al
-    # agente. Nunca se devuelve en ning√∫n endpoint hasta que exista un reveal
-    # v√°lido (ver /offers/{id}/reveal).
+    # Contacto real del comprador ‘«ˆ es lo que efectivamente se "revela" al
+    # agente. Nunca se devuelve en ning+¶n endpoint hasta que exista un reveal
+    # v+Ìlido (ver /offers/{id}/reveal).
     buyer_name: Mapped[str] = mapped_column(String(120))
     buyer_phone_raw: Mapped[str] = mapped_column(String(40))
     buyer_phone_normalized: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
@@ -539,20 +540,20 @@ class Offer(Base):
     contact_revealed: Mapped[bool] = mapped_column(Boolean, default=False)
     contact_revealed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     # T9.3: canal de origen del link compartible (ej. "storefront", "wa-agente",
-    # slug de agencia). Nunca texto libre del comprador ‚Äî solo un c√≥digo corto
-    # validado. Permite al agente distinguir de qu√© canal vino cada oferta.
+    # slug de agencia). Nunca texto libre del comprador ‘«ˆ solo un c+¶digo corto
+    # validado. Permite al agente distinguir de qu+Æ canal vino cada oferta.
     origin: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Lead(Base):
-    """Etapa (redise√±o wizard): pregunta/visita calificadas por el mismo
-    wizard que la oferta, pero sin forzar un monto ‚Äî a diferencia de Offer,
-    `amount` es opcional (solo existe si el comprador eligi√≥ proponer un
-    precio desde el modo 'question'). No reusa la tabla `offers` a prop√≥sito:
+    """Etapa (redise+¶o wizard): pregunta/visita calificadas por el mismo
+    wizard que la oferta, pero sin forzar un monto ‘«ˆ a diferencia de Offer,
+    `amount` es opcional (solo existe si el comprador eligi+¶ proponer un
+    precio desde el modo 'question'). No reusa la tabla `offers` a prop+¶sito:
     mezclar "sin propuesta de precio" dentro de un modelo pensado para
-    ofertas ensuciar√≠a ese esquema con campos que no le pertenecen. El resto
-    de la calificaci√≥n (capital, forma de pago, plazo, condicionantes) es
+    ofertas ensuciar+°a ese esquema con campos que no le pertenecen. El resto
+    de la calificaci+¶n (capital, forma de pago, plazo, condicionantes) es
     igual que en Offer porque son los mismos pasos 2-4 del wizard."""
     __tablename__ = "leads"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -560,8 +561,8 @@ class Lead(Base):
     property_id: Mapped[str] = mapped_column(String(40))
     # QUESTION | VISIT
     intent_type: Mapped[str] = mapped_column(String(20))
-    # Solo aplica a intent_type=QUESTION cuando el comprador NO toc√≥
-    # "Todav√≠a no tengo una propuesta" ‚Äî si la toc√≥, has_proposal=False y
+    # Solo aplica a intent_type=QUESTION cuando el comprador NO toc+¶
+    # "Todav+°a no tengo una propuesta" ‘«ˆ si la toc+¶, has_proposal=False y
     # amount queda None. En VISIT siempre False/None.
     has_proposal: Mapped[bool] = mapped_column(Boolean, default=False)
     amount: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -592,7 +593,7 @@ class RevealMethod(str, Enum):
 class RevealTransaction(Base):
     """Registra cada intento/consumo de reveal de contacto de comprador.
     Es el punto de enganche para una pasarela de pago real (Mercado Pago,
-    Stripe, etc.) ‚Äî ver PaymentGateway m√°s abajo."""
+    Stripe, etc.) ‘«ˆ ver PaymentGateway m+Ìs abajo."""
     __tablename__ = "reveal_transactions"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     offer_id: Mapped[str | None] = mapped_column(String(40), index=True, nullable=True)
@@ -609,17 +610,17 @@ class RevealTransaction(Base):
 
 class ColdStartTask(Base):
     """T6.1: cuando llega una oferta real sobre una propiedad de una agencia
-    todav√≠a no reclamada (o sin agency_id pero con tel√©fono scrapeado), se
-    genera una tarea de notificaci√≥n manual. El env√≠o es 100% humano al
-    principio. El tel√©fono scrapeado NUNCA viaja en endpoints p√∫blicos ‚Äî
+    todav+°a no reclamada (o sin agency_id pero con tel+Æfono scrapeado), se
+    genera una tarea de notificaci+¶n manual. El env+°o es 100% humano al
+    principio. El tel+Æfono scrapeado NUNCA viaja en endpoints p+¶blicos ‘«ˆ
     solo en GET /admin/cold-start/pending (X-Admin-Key)."""
     __tablename__ = "cold_start_tasks"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     offer_id: Mapped[str] = mapped_column(String(40), index=True)
     property_id: Mapped[str] = mapped_column(String(40), index=True)
     agency_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
-    # Tel√©fono scrapeado / de la agencia no reclamada ‚Äî solo para el equipo
-    # interno que manda el mensaje a mano. Nunca en API p√∫blica.
+    # Tel+Æfono scrapeado / de la agencia no reclamada ‘«ˆ solo para el equipo
+    # interno que manda el mensaje a mano. Nunca en API p+¶blica.
     target_phone: Mapped[str] = mapped_column(String(40))
     amount: Mapped[float] = mapped_column(Float)
     currency: Mapped[str] = mapped_column(String(8), default="USD")
@@ -647,9 +648,9 @@ class AdminAuditLog(Base):
 
 
 class CrawlCursor(Base):
-    """Paginaci√≥n con estado del crawler (tarea 4 del encargo one-pass).
+    """Paginaci+¶n con estado del crawler (tarea 4 del encargo one-pass).
     Cada fuente avanza last_page entre corridas; al llegar al tope permitido
-    por robots/cortes√≠a se reinicia a 1 (el upsert es idempotente)."""
+    por robots/cortes+°a se reinicia a 1 (el upsert es idempotente)."""
     __tablename__ = "crawl_cursors"
     source_id: Mapped[str] = mapped_column(String(40), primary_key=True)
     last_page: Mapped[int] = mapped_column(Integer, default=0)
@@ -658,8 +659,8 @@ class CrawlCursor(Base):
 
 
 class AgentSuppressionList(Base):
-    """Lista de baja permanente ‚Äî un tel√©fono/email ac√° nunca vuelve a
-    recibir contacto en fr√≠o ni ver sus datos reutilizados, aunque el
+    """Lista de baja permanente ‘«ˆ un tel+Æfono/email ac+Ì nunca vuelve a
+    recibir contacto en fr+°o ni ver sus datos reutilizados, aunque el
     crawler lo vuelva a encontrar en otra fuente (ver doc 05)."""
     __tablename__ = "agent_suppression_list"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -712,7 +713,7 @@ class PropertySuggestion(Base):
 
 
 class AdminUser(Base):
-    """Usuario admin del panel humano. Un solo seed v√≠a env, sin auto-registro."""
+    """Usuario admin del panel humano. Un solo seed v+°a env, sin auto-registro."""
     __tablename__ = "admin_users"
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
     username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
@@ -743,7 +744,7 @@ def ensure_schema_columns() -> None:
         "properties": {
             "contact_phone_raw": "VARCHAR(80)",
             "contact_phone_normalized": "VARCHAR(30)",
-            # Etapa 1: im√°genes m√∫ltiples + fecha de origen separada de
+            # Etapa 1: im+Ìgenes m+¶ltiples + fecha de origen separada de
             # freshness. SQLite/Postgres guardan `images` como TEXT;
             # SQLAlchemy JSON serializa/deserializa igual para ambos motores
             # sin necesitar un tipo nativo json en la columna.
@@ -807,7 +808,7 @@ def ensure_schema_columns() -> None:
                 if column not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
 
-        # Etapa (redise√±o wizard): reveal_transactions.offer_id era NOT NULL
+        # Etapa (redise+¶o wizard): reveal_transactions.offer_id era NOT NULL
         # cuando solo existian reveals de Offer. Ahora tambien puede haber
         # reveals de Lead (lead_id en su lugar), asi que offer_id debe poder
         # ser NULL. Postgres soporta ALTER COLUMN DROP NOT NULL directo;
@@ -818,11 +819,37 @@ def ensure_schema_columns() -> None:
 
 
 
+
+def ensure_schema_indexes() -> None:
+    """+Ïndices parciales que aceleran el listado home / random / freshness.
+
+    ix_properties_hot soporta el filtro t+°pico:
+      hidden_at IS NULL AND last_seen_at >= cutoff
+      ORDER BY priority_score DESC, detected_at DESC
+    sin seq scan de toda la tabla properties.
+
+    CREATE INDEX IF NOT EXISTS (no CONCURRENTLY): corre dentro de
+    engine.begin() al arranque; CONCURRENTLY no puede ir en transacci+¶n.
+    IF NOT EXISTS es idempotente y seguro en restarts con datos ya cargados.
+    """
+    inspector = inspect(engine)
+    if not inspector.has_table("properties"):
+        return
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_properties_hot "
+                "ON properties (hidden_at, last_seen_at, priority_score DESC, detected_at DESC) "
+                "WHERE hidden_at IS NULL"
+            )
+        )
+
+
 def migrate_legacy_property_images() -> None:
-    """Decisi√≥n expl√≠cita (doc 04.2 / 06): migrar el dato viejo en vez de
-    arrancar de cero. Toda fila que todav√≠a tenga `images` vac√°o pero s√≠
+    """Decisi+¶n expl+°cita (doc 04.2 / 06): migrar el dato viejo en vez de
+    arrancar de cero. Toda fila que todav+°a tenga `images` vac+Ìo pero s+°
     tenga el `image` (string) viejo, pasa a `images=[image]`. Es idempotente:
-    una vez migrada, `images` deja de estar vac√°o y no se vuelve a tocar."""
+    una vez migrada, `images` deja de estar vac+Ìo y no se vuelve a tocar."""
     with Session(engine) as db:
         rows = db.scalars(select(Property)).all()
         changed = False
@@ -879,7 +906,7 @@ def get_subscription(db: Session, agency_id: str) -> Subscription | None:
 
 def get_agency_plan(db: Session, agency: Agency) -> str:
     """Plan vigente resuelto: fila Subscription nueva, con fallback a la
-    columna DEPRECATED agency.subscription_tier (mismo patr√≥n que
+    columna DEPRECATED agency.subscription_tier (mismo patr+¶n que
     get_available_credit/consume_reveal_credit)."""
     sub = get_subscription(db, agency.id)
     if sub:
@@ -894,11 +921,11 @@ DEMAND_MATCH_DAILY_LIMIT_PER_AGENCY = 30
 
 
 def match_demand_requests_for_property(db: Session, prop: "Property") -> int:
-    """Cruza una propiedad reci√©n creada/actualizada (alta manual o crawler)
+    """Cruza una propiedad reci+Æn creada/actualizada (alta manual o crawler)
     contra demand_requests activas de OTRAS agencias. Crea DemandMatch +
     Event('demand_match') por cada match nuevo (idempotente por
     UniqueConstraint). Nunca expone buyer_* (no hay comprador en este flujo,
-    es agencia-a-agencia). Rate-limit de notificaciones: 30/d√≠a/agencia via
+    es agencia-a-agencia). Rate-limit de notificaciones: 30/d+°a/agencia via
     _rate, para no saturar a una agencia con muchas demandas activas."""
     if not prop.zone or not prop.type:
         return 0
@@ -913,7 +940,7 @@ def match_demand_requests_for_property(db: Session, prop: "Property") -> int:
     created = 0
     for demand in candidates:
         if prop.agency_id and demand.agency_id == prop.agency_id:
-            continue  # nunca notificarle a la agencia su propia publicaci√≥n
+            continue  # nunca notificarle a la agencia su propia publicaci+¶n
         if demand.expires_at and demand.expires_at < now:
             continue
         if demand.rooms_min is not None and (prop.rooms or 0) < demand.rooms_min:
@@ -950,7 +977,7 @@ def match_demand_requests_for_property(db: Session, prop: "Property") -> int:
 
 
 def get_available_credit(db: Session, agency_id: str) -> int:
-    """√önico punto de verdad del cupo de reveal. Fallback a columnas DEPRECATED si no hay filas nuevas."""
+    """+‹nico punto de verdad del cupo de reveal. Fallback a columnas DEPRECATED si no hay filas nuevas."""
     total = 0
     lc = get_lead_credit(db, agency_id)
     sub = get_subscription(db, agency_id)
@@ -1006,6 +1033,7 @@ def consume_reveal_credit(db: Session, agency: Agency) -> str | None:
 
 
 ensure_schema_columns()
+ensure_schema_indexes()
 migrate_legacy_property_images()
 migrate_agency_monetization()
 
@@ -1035,7 +1063,7 @@ class VonageSmsSender:
             send_otp_sms(phone, code)
         except VonageSMSError as exc:
             # Fallo real de Vonage (credenciales, red, rechazo del SMS) debe
-            # llegar al cliente como error ‚Äî nunca como "ok:true" silencioso.
+            # llegar al cliente como error ‘«ˆ nunca como "ok:true" silencioso.
             raise HTTPException(status_code=502, detail=f"No pudimos enviar el SMS: {exc}") from exc
 
 
@@ -1044,7 +1072,18 @@ class VonageWhatsappSender:
         try:
             send_otp_whatsapp(phone, code)
         except VonageWhatsappError as exc:
-            raise HTTPException(status_code=502, detail=f"No pudimos enviar el c√≥digo por WhatsApp: {exc}") from exc
+            raise HTTPException(status_code=502, detail=f"No pudimos enviar el c+¶digo por WhatsApp: {exc}") from exc
+
+
+class WhatsappCloudSender:
+    def send(self, phone: str, code: str) -> None:
+        try:
+            send_otp_whatsapp_cloud(phone, code)
+        except WhatsappCloudError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"No pudimos enviar el c+¶digo por WhatsApp: {exc}",
+            ) from exc
 
 
 OTP_SMS_PROVIDER = os.getenv("OTP_SMS_PROVIDER", "dev").strip().lower()
@@ -1055,6 +1094,8 @@ def _select_sms_sender() -> SmsSender:
         return VonageWhatsappSender()
     if OTP_SMS_PROVIDER == "vonage":
         return VonageSmsSender()
+    if OTP_SMS_PROVIDER == "whatsapp_cloud":
+        return WhatsappCloudSender()
     return MockSmsSender()
 
 
@@ -1068,18 +1109,18 @@ class PaymentGateway(Protocol):
     def create_checkout(self, agency_id: str, amount_usd: float, reference: str) -> str | None:
         """Devuelve una URL de checkout hosteado para que el agente complete
         el pago (etapa 017: Lemon Squeezy es redirect-based, no un cobro
-        s√≠ncrono con tarjeta guardada). None si el gateway no soporta esto
-        (ej. el mock) ‚Äî en ese caso el 402 de /offers/{id}/reveal no incluye
+        s+°ncrono con tarjeta guardada). None si el gateway no soporta esto
+        (ej. el mock) ‘«ˆ en ese caso el 402 de /offers/{id}/reveal no incluye
         checkout_url."""
         ...
 
 
 class MockPaymentGateway:
-    """Seam para una pasarela real. A prop√≥sito NUNCA aprueba un cobro por s√≠
-    sola ‚Äî devuelve False siempre, para que jam√°s se revele un contacto
-    'gratis' por accidente mientras no haya una integraci√≥n real. En
-    desarrollo, el pago se completa manualmente v√≠a
-    POST /payments/{transaction_id}/mock-complete (bloqueado en producci√≥n)."""
+    """Seam para una pasarela real. A prop+¶sito NUNCA aprueba un cobro por s+°
+    sola ‘«ˆ devuelve False siempre, para que jam+Ìs se revele un contacto
+    'gratis' por accidente mientras no haya una integraci+¶n real. En
+    desarrollo, el pago se completa manualmente v+°a
+    POST /payments/{transaction_id}/mock-complete (bloqueado en producci+¶n)."""
     def charge(self, agency_id: str, amount_usd: float, reference: str) -> bool:
         if ENV != "production":
             print(f"[PROPOMI PAYMENT MOCK] Cobro pendiente: agencia={agency_id} monto=USD{amount_usd} ref={reference}")
@@ -1090,20 +1131,20 @@ class MockPaymentGateway:
 
 
 # --- Etapa 017: Lemon Squeezy como pasarela de pago real para pay-per-lead ---
-# Se eligi√≥ Lemon Squeezy (decisi√≥n del usuario, no Mercado Pago/Stripe como
-# se hab√≠a anotado en el "pr√≥ximo paso l√≥gico" de la etapa 016) porque act√∫a
-# como Merchant of Record ‚Äî cobra la tarjeta √©l mismo con un checkout
-# hosteado y confirma el pago v√≠a webhook, en vez de un `charge()` s√≠ncrono
-# como asum√≠a el dise√±o original del Protocol (por eso se agreg√≥
+# Se eligi+¶ Lemon Squeezy (decisi+¶n del usuario, no Mercado Pago/Stripe como
+# se hab+°a anotado en el "pr+¶ximo paso l+¶gico" de la etapa 016) porque act+¶a
+# como Merchant of Record ‘«ˆ cobra la tarjeta +Æl mismo con un checkout
+# hosteado y confirma el pago v+°a webhook, en vez de un `charge()` s+°ncrono
+# como asum+°a el dise+¶o original del Protocol (por eso se agreg+¶
 # `create_checkout` arriba, sin romper `charge()` para el mock/tests).
 LEMON_SQUEEZY_API_KEY = os.getenv("LEMON_SQUEEZY_API_KEY") or os.getenv("LEMONSQUEEZY_API_KEY")
 LEMON_SQUEEZY_STORE_ID = os.getenv("LEMON_SQUEEZY_STORE_ID") or os.getenv("LEMONSQUEEZY_STORE_ID")
-# Reveal (pay-per-lead) ‚Äî compat con LEMON_SQUEEZY_VARIANT_ID legacy
+# Reveal (pay-per-lead) ‘«ˆ compat con LEMON_SQUEEZY_VARIANT_ID legacy
 LEMON_SQUEEZY_VARIANT_ID = (
     os.getenv("LS_VARIANT_REVEAL")
     or os.getenv("LEMON_SQUEEZY_VARIANT_ID")
 )
-# Planes de suscripci√≥n (env names del brief + alias)
+# Planes de suscripci+¶n (env names del brief + alias)
 LS_VARIANT_PLAN_BASIC = os.getenv("LS_VARIANT_PLAN_BASIC") or os.getenv("LS_VARIANT_SUB_30")
 LS_VARIANT_PLAN_PRO = os.getenv("LS_VARIANT_PLAN_PRO") or os.getenv("LS_VARIANT_SUB_60")
 LS_VARIANT_PLAN_PREMIUM = os.getenv("LS_VARIANT_PLAN_PREMIUM") or os.getenv("LS_VARIANT_SUB_UNLIMITED")
@@ -1125,10 +1166,10 @@ if LS_VARIANT_PLAN_PREMIUM:
 
 
 class LemonSqueezyPaymentGateway:
-    """Pasarela real v√≠a Lemon Squeezy. `charge()` siempre devuelve False
-    (Lemon Squeezy es as√≠ncrono: no hay forma de confirmar el cobro en el
-    mismo request) ‚Äî la confirmaci√≥n real llega por
-    POST /payments/webhooks/lemonsqueezy y de ah‚Äî se completa la
+    """Pasarela real v+°a Lemon Squeezy. `charge()` siempre devuelve False
+    (Lemon Squeezy es as+°ncrono: no hay forma de confirmar el cobro en el
+    mismo request) ‘«ˆ la confirmaci+¶n real llega por
+    POST /payments/webhooks/lemonsqueezy y de ah‘«ˆ se completa la
     RevealTransaction. `create_checkout()` crea el checkout hosteado y
     devuelve su URL para que el agente pague."""
 
@@ -1137,7 +1178,7 @@ class LemonSqueezyPaymentGateway:
 
     def create_checkout(self, agency_id: str, amount_usd: float, reference: str) -> str | None:
         if not (LEMON_SQUEEZY_API_KEY and LEMON_SQUEEZY_STORE_ID and LEMON_SQUEEZY_VARIANT_ID):
-            print("[PROPOMI LEMON SQUEEZY] Faltan variables de entorno (API_KEY/STORE_ID/VARIANT_ID) ‚Äî no se puede crear el checkout.")
+            print("[PROPOMI LEMON SQUEEZY] Faltan variables de entorno (API_KEY/STORE_ID/VARIANT_ID) ‘«ˆ no se puede crear el checkout.")
             return None
         payload = {
             "data": {
@@ -1189,10 +1230,10 @@ def _select_payment_gateway() -> PaymentGateway:
     if LEMON_SQUEEZY_API_KEY and LEMON_SQUEEZY_STORE_ID and LEMON_SQUEEZY_VARIANT_ID:
         return LemonSqueezyPaymentGateway()
     if ENV == "production":
-        # Sin credenciales de Lemon Squeezy en producci√≥n, seguimos con el
-        # mock: sigue sin revelar nada gratis, solo que ning√∫n pago real
+        # Sin credenciales de Lemon Squeezy en producci+¶n, seguimos con el
+        # mock: sigue sin revelar nada gratis, solo que ning+¶n pago real
         # puede procesarse hasta que se configuren las 3 variables de arriba.
-        print("[PROPOMI LEMON SQUEEZY] ENV=production sin credenciales configuradas ‚Äî usando MockPaymentGateway (todo pay-per-lead quedar√° 402 sin checkout_url).")
+        print("[PROPOMI LEMON SQUEEZY] ENV=production sin credenciales configuradas ‘«ˆ usando MockPaymentGateway (todo pay-per-lead quedar+Ì 402 sin checkout_url).")
     return MockPaymentGateway()
 
 
@@ -1213,11 +1254,35 @@ def normalize_phone(raw: str, default_country: str = "AR") -> str | None:
         return None
 
 
+def phone_equivalents(phone: str) -> list[str]:
+    """Formas E.164 equivalentes de un mismo n+¶mero argentino.
+
+    En Argentina un celular se escribe +54 9 11 XXXX XXXX o +54 11 XXXX XXXX
+    seg+¶n qui+Æn lo tipee (el 9 es solo el prefijo de m+¶vil): es la MISMA l+°nea.
+    La persona no tiene por qu+Æ saber con cu+Ìl se registr+¶, as+° que toda
+    b+¶squeda por tel+Æfono compara contra ambas variantes. El primer elemento
+    siempre es el n+¶mero recibido. N+¶meros no argentinos (o con largo raro)
+    se devuelven tal cual. No cambia lo que se guarda en la base, solo c+¶mo
+    se busca."""
+    if not phone or not phone.startswith("+54"):
+        return [phone]
+    rest = phone[3:]
+    if not rest.isdigit():
+        return [phone]
+    # Nacional AR = c+¶digo de +Ìrea + n+¶mero = 10 d+°gitos; con el 9 de m+¶vil, 11.
+    # Ning+¶n c+¶digo de +Ìrea argentino empieza con 9, no hay ambig++edad.
+    if len(rest) == 11 and rest.startswith("9"):
+        return [phone, "+54" + rest[1:]]
+    if len(rest) == 10 and not rest.startswith("9"):
+        return [phone, "+549" + rest]
+    return [phone]
+
+
 def slugify(name: str) -> str:
     """Etapa 4 (subdominios por agencia): normaliza un nombre de agencia a un
-    slug apto para subdominio (min√∫sculas, sin acentos, solo [a-z0-9-]).
-    No garantiza unicidad por s√≠ sola ‚Äî eso lo resuelve el caller agregando
-    un sufijo num√©rico (ver ensure_agency_slugs)."""
+    slug apto para subdominio (min+¶sculas, sin acentos, solo [a-z0-9-]).
+    No garantiza unicidad por s+° sola ‘«ˆ eso lo resuelve el caller agregando
+    un sufijo num+Ærico (ver ensure_agency_slugs)."""
     normalized = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     normalized = normalized.lower().strip()
     normalized = re.sub(r"[^a-z0-9]+", "-", normalized).strip("-")
@@ -1226,10 +1291,10 @@ def slugify(name: str) -> str:
 
 def ensure_agency_slugs(db: Session) -> None:
     """Backfill de slugs para agencias creadas antes de que existiera la
-    columna (o cualquier fila que por alg√∫n motivo haya quedado sin slug).
-    Se corre en cada request a los endpoints p√∫blicos de agencia (barato:
-    solo hace algo si hay filas con slug NULL) en vez de una migraci√≥n
-    one-shot, para no depender de un script aparte que el usuario tendr√≠a
+    columna (o cualquier fila que por alg+¶n motivo haya quedado sin slug).
+    Se corre en cada request a los endpoints p+¶blicos de agencia (barato:
+    solo hace algo si hay filas con slug NULL) en vez de una migraci+¶n
+    one-shot, para no depender de un script aparte que el usuario tendr+°a
     que acordarse de correr una vez."""
     pending = db.scalars(select(Agency).where(Agency.slug.is_(None))).all()
     if not pending:
@@ -1264,24 +1329,24 @@ def create_token(user: User) -> str:
 
 def current_session(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Sesi√≥n requerida")
+        raise HTTPException(status_code=401, detail="Sesi+¶n requerida")
     try:
         return jwt.decode(authorization[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError as exc:
-        raise HTTPException(status_code=401, detail="Sesi√≥n inv√°lida o vencida") from exc
+        raise HTTPException(status_code=401, detail="Sesi+¶n inv+Ìlida o vencida") from exc
 
 
 def current_user(session: dict[str, Any] = Depends(current_session)) -> User:
     with Session(engine) as db:
         user = db.get(User, session.get("user_id"))
         if not user or user.phone != session.get("phone") or user.role != session.get("role") or user.agency_id != session.get("agency_id"):
-            raise HTTPException(status_code=401, detail="Sesi√≥n inv√°lida")
+            raise HTTPException(status_code=401, detail="Sesi+¶n inv+Ìlida")
         return user
 
 
 
 def ensure_admin_seed() -> None:
-    """Inserta el AdminUser √önico desde env (idempotente). Sin auto-registro API."""
+    """Inserta el AdminUser +‹nico desde env (idempotente). Sin auto-registro API."""
     username = (os.getenv("ADMIN_USERNAME") or "").strip()
     password = os.getenv("ADMIN_PASSWORD") or ""
     phone_raw = (os.getenv("ADMIN_PHONE") or "").strip()
@@ -1314,7 +1379,7 @@ def create_admin_token(admin: "AdminUser") -> str:
 
 def require_agent(session: dict[str, Any] = Depends(current_session)) -> dict[str, Any]:
     if session.get("role") != Role.AGENTE.value or not session.get("agency_id"):
-        raise HTTPException(status_code=403, detail="Se requiere una sesi√≥n de agente")
+        raise HTTPException(status_code=403, detail="Se requiere una sesi+¶n de agente")
     return session
 
 
@@ -1323,7 +1388,7 @@ def require_admin(
     authorization: str | None = Header(default=None),
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ) -> dict[str, Any]:
-    """Autenticaci√≥n admin dual + rate limit por IP:
+    """Autenticaci+¶n admin dual + rate limit por IP:
     - X-Admin-Key: crons / servidor-a-servidor
     - Bearer JWT role=ADMIN: panel humano tras login+OTP
     """
@@ -1334,16 +1399,16 @@ def require_admin(
         try:
             payload = jwt.decode(authorization[7:], JWT_SECRET, algorithms=[JWT_ALGORITHM])
         except jwt.PyJWTError as exc:
-            raise HTTPException(status_code=401, detail="Sesi√≥n admin inv√°lida o vencida") from exc
+            raise HTTPException(status_code=401, detail="Sesi+¶n admin inv+Ìlida o vencida") from exc
         if payload.get("role") != "ADMIN":
-            raise HTTPException(status_code=403, detail="Se requiere sesi√≥n de administrador")
+            raise HTTPException(status_code=403, detail="Se requiere sesi+¶n de administrador")
         return payload
-    raise HTTPException(status_code=401, detail="Autenticaci√≥n de administrador requerida")
+    raise HTTPException(status_code=401, detail="Autenticaci+¶n de administrador requerida")
 
 
 
 def log_admin_action(action: str, endpoint: str, target_id: str | None = None, detail: dict | None = None, ip: str | None = None) -> None:
-    """Persiste auditor√≠a admin. Best-effort: no rompe la request si falla el insert."""
+    """Persiste auditor+°a admin. Best-effort: no rompe la request si falla el insert."""
     try:
         with Session(engine) as db:
             db.add(AdminAuditLog(
@@ -1362,14 +1427,14 @@ def log_admin_action(action: str, endpoint: str, target_id: str | None = None, d
 
 
 # --------------------------------------------------------------------------
-# Etapa 2 (doc 05): ingesta del crawler. Un √önico endpoint recibe tanto altas
-# nuevas como "el crawler volvi‚Äî a ver esta misma publicaci√≥n" (upsert por
-# source+source_url, que es la identidad natural de una publicaci√≥n en su
+# Etapa 2 (doc 05): ingesta del crawler. Un +‹nico endpoint recibe tanto altas
+# nuevas como "el crawler volvi‘«ˆ a ver esta misma publicaci+¶n" (upsert por
+# source+source_url, que es la identidad natural de una publicaci+¶n en su
 # portal de origen). Protegido con la misma clave admin que el panel de
-# verificaci√≥n ‚Äî no es p√∫blico, lo llama √∫nicamente el proceso del crawler.
+# verificaci+¶n ‘«ˆ no es p+¶blico, lo llama +¶nicamente el proceso del crawler.
 # --------------------------------------------------------------------------
-DEDUP_PRICE_TOLERANCE = 0.05  # ¬±5% de precio
-DEDUP_SURFACE_TOLERANCE = 0.10  # ¬±10% de superficie
+DEDUP_PRICE_TOLERANCE = 0.05  # -¶5% de precio
+DEDUP_SURFACE_TOLERANCE = 0.10  # -¶10% de superficie
 
 
 class PropertyIngestIn(BaseModel):
@@ -1409,7 +1474,7 @@ class PropertyIngestIn(BaseModel):
 class PropertyCreateIn(BaseModel):
     """Alta manual de propiedad por un agente verificado (T7.1 / T7.2 backend).
     No es ingesta de crawler: el agente escribe los datos, agency_id se fuerza
-    a la sesi√≥n, y la descripci√≥n pasa por sanitize_free_text (rechaza fugas)."""
+    a la sesi+¶n, y la descripci+¶n pasa por sanitize_free_text (rechaza fugas)."""
     title: str = Field(min_length=1, max_length=200)
     type: str = "Departamento"
     operation: str = "Venta"
@@ -1438,11 +1503,11 @@ class PropertyCreateIn(BaseModel):
 
 
 def find_possible_duplicate(db: Session, zone: str, price: float, surface: float, exclude_id: str | None = None) -> Property | None:
-    """Regla de dedup simple pedida (doc 05, sin IA todav√≠a): misma zona +
-    precio dentro de ¬±5% + superficie dentro de ¬±10% de alguna propiedad ya
-    existente -> se marca para revisi√≥n manual, nunca se fusiona ni descarta
-    solo. Barrido en Python (no en SQL) a prop√≥sito: el volumen esperado por
-    zona en esta etapa es chico y as√≠ queda f√°cil de leer/ajustar tolerancias."""
+    """Regla de dedup simple pedida (doc 05, sin IA todav+°a): misma zona +
+    precio dentro de -¶5% + superficie dentro de -¶10% de alguna propiedad ya
+    existente -> se marca para revisi+¶n manual, nunca se fusiona ni descarta
+    solo. Barrido en Python (no en SQL) a prop+¶sito: el volumen esperado por
+    zona en esta etapa es chico y as+° queda f+Ìcil de leer/ajustar tolerancias."""
     lo, hi = price * (1 - DEDUP_PRICE_TOLERANCE), price * (1 + DEDUP_PRICE_TOLERANCE)
     stmt = select(Property).where(Property.zone == zone, Property.price >= lo, Property.price <= hi)
     for candidate in db.scalars(stmt).all():
@@ -1464,11 +1529,11 @@ def ingest_property(payload: PropertyIngestIn, _: None = Depends(require_admin))
             select(Property).where(Property.source == payload.source, Property.source_url == payload.source_url)
         )
         if existing:
-            # Ya la conoc√≠amos: es el mismo barrido volviendo a ver la misma
-            # publicaci√≥n. Se actualizan los datos que pueden cambiar entre
+            # Ya la conoc+°amos: es el mismo barrido volviendo a ver la misma
+            # publicaci+¶n. Se actualizan los datos que pueden cambiar entre
             # barridos y, sobre todo, `last_seen_at` (lo que alimenta el
-            # filtro de frescura de PROPERTY_FRESHNESS_DAYS) ‚Äî `detected_at`
-            # NUNCA se toca ac√°, es la fecha de la primera vez que la vimos.
+            # filtro de frescura de PROPERTY_FRESHNESS_DAYS) ‘«ˆ `detected_at`
+            # NUNCA se toca ac+Ì, es la fecha de la primera vez que la vimos.
             existing.title = payload.title
             existing.type = payload.type
             existing.operation = payload.operation
@@ -1499,7 +1564,7 @@ def ingest_property(payload: PropertyIngestIn, _: None = Depends(require_admin))
         duplicate = find_possible_duplicate(db, payload.zone, payload.price, payload.surface)
 
         # Etapa 019: si el "duplicado" es de otra agencia, es multi-agente
-        # sobre la misma propiedad real (plan maestro 6.1) ‚Äî se agrupa por
+        # sobre la misma propiedad real (plan maestro 6.1) ‘«ˆ se agrupa por
         # listing_group_id, sin marcar needs_review (no es un error a
         # revisar). Si es de la MISMA agencia (o `duplicate` no tiene
         # agencia), se mantiene el comportamiento viejo de la etapa 011:
@@ -1540,10 +1605,10 @@ def ingest_property(payload: PropertyIngestIn, _: None = Depends(require_admin))
 
 
 DEMO = [
-    {"id":"p1","title":"Departamento luminoso 2 ambientes","type":"Departamento","operation":"Venta","price":118000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":45,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":False,"pool":False,"balcony":True,"pet_friendly":True,"credit":False,"freshness":"Detectada hace 2 d√≠as","origin_published_at":"Publicado hace 2 d√≠as","source":"Inmobiliaria Norte","source_url":"#","image":"https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=85"],"description":"Unidad renovada, muy luminosa y con balc√≥n.","agency_id":"a1","contact_phone_raw":"11 5555-0101"},
-    {"id":"p2","title":"Departamento moderno con balc√≥n","type":"Departamento","operation":"Venta","price":120000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":43,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":True,"pool":False,"balcony":True,"pet_friendly":False,"credit":True,"freshness":"Actualizada hace 4 d√≠as","origin_published_at":"Publicado hace 4 d√≠as","source":"Red Urbana","source_url":"#","image":"https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=85"],"description":"Edificio moderno con cochera y amenities.","agency_id":"a2","contact_phone_raw":"+54 9 11 5555-0202"},
-    {"id":"p3","title":"2 ambientes amplio a estrenar","type":"Departamento","operation":"Venta","price":125000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":48,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":False,"pool":True,"balcony":True,"pet_friendly":True,"credit":False,"freshness":"Detectada hace 6 d√≠as","origin_published_at":"Publicado hace 6 d√≠as","source":"Habitar","source_url":"#","image":"https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85"],"description":"A estrenar, excelente distribuci√≥n.","agency_id":"a1","contact_phone_raw":"11 5555-0101"},
-    {"id":"p4","title":"Departamento 3 ambientes con patio","type":"Departamento","operation":"Venta","price":138000,"currency":"USD","zone":"Villa Crespo","city":"Buenos Aires","surface":62,"rooms":3,"bedrooms":2,"bathrooms":1,"parking":False,"pool":False,"balcony":False,"pet_friendly":True,"credit":True,"freshness":"Actualizada hace 1 d√≠a","origin_published_at":"Publicado hace 1 d√≠a","source":"Urbania","source_url":"#","image":"https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1000&q=85"],"description":"Patio y ambientes amplios para familia.","agency_id":"a3","contact_phone_raw":"11 5555-0303"},
+    {"id":"p1","title":"Departamento luminoso 2 ambientes","type":"Departamento","operation":"Venta","price":118000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":45,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":False,"pool":False,"balcony":True,"pet_friendly":True,"credit":False,"freshness":"Detectada hace 2 d+°as","origin_published_at":"Publicado hace 2 d+°as","source":"Inmobiliaria Norte","source_url":"#","image":"https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=1000&q=85"],"description":"Unidad renovada, muy luminosa y con balc+¶n.","agency_id":"a1","contact_phone_raw":"11 5555-0101"},
+    {"id":"p2","title":"Departamento moderno con balc+¶n","type":"Departamento","operation":"Venta","price":120000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":43,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":True,"pool":False,"balcony":True,"pet_friendly":False,"credit":True,"freshness":"Actualizada hace 4 d+°as","origin_published_at":"Publicado hace 4 d+°as","source":"Red Urbana","source_url":"#","image":"https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=1000&q=85"],"description":"Edificio moderno con cochera y amenities.","agency_id":"a2","contact_phone_raw":"+54 9 11 5555-0202"},
+    {"id":"p3","title":"2 ambientes amplio a estrenar","type":"Departamento","operation":"Venta","price":125000,"currency":"USD","zone":"Palermo","city":"Buenos Aires","surface":48,"rooms":2,"bedrooms":1,"bathrooms":1,"parking":False,"pool":True,"balcony":True,"pet_friendly":True,"credit":False,"freshness":"Detectada hace 6 d+°as","origin_published_at":"Publicado hace 6 d+°as","source":"Habitar","source_url":"#","image":"https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1000&q=85"],"description":"A estrenar, excelente distribuci+¶n.","agency_id":"a1","contact_phone_raw":"11 5555-0101"},
+    {"id":"p4","title":"Departamento 3 ambientes con patio","type":"Departamento","operation":"Venta","price":138000,"currency":"USD","zone":"Villa Crespo","city":"Buenos Aires","surface":62,"rooms":3,"bedrooms":2,"bathrooms":1,"parking":False,"pool":False,"balcony":False,"pet_friendly":True,"credit":True,"freshness":"Actualizada hace 1 d+°a","origin_published_at":"Publicado hace 1 d+°a","source":"Urbania","source_url":"#","image":"https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1000&q=85","images":["https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1000&q=85"],"description":"Patio y ambientes amplios para familia.","agency_id":"a3","contact_phone_raw":"11 5555-0303"},
 ]
 
 
@@ -1551,13 +1616,13 @@ ALLOWED_EVENTS = {
     "property_view", "property_save", "property_compare", "property_question",
     "visit_request", "offer_created", "contact_requested", "contact_shared",
     "counter_offer_created", "negotiation_started", "operation_advanced",
-    # Etapa 3 (secci√≥n 10 / fase Intelligence): b√∫squedas/filtros del
-    # comprador. Se loguea autom√°ticamente desde GET /properties (ver m√°s
-    # abajo) y tambi√©n queda permitido ac√° por si el frontend alguna vez
-    # necesita loguearlo manual v√≠a POST /events.
+    # Etapa 3 (secci+¶n 10 / fase Intelligence): b+¶squedas/filtros del
+    # comprador. Se loguea autom+Ìticamente desde GET /properties (ver m+Ìs
+    # abajo) y tambi+Æn queda permitido ac+Ì por si el frontend alguna vez
+    # necesita loguearlo manual v+°a POST /events.
     "search_performed",
-    # Etapa demanda gen√©rica B2B: se crea autom√°ticamente desde el matching
-    # en create_property/crawler upsert, nunca manual v√≠a POST /events.
+    # Etapa demanda gen+Ærica B2B: se crea autom+Ìticamente desde el matching
+    # en create_property/crawler upsert, nunca manual v+°a POST /events.
     "demand_match",
 }
 
@@ -1576,11 +1641,11 @@ class OfferIn(BaseModel):
     capital: float | None = None
     timeframe: str | None = None
     comment: str | None = Field(default=None, max_length=500)
-    # Contacto real ‚Äî obligatorio: sin esto no hay nada que revelar despu√©s.
+    # Contacto real ‘«ˆ obligatorio: sin esto no hay nada que revelar despu+Æs.
     buyer_name: str = Field(min_length=2, max_length=120)
     buyer_phone: str = Field(min_length=6, max_length=40)
     buyer_email: str | None = Field(default=None, max_length=160)
-    # T9.3: c√≥digo de canal (solo [a-z0-9_-], m√°x 80). No es texto libre.
+    # T9.3: c+¶digo de canal (solo [a-z0-9_-], m+Ìx 80). No es texto libre.
     origin: str | None = Field(default=None, max_length=80)
 
     @field_validator("comment")
@@ -1595,7 +1660,7 @@ class OfferIn(BaseModel):
             return None
         v = v.strip().lower()
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", v):
-            raise HTTPException(status_code=400, detail="Origen inv√°lido.")
+            raise HTTPException(status_code=400, detail="Origen inv+Ìlido.")
         return v
 
     @field_validator("buyer_email")
@@ -1642,7 +1707,7 @@ class LeadIn(BaseModel):
             return None
         v = v.strip().lower()
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,79}", v):
-            raise HTTPException(status_code=400, detail="Origen inv√°lido.")
+            raise HTTPException(status_code=400, detail="Origen inv+Ìlido.")
         return v
 
     @field_validator("buyer_email")
@@ -1702,8 +1767,8 @@ class CheckoutRequestIn(BaseModel):
 class AgencyUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=180)
     # Instagram es obligatorio para poder pasar de PENDING a VERIFIED (doc
-    # 06.2.8), pero ac√° solo se captura el dato ‚Äî el pasaje a VERIFIED lo hace
-    # la revisi√≥n manual (panel interno, Etapa 4), no este endpoint.
+    # 06.2.8), pero ac+Ì solo se captura el dato ‘«ˆ el pasaje a VERIFIED lo hace
+    # la revisi+¶n manual (panel interno, Etapa 4), no este endpoint.
     instagram: str | None = Field(default=None, max_length=160)
     website_link: str | None = Field(default=None, max_length=300)
 
@@ -1768,29 +1833,29 @@ def register_agency(payload: AgencyRegisterIn, request: Request):
     """Alta de agencia desde cero, sin depender de que el crawler la haya
     'descubierto' antes (a diferencia del flujo /onboarding/{token}, pensado
     para agencias con propiedades ya crawleadas). Un agente nuevo sin
-    inventario todav√≠a no ten√≠a forma de entrar: /auth/otp/verify devuelve
-    403 si el tel√©fono no est√° asociado a ninguna Agency. Este endpoint solo
-    crea el registro de Agency+tel√©fono; el login sigue siendo el mismo
-    flujo de OTP de siempre (request ‚Üí verify), sin contrase√±a.
+    inventario todav+°a no ten+°a forma de entrar: /auth/otp/verify devuelve
+    403 si el tel+Æfono no est+Ì asociado a ninguna Agency. Este endpoint solo
+    crea el registro de Agency+tel+Æfono; el login sigue siendo el mismo
+    flujo de OTP de siempre (request ‘Â∆ verify), sin contrase+¶a.
 
     Queda en verification_status=PENDING igual que cualquier otra agencia
-    reci√©n claimeada ‚Äî dashboard b√°sico, sin poder revelar contactos ni
-    publicar hasta que Instagram + revisi√≥n manual la pasen a VERIFIED
+    reci+Æn claimeada ‘«ˆ dashboard b+Ìsico, sin poder revelar contactos ni
+    publicar hasta que Instagram + revisi+¶n manual la pasen a VERIFIED
     (mismo criterio que ya rige para el resto de las agencias)."""
     phone = normalize_phone(payload.phone)
     ip = _client_ip(request)
     _rate.check(f"agency-register:ip:{ip}", RATE_AUTH_PER_IP)
     if not phone:
-        raise HTTPException(status_code=400, detail="Ingres√° un tel√©fono v√°lido.")
+        raise HTTPException(status_code=400, detail="Ingres+Ì un tel+Æfono v+Ìlido.")
     name = payload.name.strip()
     city = payload.city.strip()
     if not name or not city:
-        raise HTTPException(status_code=400, detail="Complet√° nombre de la agencia y ciudad.")
+        raise HTTPException(status_code=400, detail="Complet+Ì nombre de la agencia y ciudad.")
     with Session(engine) as db:
         if find_agency_by_phone(db, phone):
             raise HTTPException(
                 status_code=409,
-                detail="Ya existe una agencia registrada con este tel√©fono. Inici√° sesi√≥n normalmente pidiendo el c√≥digo.",
+                detail="Ya existe una agencia registrada con este tel+Æfono. Inici+Ì sesi+¶n normalmente pidiendo el c+¶digo.",
             )
         agency = Agency(
             id=f"ag-{uuid.uuid4().hex[:12]}",
@@ -1806,7 +1871,7 @@ def register_agency(payload: AgencyRegisterIn, request: Request):
         db.commit()
         return {
             "agencyId": agency.id,
-            "message": "Agencia creada. Ahora ped√≠ el c√≥digo a este mismo tel√©fono para entrar.",
+            "message": "Agencia creada. Ahora ped+° el c+¶digo a este mismo tel+Æfono para entrar.",
         }
 
 
@@ -1818,45 +1883,45 @@ def request_otp(payload: OTPRequest, request: Request):
     if phone:
         _rate.check(f"otp:phone:{phone}", RATE_OTP_PER_PHONE)
     if not phone:
-        print(f"[PROPOMI OTP] normalize_phone rechaz√≥ el valor crudo recibido: {payload.phone!r}")
-        raise HTTPException(status_code=400, detail="Ingres√° un tel√©fono v√°lido")
+        print(f"[PROPOMI OTP] normalize_phone rechaz+¶ el valor crudo recibido: {payload.phone!r}")
+        raise HTTPException(status_code=400, detail="Ingres+Ì un tel+Æfono v+Ìlido")
     now_dt = datetime.now(timezone.utc)
     with Session(engine) as db:
         recent_count = db.scalar(select(text("count(*)")).select_from(OTPCode).where(OTPCode.phone == phone, OTPCode.created_at >= now_dt - timedelta(seconds=OTP_RATE_WINDOW))) or 0
         if recent_count >= OTP_MAX_REQUESTS:
-            raise HTTPException(status_code=429, detail="Alcanzaste el l√≠mite de solicitudes. Prob√° nuevamente m√°s tarde.")
+            raise HTTPException(status_code=429, detail="Alcanzaste el l+°mite de solicitudes. Prob+Ì nuevamente m+Ìs tarde.")
         code = f"{secrets.randbelow(1_000_000):06d}"
         db.query(OTPCode).filter(OTPCode.phone == phone, OTPCode.consumed == False).update({"consumed": True})
         db.add(OTPCode(phone=phone, code_hash=hash_otp(code), expires_at=datetime.now(timezone.utc) + timedelta(seconds=OTP_TTL_SECONDS)))
         db.commit()
     sms_sender.send(phone, code)
-    response = {"ok": True, "message": "Te enviamos un c√≥digo de verificaci√≥n."}
+    response = {"ok": True, "message": "Te enviamos un c+¶digo de verificaci+¶n."}
     if ENV != "production" and OTP_SMS_PROVIDER != "vonage":
         response["dev_code"] = code
     return response
 
 
 def consume_valid_otp(db: Session, phone: str, code: str) -> None:
-    """Valida y consume el √∫ltimo c√≥digo OTP vigente para `phone`. Lanza
-    HTTPException si el c√≥digo es inv√°lido/vencido/excedido en intentos.
+    """Valida y consume el +¶ltimo c+¶digo OTP vigente para `phone`. Lanza
+    HTTPException si el c+¶digo es inv+Ìlido/vencido/excedido en intentos.
     Compartido por /auth/otp/verify (agente) y /auth/otp/verify-buyer
-    (comprador, Etapa 2) para no duplicar la l√≥gica de expiraci√≥n, intentos y
-    rate limit ‚Äî el `OTPRequest`/generaci√≥n del c√≥digo sigue siendo el mismo
-    para ambos roles, solo cambia qu√© se hace DESPU√âS de validar el c√≥digo."""
+    (comprador, Etapa 2) para no duplicar la l+¶gica de expiraci+¶n, intentos y
+    rate limit ‘«ˆ el `OTPRequest`/generaci+¶n del c+¶digo sigue siendo el mismo
+    para ambos roles, solo cambia qu+Æ se hace DESPU+ÎS de validar el c+¶digo."""
     otp = db.scalar(select(OTPCode).where(OTPCode.phone == phone, OTPCode.consumed == False).order_by(OTPCode.created_at.desc()))
     otp_expires_at = otp.expires_at.replace(tzinfo=timezone.utc) if otp and otp.expires_at.tzinfo is None else (otp.expires_at if otp else None)
     if not otp or otp_expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="C√≥digo incorrecto o vencido")
+        raise HTTPException(status_code=400, detail="C+¶digo incorrecto o vencido")
     if otp.verify_attempts >= OTP_MAX_VERIFY_ATTEMPTS:
         otp.consumed = True
         db.commit()
-        raise HTTPException(status_code=429, detail="Demasiados intentos. Solicit√° un nuevo c√≥digo m√°s tarde.")
+        raise HTTPException(status_code=429, detail="Demasiados intentos. Solicit+Ì un nuevo c+¶digo m+Ìs tarde.")
     if not secrets.compare_digest(otp.code_hash, hash_otp(code)):
         otp.verify_attempts += 1
         if otp.verify_attempts >= OTP_MAX_VERIFY_ATTEMPTS:
             otp.consumed = True
         db.commit()
-        raise HTTPException(status_code=400, detail="C√≥digo incorrecto o vencido")
+        raise HTTPException(status_code=400, detail="C+¶digo incorrecto o vencido")
     otp.consumed = True
 
 
@@ -1865,21 +1930,24 @@ def verify_otp(payload: OTPVerify, request: Request):
     _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
     phone = normalize_phone(payload.phone)
     if not phone:
-        print(f"[PROPOMI OTP] normalize_phone rechaz√≥ el valor crudo recibido en /verify: {payload.phone!r}")
-        raise HTTPException(status_code=400, detail="Tel√©fono inv√°lido")
+        print(f"[PROPOMI OTP] normalize_phone rechaz+¶ el valor crudo recibido en /verify: {payload.phone!r}")
+        raise HTTPException(status_code=400, detail="Tel+Æfono inv+Ìlido")
     with Session(engine) as db:
         consume_valid_otp(db, phone, payload.code)
-        user = db.scalar(select(User).where(User.phone == phone))
+        user = find_user_by_phone(db, phone)
         agency = find_agency_by_phone(db, phone)
         if user is None:
             if not agency:
-                raise HTTPException(status_code=403, detail="No encontramos una agencia asociada a este tel√©fono.")
-            user = User(id=f"u-{uuid.uuid4().hex[:12]}", phone=phone, role=Role.AGENTE.value, agency_id=agency.id)
+                raise HTTPException(
+                    status_code=403,
+                    detail="No encontramos una agencia asociada a este tel+Æfono. Si todav+°a no te registraste, volv+Æ atr+Ìs y toc+Ì -Ω-+Reci+Æn arranc+Ìs? Cre+Ì tu agencia-+.",
+                )
+            user = User(id=f"u-{uuid.uuid4().hex[:12]}", phone=agency_login_phone(db, agency, phone), role=Role.AGENTE.value, agency_id=agency.id)
             db.add(user)
             db.flush()
         elif user.role != Role.AGENTE.value:
             if not agency or (user.agency_id and user.agency_id != agency.id):
-                raise HTTPException(status_code=403, detail="Este tel√©fono pertenece a otra cuenta y no puede convertirse en agente desde este acceso.")
+                raise HTTPException(status_code=403, detail="Este tel+Æfono pertenece a otra cuenta y no puede convertirse en agente desde este acceso.")
             user.role = Role.AGENTE.value
             user.agency_id = agency.id
         elif not user.agency_id:
@@ -1899,29 +1967,29 @@ def verify_otp(payload: OTPVerify, request: Request):
 @app.post("/auth/otp/verify-buyer")
 def verify_otp_buyer(payload: OTPVerify, request: Request):
     _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
-    """Etapa 2 / secci√≥n 6.2.1: verificaci√≥n de celular del COMPRADOR,
+    """Etapa 2 / secci+¶n 6.2.1: verificaci+¶n de celular del COMPRADOR,
     reutilizando el mismo sistema de OTP que ya usa el agente (misma tabla,
-    mismo hash, mismo rate limit, mismo TTL ‚Äî ver `consume_valid_otp`), pero
-    sin exigir que el tel√©fono est√° asociado a una agencia (a diferencia de
+    mismo hash, mismo rate limit, mismo TTL ‘«ˆ ver `consume_valid_otp`), pero
+    sin exigir que el tel+Æfono est+Ì asociado a una agencia (a diferencia de
     /auth/otp/verify, que es exclusivo de agentes). El resultado reemplaza a
-    la sesi√≥n 'guest' an√≥nima del comprador por una sesi√≥n atada a su celular
+    la sesi+¶n 'guest' an+¶nima del comprador por una sesi+¶n atada a su celular
     real verificado."""
     phone = normalize_phone(payload.phone)
     if not phone:
-        raise HTTPException(status_code=400, detail="Tel√©fono inv√°lido")
+        raise HTTPException(status_code=400, detail="Tel+Æfono inv+Ìlido")
     with Session(engine) as db:
         consume_valid_otp(db, phone, payload.code)
         user = db.scalar(select(User).where(User.phone == phone))
         if user is None:
-            # Primera vez que este tel√©fono aparece en el sistema como
-            # comprador: se crea directo ya verificado (el OTP reci√©n
-            # consumido ES la prueba de verificaci√≥n).
+            # Primera vez que este tel+Æfono aparece en el sistema como
+            # comprador: se crea directo ya verificado (el OTP reci+Æn
+            # consumido ES la prueba de verificaci+¶n).
             user = User(id=f"u-{uuid.uuid4().hex[:12]}", phone=phone, role=Role.COMPRADOR.value)
             db.add(user)
             db.flush()
-        # Si el tel√©fono ya existe como AGENTE, se reutiliza esa misma fila
-        # (el tel√©fono es la identidad can√∫nica, secci√≥n 5) ‚Äî no se lo
-        # "degrada" a comprador ni se le cambia el rol, esta verificaci√≥n
+        # Si el tel+Æfono ya existe como AGENTE, se reutiliza esa misma fila
+        # (el tel+Æfono es la identidad can+¶nica, secci+¶n 5) ‘«ˆ no se lo
+        # "degrada" a comprador ni se le cambia el rol, esta verificaci+¶n
         # solo confirma que el celular es suyo.
         user.phone_verified_at = datetime.now(timezone.utc)
         db.commit()
@@ -1940,11 +2008,11 @@ class GoogleAuthIn(BaseModel):
 @app.post("/auth/google")
 def link_google_identity(payload: GoogleAuthIn, request: Request, session: dict[str, Any] = Depends(current_session)):
     _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
-    """Etapa 2 / secci√≥n 6.2.1: segunda prueba de identidad del comprador,
-    pedida reci√©n en el √∫ltimo paso del wizard de oferta, ADEM√ÅS del celular
-    verificado por OTP (nunca en su lugar). Requiere una sesi√≥n ya vigente
-    (guest o comprador con celular verificado) ‚Äî este endpoint solo VINCULA
-    la cuenta de Google a esa sesi√≥n, no crea una identidad nueva por s√≠
+    """Etapa 2 / secci+¶n 6.2.1: segunda prueba de identidad del comprador,
+    pedida reci+Æn en el +¶ltimo paso del wizard de oferta, ADEM+¸S del celular
+    verificado por OTP (nunca en su lugar). Requiere una sesi+¶n ya vigente
+    (guest o comprador con celular verificado) ‘«ˆ este endpoint solo VINCULA
+    la cuenta de Google a esa sesi+¶n, no crea una identidad nueva por s+°
     solo, para que nadie pueda ofertar solo con Google sin haber verificado
     un celular real."""
     try:
@@ -1952,15 +2020,15 @@ def link_google_identity(payload: GoogleAuthIn, request: Request, session: dict[
             payload.id_token, google_requests.Request(), GOOGLE_CLIENT_ID
         )
     except ValueError as exc:
-        # Token mal formado, firma inv√°lida, audience distinto o vencido ‚Äî
-        # esto s√≠ es responsabilidad del cliente, 401.
-        raise HTTPException(status_code=401, detail="Token de Google inv√°lido o vencido") from exc
+        # Token mal formado, firma inv+Ìlida, audience distinto o vencido ‘«ˆ
+        # esto s+° es responsabilidad del cliente, 401.
+        raise HTTPException(status_code=401, detail="Token de Google inv+Ìlido o vencido") from exc
     except google_auth_exceptions.TransportError as exc:
-        # No se pudo llegar a googleapis.com para bajar las claves p√∫blicas
-        # de verificaci√≥n ‚Äî es un problema de red transitorio, no un token
-        # inv√°lido. 401 ser√≠a enga√±oso ac√° (el usuario reintentar√≠a con el
-        # mismo bot√≥n y volver√≠a a fallar por la misma raz√≥n de red).
-        raise HTTPException(status_code=503, detail="No pudimos verificar con Google en este momento. Prob√° de nuevo en unos segundos.") from exc
+        # No se pudo llegar a googleapis.com para bajar las claves p+¶blicas
+        # de verificaci+¶n ‘«ˆ es un problema de red transitorio, no un token
+        # inv+Ìlido. 401 ser+°a enga+¶oso ac+Ì (el usuario reintentar+°a con el
+        # mismo bot+¶n y volver+°a a fallar por la misma raz+¶n de red).
+        raise HTTPException(status_code=503, detail="No pudimos verificar con Google en este momento. Prob+Ì de nuevo en unos segundos.") from exc
     if not idinfo.get("email_verified"):
         raise HTTPException(status_code=400, detail="Tu cuenta de Google no tiene el email verificado.")
     google_sub = idinfo["sub"]
@@ -1968,12 +2036,12 @@ def link_google_identity(payload: GoogleAuthIn, request: Request, session: dict[
     with Session(engine) as db:
         user = db.get(User, session.get("user_id"))
         if not user:
-            raise HTTPException(status_code=401, detail="Sesi√≥n inv√°lida")
+            raise HTTPException(status_code=401, detail="Sesi+¶n inv+Ìlida")
         if not user.phone_verified_at:
-            raise HTTPException(status_code=403, detail="Verific√° tu celular antes de vincular Google.")
+            raise HTTPException(status_code=403, detail="Verific+Ì tu celular antes de vincular Google.")
         other = db.scalar(select(User).where(User.google_sub == google_sub, User.id != user.id))
         if other:
-            raise HTTPException(status_code=409, detail="Esta cuenta de Google ya est√° vinculada a otro usuario de Propomi.")
+            raise HTTPException(status_code=409, detail="Esta cuenta de Google ya est+Ì vinculada a otro usuario de Propomi.")
         user.google_sub = google_sub
         user.email = email
         user.google_verified_at = datetime.now(timezone.utc)
@@ -1982,14 +2050,50 @@ def link_google_identity(payload: GoogleAuthIn, request: Request, session: dict[
 
 
 def find_agency_by_phone(db: Session, phone: str) -> Agency | None:
-    """Busca una agencia por telefono principal o por cualquiera de sus AgencyPhone."""
+    """Busca una agencia por telefono principal o por cualquiera de sus AgencyPhone.
+
+    Primero match exacto (comportamiento de siempre); si no hay, reintenta con
+    la variante con/sin el 9 de m+¶vil argentino (ver phone_equivalents), para
+    que entrar con 11 XXXX XXXX, +54 11 XXXX XXXX o +54 9 11 XXXX XXXX d+Æ el
+    mismo resultado sin importar con cu+Ìl se dio de alta la agencia."""
     agency = db.scalar(select(Agency).where(Agency.phone == phone))
     if agency:
         return agency
     ap = db.scalar(select(AgencyPhone).where(AgencyPhone.phone == phone))
     if ap:
         return db.get(Agency, ap.agency_id)
+    variants = phone_equivalents(phone)
+    if len(variants) > 1:
+        agency = db.scalars(select(Agency).where(Agency.phone.in_(variants)).order_by(Agency.claimed.desc())).first()
+        if agency:
+            return agency
+        ap = db.scalars(select(AgencyPhone).where(AgencyPhone.phone.in_(variants))).first()
+        if ap:
+            return db.get(Agency, ap.agency_id)
     return None
+
+
+def agency_login_phone(db: Session, agency: Agency, phone: str) -> str:
+    """El tel+Æfono con el que la agencia YA est+Ì guardada y que equivale a
+    `phone` (puede ser el principal o un AgencyPhone). Si ninguno coincide,
+    devuelve `phone` tal cual. Se usa para que la cuenta de usuario del agente
+    quede atada siempre al mismo formato, sin duplicarse por tipear distinto."""
+    variants = set(phone_equivalents(phone))
+    for stored in all_agency_phones(db, agency.id):
+        if stored in variants:
+            return stored
+    return phone
+
+
+def find_user_by_phone(db: Session, phone: str) -> User | None:
+    """Busca un usuario por tel+Æfono exacto o por su variante con/sin el 9 de
+    m+¶vil argentino. Si hubiera m+Ìs de una fila (formatos distintos creados en
+    el pasado), prioriza la que ya es agente con agencia."""
+    users = db.scalars(select(User).where(User.phone.in_(phone_equivalents(phone)))).all()
+    if not users:
+        return None
+    users.sort(key=lambda u: (u.role != Role.AGENTE.value, u.agency_id is None, u.phone != phone))
+    return users[0]
 
 
 def all_agency_phones(db: Session, agency_id: str) -> list[str]:
@@ -2001,7 +2105,7 @@ def all_agency_phones(db: Session, agency_id: str) -> list[str]:
 
 
 def relink_properties(db: Session, agency_id: str, phone: str) -> int:
-    rows = db.scalars(select(Property).where(Property.contact_phone_normalized == phone)).all()
+    rows = db.scalars(select(Property).where(Property.contact_phone_normalized.in_(phone_equivalents(phone)))).all()
     changed = 0
     for p in rows:
         if p.agency_id != agency_id:
@@ -2010,8 +2114,8 @@ def relink_properties(db: Session, agency_id: str, phone: str) -> int:
     return changed
 
 
-def prop_dict(p: Property, group_info: dict[str, tuple[float, float, int]] | None = None) -> dict[str, Any]:
-    out = {
+def prop_dict(p: Property, group_info: dict | None = None) -> dict[str, Any]:
+    d: dict[str, Any] = {
         "id": p.id, "title": p.title, "type": p.type, "operation": p.operation, "price": p.price, "currency": p.currency,
         "zone": p.zone, "city": p.city, "country": p.country, "province": getattr(p, "province", None) or "", "underConstruction": bool(getattr(p, "under_construction", False)), "investmentOpportunity": bool(getattr(p, "investment_opportunity", False)), "surface": p.surface, "rooms": p.rooms, "bedrooms": p.bedrooms,
         "bathrooms": p.bathrooms, "parking": p.parking, "pool": p.pool, "balcony": p.balcony, "petFriendly": p.pet_friendly,
@@ -2024,27 +2128,20 @@ def prop_dict(p: Property, group_info: dict[str, tuple[float, float, int]] | Non
         "hiddenAt": p.hidden_at.isoformat() if p.hidden_at else None,
         "priorityScore": p.priority_score if p.priority_score is not None else 0.0,
     }
-    # Perf (home inicial + b√∫squedas): antes el frontend ped√≠a este rango de
-    # precio grupo por grupo con un GET /properties/{id}/group por cada
-    # propiedad agrupada (N+1 secuencial, el cuello de botella real de carga
-    # del home). Ahora, si el caller nos pasa group_info (resuelto en una
-    # sola query agregada para todo el batch), lo insertamos ac√° y el
-    # frontend no necesita ning√∫n request adicional.
-    if group_info and p.listing_group_id and p.listing_group_id in group_info:
-        pmin, pmax, count = group_info[p.listing_group_id]
-        out["priceMin"] = pmin
-        out["priceMax"] = pmax
-        out["groupMemberCount"] = count
-    return out
+    if group_info is not None:
+        d["priceMin"] = group_info["priceMin"]
+        d["priceMax"] = group_info["priceMax"]
+        d["groupMemberCount"] = group_info["groupMemberCount"]
+    return d
 
 
-def _bulk_group_info(db, results: list["Property"]) -> dict[str, tuple[float, float, int]]:
-    """Resuelve min/max/cantidad de precio para todos los listing_group_id
-    presentes en `results`, en una sola query agregada (en vez de un
-    GET /properties/{id}/group por propiedad). El rango se calcula sobre
-    TODOS los miembros del grupo (igual que /properties/{id}/group), no solo
-    los que pasaron los filtros de esta b√∫squeda puntual."""
-    group_ids = {p.listing_group_id for p in results if p.listing_group_id}
+def _bulk_group_info(db: Session, props: list) -> dict[str, dict]:
+    """Una sola query agregada por listing_group_id ‘Â∆ evita N+1 del home.
+
+    Devuelve {listing_group_id: {"priceMin", "priceMax", "groupMemberCount"}}.
+    Props sin listing_group_id se ignoran.
+    """
+    group_ids = list({p.listing_group_id for p in props if getattr(p, "listing_group_id", None)})
     if not group_ids:
         return {}
     rows = db.execute(
@@ -2052,18 +2149,88 @@ def _bulk_group_info(db, results: list["Property"]) -> dict[str, tuple[float, fl
             Property.listing_group_id,
             func.min(Property.price),
             func.max(Property.price),
-            func.count(Property.id),
+            func.count(),
         )
         .where(Property.listing_group_id.in_(group_ids))
         .group_by(Property.listing_group_id)
     ).all()
-    return {gid: (pmin, pmax, count) for gid, pmin, pmax, count in rows}
+    out: dict[str, dict] = {}
+    for gid, pmin, pmax, cnt in rows:
+        if not gid:
+            continue
+        out[str(gid)] = {
+            "priceMin": float(pmin) if pmin is not None else None,
+            "priceMax": float(pmax) if pmax is not None else None,
+            "groupMemberCount": int(cnt or 0),
+        }
+    return out
+
+
+def _properties_base_stmt(
+    *,
+    zone: str | None = None,
+    city: str | None = None,
+    type: str | None = None,
+    operation: str | None = None,
+    rooms: int | None = None,
+    max_price: float | None = None,
+    parking: bool | None = None,
+    credit: bool | None = None,
+    agency_id: str | None = None,
+    exclude_agency_id: str | None = None,
+    country: str | None = None,
+    province: str | None = None,
+    under_construction: bool | None = None,
+    investment_opportunity: bool | None = None,
+    include_hidden: bool = False,
+    admin_ok: bool = False,
+):
+    """Filtros compartidos de /properties y /properties/random (sin order/limit)."""
+    stmt = select(Property)
+    if zone:
+        stmt = stmt.where(Property.zone == zone)
+    if city:
+        if city == "Sin descripci+¶n":
+            # Alias de presentaci+¶n: se resuelve en Python tras el query.
+            pass
+        else:
+            stmt = stmt.where(Property.city == city)
+    if country:
+        stmt = stmt.where(Property.country == country)
+    if province:
+        stmt = stmt.where(Property.province == province)
+    if under_construction is not None:
+        stmt = stmt.where(Property.under_construction == under_construction)
+    if investment_opportunity is not None:
+        stmt = stmt.where(Property.investment_opportunity == investment_opportunity)
+    if type:
+        stmt = stmt.where(Property.type == type)
+    if operation:
+        stmt = stmt.where(Property.operation == operation)
+    if rooms:
+        stmt = stmt.where(Property.rooms == rooms)
+    if max_price:
+        stmt = stmt.where(Property.price <= max_price)
+    if parking is not None:
+        stmt = stmt.where(Property.parking == parking)
+    if credit is not None:
+        stmt = stmt.where(Property.credit == credit)
+    if agency_id:
+        stmt = stmt.where(Property.agency_id == agency_id)
+    if exclude_agency_id:
+        stmt = stmt.where(Property.agency_id != exclude_agency_id)
+    if not (include_hidden and admin_ok):
+        stmt = stmt.where(Property.hidden_at.is_(None))
+    if not agency_id:
+        freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
+        stmt = stmt.where(Property.last_seen_at >= freshness_cutoff)
+    return stmt
 
 
 def _effective_published_at(p: "Property") -> datetime:
-    """Antig√ºedad efectiva: origin_published_at si es un ISO datetime parseable,
+    """Antig++edad efectiva: origin_published_at si es un ISO datetime parseable,
     si no detected_at. origin_published_at es VARCHAR libre ("Publicado hace
-    3 d√≠as") en datos legados; solo se usa cuando viene como ISO (crawler
+    3 d+°as") en datos legados; solo se usa cuando viene como ISO (crawler
     nuevo / tests)."""
     raw = p.origin_published_at
     if raw:
@@ -2083,7 +2250,7 @@ def _effective_published_at(p: "Property") -> datetime:
 
 
 def expire_stale_properties(db) -> dict:
-    """Oculta propiedades cuya antig√ºedad efectiva supera MAX_AGE_DAYS.
+    """Oculta propiedades cuya antig++edad efectiva supera MAX_AGE_DAYS.
     No borra filas. Devuelve reporte con conteos."""
     from app.crawler.runner import MAX_AGE_DAYS
     now = datetime.now(timezone.utc)
@@ -2103,13 +2270,13 @@ def expire_stale_properties(db) -> dict:
 
 @app.get("/properties/{property_id}/group")
 def get_listing_group(property_id: str):
-    """Etapa 019 (plan maestro 6.1): si esta propiedad est√° agrupada porque
+    """Etapa 019 (plan maestro 6.1): si esta propiedad est+Ì agrupada porque
     varias agencias publican la misma propiedad real, devuelve el resto del
     grupo + el rango de precio fusionado (min/max entre todas las filas del
-    grupo, incluida esta). P√∫blico (mismo criterio que GET /properties: no
-    expone contacto de agencia, solo lo que ya es p√∫blico en otras
-    pantallas). Si la propiedad no pertenece a ning√∫n grupo, devuelve
-    `grouped: false` en vez de 404 ‚Äî no tener grupo es el caso normal, no un
+    grupo, incluida esta). P+¶blico (mismo criterio que GET /properties: no
+    expone contacto de agencia, solo lo que ya es p+¶blico en otras
+    pantallas). Si la propiedad no pertenece a ning+¶n grupo, devuelve
+    `grouped: false` en vez de 404 ‘«ˆ no tener grupo es el caso normal, no un
     error."""
     with Session(engine) as db:
         prop = db.get(Property, property_id)
@@ -2136,9 +2303,9 @@ class ReviewResolutionIn(BaseModel):
 
 @app.get("/properties/review-queue")
 def review_queue(_: None = Depends(require_admin)):
-    """Etapa 2 (doc 05): cola de revisi√≥n manual para lo que el dedup de
-    `POST /properties/ingest` marc‚Äî como posible duplicado. Devuelve cada
-    propiedad en cuesti√≥n junto con la candidata a duplicado, para poder
+    """Etapa 2 (doc 05): cola de revisi+¶n manual para lo que el dedup de
+    `POST /properties/ingest` marc‘«ˆ como posible duplicado. Devuelve cada
+    propiedad en cuesti+¶n junto con la candidata a duplicado, para poder
     compararlas lado a lado sin tener que consultar la base a mano."""
     with Session(engine) as db:
         flagged = db.scalars(select(Property).where(Property.needs_review == True)).all()  # noqa: E712
@@ -2151,10 +2318,10 @@ def review_queue(_: None = Depends(require_admin)):
 
 @app.post("/properties/{property_id}/review")
 def resolve_review(property_id: str, payload: ReviewResolutionIn, _: None = Depends(require_admin)):
-    """Resuelve una entrada de la cola de revisi√≥n:
+    """Resuelve una entrada de la cola de revisi+¶n:
     - "confirm_duplicate": es realmente el mismo aviso duplicado -> se oculta
       (no se borra: se limpia `agency_id`/`source_url` no, solo se saca de
-      circulaci√≥n baj√°ndola de la b√∫squeda p√∫blica v√≠a `last_seen_at` muy
+      circulaci+¶n baj+Ìndola de la b+¶squeda p+¶blica v+°a `last_seen_at` muy
       viejo, coherente con el mismo mecanismo que ya usa el filtro de
       frescura, en vez de inventar un segundo mecanismo de ocultamiento).
     - "not_duplicate": falso positivo del dedup -> se limpia la marca y sigue
@@ -2176,19 +2343,19 @@ def resolve_review(property_id: str, payload: ReviewResolutionIn, _: None = Depe
 
 
 
-# Heur√≠stica de ciudad v√°lida para el selector (presentaci√≥n √∫nicamente; no
+# Heur+°stica de ciudad v+Ìlida para el selector (presentaci+¶n +¶nicamente; no
 # modifica Property.city en la base). Rechaza basura de scraping mal matcheado.
 # Criterios (documentados en README_ENTREGA):
-#   1. vac√≠o o longitud <= 2
-#   2. sin ninguna letra (A-Z / acentos / √±)
-#   3. solo d√≠gitos
-#   4. empieza con Av./Avenida/Calle/Ruta/Pasaje (parece direcci√≥n)
-#   5. contiene espacios y termina en altura num√©rica de 3‚Äì5 d√≠gitos
+#   1. vac+°o o longitud <= 2
+#   2. sin ninguna letra (A-Z / acentos / +¶)
+#   3. solo d+°gitos
+#   4. empieza con Av./Avenida/Calle/Ruta/Pasaje (parece direcci+¶n)
+#   5. contiene espacios y termina en altura num+Ærica de 3‘«Ù5 d+°gitos
 _CITY_ADDR_PREFIX = re.compile(
     r"^(av\.?|avenida|calle|ruta|pasaje|pje\.?)\b",
     re.IGNORECASE,
 )
-_CITY_HAS_LETTER = re.compile(r"[A-Za-z√Å√â√ç√ì√ö√ú√ë√°√©√≠√≥√∫√º√±]")
+_CITY_HAS_LETTER = re.compile(r"[A-Za-z+¸+Î+Ï+Ù+‹+£+Ê+Ì+Æ+°+¶+¶+++¶]")
 _CITY_ONLY_DIGITS = re.compile(r"^\d+$")
 _CITY_ENDS_HEIGHT = re.compile(r"\d{3,5}\s*$")
 
@@ -2210,16 +2377,16 @@ def is_valid_city_name(name: str | None) -> bool:
 
 
 def _normalize_city_name(s: str) -> str:
-    """NFKD + ascii + lower + strip ‚Äî misma idea que el backfill de province."""
+    """NFKD + ascii + lower + strip ‘«ˆ misma idea que el backfill de province."""
     nfkd = unicodedata.normalize("NFKD", (s or "").strip())
     return nfkd.encode("ascii", "ignore").decode("ascii").lower().strip()
 
 
 @app.get("/geo/catalog")
 def geo_catalog():
-    """Cat√°logo geogr√°fico (est√°tico + ciudades agregadas por agentes) para el
-    formulario de alta de agencia. Pa√≠ses/provincias siguen cerrados; ciudades
-    se mergean con GeoCity. El pill p√∫blico sigue en GET /properties/filters."""
+    """Cat+Ìlogo geogr+Ìfico (est+Ìtico + ciudades agregadas por agentes) para el
+    formulario de alta de agencia. Pa+°ses/provincias siguen cerrados; ciudades
+    se mergean con GeoCity. El pill p+¶blico sigue en GET /properties/filters."""
     from .geo_catalog import get_geo_catalog
     base = get_geo_catalog()
     cities_by_province: dict[str, list[str]] = {
@@ -2255,9 +2422,9 @@ def add_geo_city(payload: GeoCityIn, session: dict[str, Any] = Depends(require_a
     province = payload.province.strip()
     city = payload.city.strip()
     if not city:
-        raise HTTPException(status_code=400, detail="Ingres√° el nombre de la ciudad")
+        raise HTTPException(status_code=400, detail="Ingres+Ì el nombre de la ciudad")
     if country not in GEO_CATALOG or province not in GEO_CATALOG.get(country, {}):
-        raise HTTPException(status_code=400, detail="Pa√≠s o provincia no v√°lidos en el cat√°logo")
+        raise HTTPException(status_code=400, detail="Pa+°s o provincia no v+Ìlidos en el cat+Ìlogo")
 
     agency_id = session.get("agency_id") or ""
     _rate.check(f"geo-city:{agency_id}", 20, 86400)
@@ -2265,7 +2432,7 @@ def add_geo_city(payload: GeoCityIn, session: dict[str, Any] = Depends(require_a
     static_cities = list(GEO_CATALOG[country][province])
     norm = _normalize_city_name(city)
 
-    # Universo can√≥nico: est√°ticas + DB
+    # Universo can+¶nico: est+Ìticas + DB
     with Session(engine) as db:
         db_rows = db.scalars(
             select(GeoCity).where(GeoCity.country == country, GeoCity.province == province)
@@ -2311,7 +2478,7 @@ def add_geo_city(payload: GeoCityIn, session: dict[str, Any] = Depends(require_a
             db.commit()
         except Exception:
             db.rollback()
-            # carrera: otro agente insert√≥ el mismo normalized
+            # carrera: otro agente insert+¶ el mismo normalized
             existing = db.scalars(
                 select(GeoCity).where(
                     GeoCity.country == country,
@@ -2327,13 +2494,13 @@ def add_geo_city(payload: GeoCityIn, session: dict[str, Any] = Depends(require_a
 
 @app.get("/properties/filters")
 def properties_filters():
-    """Autodetect de opciones de b√∫squeda territorial (Etapa 2 / bug reportado
+    """Autodetect de opciones de b+¶squeda territorial (Etapa 2 / bug reportado
     2026-09-15): en vez de una lista fija de barrios hardcodeada en el
     frontend, devuelve las combinaciones ciudad+zona que realmente existen
     hoy en la tabla `properties` (solo publicaciones frescas, mismo criterio
     de PROPERTY_FRESHNESS_DAYS que usa GET /properties), agrupadas por
-    ciudad. As√≠ cualquier fuente nueva que el crawler habilite (ej.
-    CordobaProp) aparece sola en el selector sin tocar c√≥digo de frontend.
+    ciudad. As+° cualquier fuente nueva que el crawler habilite (ej.
+    CordobaProp) aparece sola en el selector sin tocar c+¶digo de frontend.
     """
     with Session(engine) as db:
         ensure_seed(db)
@@ -2370,9 +2537,9 @@ def properties_filters():
                         invalid_city_zones.add(zone)
         cities = sorted(by_city.keys())
         if has_invalid_city:
-            cities.append("Sin descripci√≥n")
-            by_city["Sin descripci√≥n"] = invalid_city_zones
-            # No agregamos "Sin descripci√≥n" a citiesByProvince (es un alias de presentaci√≥n).
+            cities.append("Sin descripci+¶n")
+            by_city["Sin descripci+¶n"] = invalid_city_zones
+            # No agregamos "Sin descripci+¶n" a citiesByProvince (es un alias de presentaci+¶n).
         return {
             "countries": sorted(countries) or ["Argentina", "Paraguay", "Uruguay"],
             "provincesByCountry": {c: sorted(ps) for c, ps in provinces_by_country.items()},
@@ -2380,47 +2547,6 @@ def properties_filters():
             "cities": cities,
             "zonesByCity": {c: sorted(zs) for c, zs in by_city.items()},
         }
-
-
-def _properties_base_stmt(
-    db,
-    *,
-    zone: str | None, city: str | None, type: str | None, operation: str | None,
-    rooms: int | None, max_price: float | None, parking: bool | None,
-    credit: bool | None, agency_id: str | None,
-    country: str | None, province: str | None,
-    under_construction: bool | None, investment_opportunity: bool | None,
-    exclude_agency_id: str | None,
-    include_hidden: bool, admin_ok: bool,
-):
-    """Arma el SELECT + filtros compartido entre /properties (orden por
-    prioridad) y /properties/random (orden aleatorio, preview r√°pida del
-    home). Separado para no duplicar la l√≥gica de filtros/visibilidad."""
-    stmt = select(Property)
-    if zone: stmt = stmt.where(Property.zone == zone)
-    if city and city != "Sin descripci√≥n":
-        # "Sin descripci√≥n" es un alias de presentaci√≥n (propiedades cuyo
-        # city falla is_valid_city_name); se filtra en Python sobre los
-        # resultados, no ac√°.
-        stmt = stmt.where(Property.city == city)
-    if country: stmt = stmt.where(Property.country == country)
-    if province: stmt = stmt.where(Property.province == province)
-    if under_construction is not None: stmt = stmt.where(Property.under_construction == under_construction)
-    if investment_opportunity is not None: stmt = stmt.where(Property.investment_opportunity == investment_opportunity)
-    if type: stmt = stmt.where(Property.type == type)
-    if operation: stmt = stmt.where(Property.operation == operation)
-    if rooms: stmt = stmt.where(Property.rooms == rooms)
-    if max_price: stmt = stmt.where(Property.price <= max_price)
-    if parking is not None: stmt = stmt.where(Property.parking == parking)
-    if credit is not None: stmt = stmt.where(Property.credit == credit)
-    if agency_id: stmt = stmt.where(Property.agency_id == agency_id)
-    if exclude_agency_id: stmt = stmt.where(Property.agency_id != exclude_agency_id)
-    if not (include_hidden and admin_ok):
-        stmt = stmt.where(Property.hidden_at.is_(None))
-    if not agency_id:
-        freshness_cutoff = datetime.now(timezone.utc) - timedelta(days=PROPERTY_FRESHNESS_DAYS)
-        stmt = stmt.where(Property.last_seen_at >= freshness_cutoff)
-    return stmt
 
 
 @app.get("/properties")
@@ -2431,15 +2557,15 @@ def properties(
     country: str | None = None, province: str | None = None,
     under_construction: bool | None = None, investment_opportunity: bool | None = None,
     exclude_agency_id: str | None = None,
-    # Etapa 3 (secci√≥n 10 / fase Intelligence): session_id opcional del
-    # frontend para poder agrupar b√∫squedas de una misma sesi√≥n an√≥nima sin
+    # Etapa 3 (secci+¶n 10 / fase Intelligence): session_id opcional del
+    # frontend para poder agrupar b+¶squedas de una misma sesi+¶n an+¶nima sin
     # necesitar login (mismo campo que ya usa POST /events). authorization
-    # es opcional a prop√≥sito: la b√∫squeda funciona sin sesi√≥n, pero si hay
-    # una sesi√≥n v√°lida (agente o comprador) se guarda el user_id para
-    # an√°lisis de demanda, igual que en cualquier otro evento del sistema.
+    # es opcional a prop+¶sito: la b+¶squeda funciona sin sesi+¶n, pero si hay
+    # una sesi+¶n v+Ìlida (agente o comprador) se guarda el user_id para
+    # an+Ìlisis de demanda, igual que en cualquier otro evento del sistema.
     session_id: str | None = None, authorization: str | None = Header(default=None),
-    # Plan maestro secc. 7: por defecto no se muestran ocultas por antig√ºedad.
-    # include_hidden=true solo con X-Admin-Key v√°lida (un agente no ve ocultas de otros).
+    # Plan maestro secc. 7: por defecto no se muestran ocultas por antig++edad.
+    # include_hidden=true solo con X-Admin-Key v+Ìlida (un agente no ve ocultas de otros).
     include_hidden: bool = False,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ):
@@ -2448,29 +2574,31 @@ def properties(
         try:
             session = current_session(authorization)
         except HTTPException:
-            # Token vencido/ inv√°lido en una b√∫squeda no debe romper la
-            # b√∫squeda en s√≠ ‚Äî solo se pierde la asociaci√≥n a un user_id.
+            # Token vencido/ inv+Ìlido en una b+¶squeda no debe romper la
+            # b+¶squeda en s+° ‘«ˆ solo se pierde la asociaci+¶n a un user_id.
             session = None
     admin_ok = bool(x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY))
     with Session(engine) as db:
         ensure_seed(db)
         stmt = _properties_base_stmt(
-            db, zone=zone, city=city, type=type, operation=operation, rooms=rooms,
+            zone=zone, city=city, type=type, operation=operation, rooms=rooms,
             max_price=max_price, parking=parking, credit=credit, agency_id=agency_id,
-            country=country, province=province, under_construction=under_construction,
-            investment_opportunity=investment_opportunity, exclude_agency_id=exclude_agency_id,
+            exclude_agency_id=exclude_agency_id, country=country, province=province,
+            under_construction=under_construction, investment_opportunity=investment_opportunity,
             include_hidden=include_hidden, admin_ok=admin_ok,
         )
-        # Default: mayor probabilidad de rotaci√≥n primero (encargo #2).
+        # Default: mayor probabilidad de rotaci+¶n primero (encargo #2).
         stmt = stmt.order_by(Property.priority_score.desc(), Property.detected_at.desc())
-        results = db.scalars(stmt).all()
-        if city == "Sin descripci√≥n":
+        results = list(db.scalars(stmt).all())
+        if city == "Sin descripci+¶n":
             results = [p for p in results if not is_valid_city_name(p.city)]
 
-        # Etapa 3: evento agregado y an√≥nimo por cada b√∫squeda ‚Äî insumo para
-        # matching/recomendaciones/demanda/pricing (doc, secci√≥n 10, fase
-        # Intelligence). No se guarda ning√∫n dato nuevo de contacto ni texto
-        # libre; solo los filtros ya p√∫blicos de la query y el resultado.
+        groups = _bulk_group_info(db, results)
+
+        # Etapa 3: evento agregado y an+¶nimo por cada b+¶squeda ‘«ˆ insumo para
+        # matching/recomendaciones/demanda/pricing (doc, secci+¶n 10, fase
+        # Intelligence). No se guarda ning+¶n dato nuevo de contacto ni texto
+        # libre; solo los filtros ya p+¶blicos de la query y el resultado.
         filters_used = {
             k: v for k, v in {
                 "zone": zone, "city": city, "type": type, "operation": operation, "rooms": rooms,
@@ -2487,54 +2615,52 @@ def properties(
         ))
         db.commit()
 
-        # Perf: rango de precio de grupo resuelto en UNA sola query agregada
-        # para todo el batch (ver _bulk_group_info) en vez de que el
-        # frontend dispare un GET /properties/{id}/group por cada propiedad
-        # agrupada ‚Äî eso era el cuello de botella real de la carga del home.
-        group_info = _bulk_group_info(db, results)
-        return [prop_dict(p, group_info) for p in results]
+        return [
+            prop_dict(p, groups.get(p.listing_group_id) if p.listing_group_id else None)
+            for p in results
+        ]
 
 
 @app.get("/properties/random")
 def properties_random(
-    limit: int = 30,
+    n: int = 30,
     zone: str | None = None, city: str | None = None, type: str | None = None, operation: str | None = None,
     rooms: int | None = None, max_price: float | None = None, parking: bool | None = None,
     credit: bool | None = None, agency_id: str | None = None,
     country: str | None = None, province: str | None = None,
     under_construction: bool | None = None, investment_opportunity: bool | None = None,
     exclude_agency_id: str | None = None,
+    include_hidden: bool = False,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ):
-    """Preview r√°pida para la carga inicial del home (encargo de perf,
-    2026-09): en vez de traer el cat√°logo entero antes de poder mostrar
-    algo, devuelve una muestra aleatoria chica (30 por defecto) con los
-    mismos filtros de visibilidad que /properties (frescura, hidden_at),
-    pero orden aleatorio y LIMIT en la propia query ‚Äî no se trae la tabla
-    entera a Python para despu√©s recortarla.
+    """Preview aleatorio para la carga inicial del home (sin search_performed).
 
-    No es una "b√∫squeda" real: no dispara Event(search_performed). El
-    frontend usa esto solo para tener algo que mostrar apenas se abre el
-    home; la b√∫squeda real (con los filtros que el usuario arma) sigue
-    yendo a GET /properties.
+    n default 30, m+Ìximo 60 (clamp silencioso). Misma pol+°tica de hidden/frescura
+    que GET /properties; no registra Event search_performed.
     """
-    limit = max(1, min(limit, 60))
+    if n < 1:
+        n = 1
+    if n > 60:
+        n = 60
     admin_ok = bool(x_admin_key and secrets.compare_digest(x_admin_key, ADMIN_KEY))
     with Session(engine) as db:
         ensure_seed(db)
         stmt = _properties_base_stmt(
-            db, zone=zone, city=city, type=type, operation=operation, rooms=rooms,
+            zone=zone, city=city, type=type, operation=operation, rooms=rooms,
             max_price=max_price, parking=parking, credit=credit, agency_id=agency_id,
-            country=country, province=province, under_construction=under_construction,
-            investment_opportunity=investment_opportunity, exclude_agency_id=exclude_agency_id,
-            include_hidden=False, admin_ok=admin_ok,
+            exclude_agency_id=exclude_agency_id, country=country, province=province,
+            under_construction=under_construction, investment_opportunity=investment_opportunity,
+            include_hidden=include_hidden, admin_ok=admin_ok,
         )
-        stmt = stmt.order_by(func.random()).limit(limit)
-        results = db.scalars(stmt).all()
-        if city == "Sin descripci√≥n":
+        stmt = stmt.order_by(func.random()).limit(n)
+        results = list(db.scalars(stmt).all())
+        if city == "Sin descripci+¶n":
             results = [p for p in results if not is_valid_city_name(p.city)]
-        group_info = _bulk_group_info(db, results)
-        return [prop_dict(p, group_info) for p in results]
+        groups = _bulk_group_info(db, results)
+        return [
+            prop_dict(p, groups.get(p.listing_group_id) if p.listing_group_id else None)
+            for p in results
+        ]
 
 
 @app.get("/properties/{property_id}")
@@ -2556,8 +2682,8 @@ def property_detail(
 @app.post("/properties", status_code=201)
 def create_property(payload: PropertyCreateIn, session: dict[str, Any] = Depends(require_agent)):
     """T7.1/T7.2 (backend): alta manual de propiedad por un agente con
-    verification_status=VERIFIED. agency_id se toma de la sesi√≥n (nunca del
-    body). Descripci√≥n tipada por persona ? sanitize_free_text (rechaza
+    verification_status=VERIFIED. agency_id se toma de la sesi+¶n (nunca del
+    body). Descripci+¶n tipada por persona ? sanitize_free_text (rechaza
     fugas). Si matchea dedup con otra agencia, se agrupa con listing_group_id
     (misma regla de la etapa 019); si matchea con la misma agencia, se marca
     needs_review."""
@@ -2568,7 +2694,7 @@ def create_property(payload: PropertyCreateIn, session: dict[str, Any] = Depends
         if agency.verification_status != "VERIFIED":
             raise HTTPException(
                 status_code=403,
-                detail="Tu agencia todav√≠a no est√° verificada. Solo agencias verificadas pueden cargar propiedades.",
+                detail="Tu agencia todav+°a no est+Ì verificada. Solo agencias verificadas pueden cargar propiedades.",
             )
         description = sanitize_free_text(payload.description or "", campo="description") or ""
         images = list(payload.images or [])[:MAX_PROPERTY_IMAGES]
@@ -2647,8 +2773,8 @@ def demand_request_dict(d: DemandRequest) -> dict[str, Any]:
 
 @app.post("/demand-requests", status_code=201)
 def create_demand_request(payload: DemandRequestIn, session: dict[str, Any] = Depends(require_agent)):
-    """Demanda gen√©rica B2B (plan maestro / Etapa Intelligence): solo agencias
-    con PLAN_50 o PLAN_99 (>= $60/mes) pueden publicar qu√© est√°n buscando para
+    """Demanda gen+Ærica B2B (plan maestro / Etapa Intelligence): solo agencias
+    con PLAN_50 o PLAN_99 (>= $60/mes) pueden publicar qu+Æ est+Ìn buscando para
     recibir un aviso cuando entra o se actualiza una propiedad compatible de
     OTRA agencia. Nunca hay comprador ni buyer_* en este flujo."""
     with Session(engine) as db:
@@ -2659,13 +2785,13 @@ def create_demand_request(payload: DemandRequestIn, session: dict[str, Any] = De
         if plan not in DEMAND_REQUEST_ALLOWED_PLANS:
             raise HTTPException(
                 status_code=403,
-                detail="Esta funci√≥n requiere plan PLAN_50 o PLAN_99. Actualiz√° tu plan desde Mi cuenta.",
+                detail="Esta funci+¶n requiere plan PLAN_50 o PLAN_99. Actualiz+Ì tu plan desde Mi cuenta.",
             )
         active_count = len(db.scalars(
             select(DemandRequest.id).where(DemandRequest.agency_id == agency.id, DemandRequest.active == True)  # noqa: E712
         ).all())
         if active_count >= DEMAND_REQUEST_MAX_ACTIVE_PER_AGENCY:
-            raise HTTPException(status_code=400, detail=f"Llegaste al m√°ximo de {DEMAND_REQUEST_MAX_ACTIVE_PER_AGENCY} demandas activas.")
+            raise HTTPException(status_code=400, detail=f"Llegaste al m+Ìximo de {DEMAND_REQUEST_MAX_ACTIVE_PER_AGENCY} demandas activas.")
         zone = sanitize_free_text(payload.zone.strip(), campo="zone") or payload.zone.strip()
         now = datetime.now(timezone.utc)
         d = DemandRequest(
@@ -2714,7 +2840,7 @@ def create_event(payload: EventIn, authorization: str | None = Header(default=No
     if authorization:
         session = current_session(authorization)
     if payload.name not in ALLOWED_EVENTS:
-        raise HTTPException(status_code=400, detail="Evento inv√°lido")
+        raise HTTPException(status_code=400, detail="Evento inv+Ìlido")
     with Session(engine) as db:
         if payload.property_id and not db.get(Property, payload.property_id):
             raise HTTPException(status_code=404, detail="Propiedad no encontrada")
@@ -2726,7 +2852,7 @@ def create_event(payload: EventIn, authorization: str | None = Header(default=No
 
 @app.get("/events/funnel")
 def funnel(session: dict[str, Any] = Depends(require_agent)):
-    """Solo eventos de la agencia de la sesi√≥n (aislamiento multi-tenant)."""
+    """Solo eventos de la agencia de la sesi+¶n (aislamiento multi-tenant)."""
     with Session(engine) as db:
         agency_id = session["agency_id"]
         rows = db.execute(
@@ -2765,15 +2891,15 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
     buyer_phone_normalized = normalize_phone(payload.buyer_phone)
     if not buyer_phone_normalized:
-        raise HTTPException(status_code=400, detail="Ingres√° un tel√©fono de contacto v√°lido")
+        raise HTTPException(status_code=400, detail="Ingres+Ì un tel+Æfono de contacto v+Ìlido")
     with Session(engine) as db:
-        # Etapa 2 / secci√≥n 6.2.1: enforcement real del lado del servidor ‚Äî
+        # Etapa 2 / secci+¶n 6.2.1: enforcement real del lado del servidor ‘«ˆ
         # el paso de identidad del frontend es UX, esto es lo que de verdad
         # impide que una oferta se cree sin el celular verificado. Google es
         # opcional (no se exige server-side).
         buyer_user = db.get(User, session["user_id"])
         if not buyer_user or not buyer_user.phone_verified_at:
-            raise HTTPException(status_code=403, detail="Verific√° tu celular antes de enviar una oferta.")
+            raise HTTPException(status_code=403, detail="Verific+Ì tu celular antes de enviar una oferta.")
         p = db.get(Property, payload.property_id)
         if not p: raise HTTPException(status_code=404, detail="Propiedad no encontrada")
         offer_data = payload.model_dump(exclude={"buyer_phone"})
@@ -2800,8 +2926,8 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
             ))
 
         # T6.1 cold start: oferta real sobre agencia no reclamada (o sin
-        # agency pero con tel√©fono scrapeado) ? tarea de notificaci√≥n manual.
-        # Nunca incluye buyer_name/phone/email. El tel√©fono target solo vive
+        # agency pero con tel+Æfono scrapeado) ? tarea de notificaci+¶n manual.
+        # Nunca incluye buyer_name/phone/email. El tel+Æfono target solo vive
         # en esta tabla y se lee desde /admin/cold-start/pending.
         target_phone = None
         agency_id_for_task = p.agency_id
@@ -2832,20 +2958,20 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
 
 
 def validate_visit_slot(visit_day: str | None, visit_slot: str | None) -> None:
-    """Backend valida estricto: visit_day dentro de los pr√≥ximos 7 d√≠as
-    (hoy incluido) y visit_slot uno de los tres valores fijos ‚Äî mismo
+    """Backend valida estricto: visit_day dentro de los pr+¶ximos 7 d+°as
+    (hoy incluido) y visit_slot uno de los tres valores fijos ‘«ˆ mismo
     criterio de rechazo con 400 que ya usa OfferIn con `origin`."""
     if not visit_day or not visit_slot:
-        raise HTTPException(status_code=400, detail="Eleg√≠ un d√≠a y una franja horaria para la visita.")
+        raise HTTPException(status_code=400, detail="Eleg+° un d+°a y una franja horaria para la visita.")
     if visit_slot not in VALID_VISIT_SLOTS:
-        raise HTTPException(status_code=400, detail="Franja horaria inv√°lida.")
+        raise HTTPException(status_code=400, detail="Franja horaria inv+Ìlida.")
     try:
         day = datetime.strptime(visit_day, "%Y-%m-%d").date()
     except ValueError:
-        raise HTTPException(status_code=400, detail="Fecha de visita inv√°lida.")
+        raise HTTPException(status_code=400, detail="Fecha de visita inv+Ìlida.")
     today = datetime.now(timezone.utc).date()
     if day < today or day > today + timedelta(days=6):
-        raise HTTPException(status_code=400, detail="Eleg√≠ un d√≠a dentro de los pr√≥ximos 7 d√≠as.")
+        raise HTTPException(status_code=400, detail="Eleg+° un d+°a dentro de los pr+¶ximos 7 d+°as.")
 
 
 @app.post("/leads", status_code=201)
@@ -2858,11 +2984,11 @@ def create_lead(payload: LeadIn, session: dict[str, Any] = Depends(current_sessi
         raise HTTPException(status_code=400, detail="El monto debe ser mayor a cero")
     buyer_phone_normalized = normalize_phone(payload.buyer_phone)
     if not buyer_phone_normalized:
-        raise HTTPException(status_code=400, detail="Ingres√° un tel√©fono de contacto v√°lido")
+        raise HTTPException(status_code=400, detail="Ingres+Ì un tel+Æfono de contacto v+Ìlido")
     with Session(engine) as db:
         buyer_user = db.get(User, session["user_id"])
         if not buyer_user or not buyer_user.phone_verified_at:
-            raise HTTPException(status_code=403, detail="Verific√° tu celular antes de continuar.")
+            raise HTTPException(status_code=403, detail="Verific+Ì tu celular antes de continuar.")
         p = db.get(Property, payload.property_id)
         if not p:
             raise HTTPException(status_code=404, detail="Propiedad no encontrada")
@@ -2896,7 +3022,7 @@ def create_lead(payload: LeadIn, session: dict[str, Any] = Depends(current_sessi
 
 @app.get("/leads")
 def list_leads(session: dict[str, Any] = Depends(current_session)):
-    """Mismo criterio de restricci√≥n que GET /offers: agencia no VERIFIED
+    """Mismo criterio de restricci+¶n que GET /offers: agencia no VERIFIED
     solo ve la cantidad, nunca detalle ni contacto."""
     with Session(engine) as db:
         stmt = select(Lead)
@@ -2951,7 +3077,7 @@ def list_leads(session: dict[str, Any] = Depends(current_session)):
 @app.get("/offers")
 def list_offers(status: str | None = None, session: dict[str, Any] = Depends(current_session)):
     """T4.5: un agente con verification_status != VERIFIED solo recibe la
-    cantidad de ofertas esperando ‚Äî nunca monto, propiedad ni ning√∫n detalle.
+    cantidad de ofertas esperando ‘«ˆ nunca monto, propiedad ni ning+¶n detalle.
     Compradores y agentes VERIFIED siguen recibiendo la lista completa
     (el contacto del comprador solo si contact_revealed)."""
     with Session(engine) as db:
@@ -2974,8 +3100,8 @@ def list_offers(status: str | None = None, session: dict[str, Any] = Depends(cur
                 stmt = stmt.where(Offer.status == status)
             offers = db.scalars(stmt.order_by(Offer.created_at.desc())).all()
             if not agency or agency.verification_status != "VERIFIED":
-                # Solo conteo ‚Äî sin ids, montos ni property_id (anti-fuga de detalle comercial
-                # hasta verificaci√≥n; el reveal ya estaba bloqueado en POST /offers/{id}/reveal).
+                # Solo conteo ‘«ˆ sin ids, montos ni property_id (anti-fuga de detalle comercial
+                # hasta verificaci+¶n; el reveal ya estaba bloqueado en POST /offers/{id}/reveal).
                 return {
                     "verificationRequired": True,
                     "verificationStatus": (agency.verification_status if agency else "PENDING"),
@@ -3015,7 +3141,7 @@ def counter_offer(offer_id: str, payload: CounterIn, session: dict[str, Any] = D
     with Session(engine) as db:
         agency = db.get(Agency, session["agency_id"])
         if not agency or agency.verification_status != "VERIFIED":
-            raise HTTPException(status_code=403, detail="Tu agencia todav√≠a no est√° verificada. No pod√©s responder ofertas hasta estar Verificada.")
+            raise HTTPException(status_code=403, detail="Tu agencia todav+°a no est+Ì verificada. No pod+Æs responder ofertas hasta estar Verificada.")
         offer = db.get(Offer, offer_id)
         if not offer: raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
@@ -3055,7 +3181,7 @@ def agent_in_listing_group(db: Session, prop: Property, agency_id: str) -> bool:
 def enforce_listing_group_reveal_priority(
     db: Session, prop: Property, agency: Agency, offer: Offer, now: datetime
 ) -> None:
-    """T8.7: dentro de la ventana, solo la agencia con suscripci√≥n m√°s antigua
+    """T8.7: dentro de la ventana, solo la agencia con suscripci+¶n m+Ìs antigua
     del grupo puede revelar. Pasada la ventana, cualquiera del grupo."""
     if not prop.listing_group_id:
         return
@@ -3080,9 +3206,9 @@ def enforce_listing_group_reveal_priority(
         raise HTTPException(
             status_code=403,
             detail=(
-                f"Esta oferta est√° en una ficha multi-agente. Durante las primeras "
-                f"{window_h}h tiene prioridad la agencia con la suscripci√≥n m√°s antigua. "
-                f"Pod√©s reintentar cuando expire la ventana si el lead sigue disponible."
+                f"Esta oferta est+Ì en una ficha multi-agente. Durante las primeras "
+                f"{window_h}h tiene prioridad la agencia con la suscripci+¶n m+Ìs antigua. "
+                f"Pod+Æs reintentar cuando expire la ventana si el lead sigue disponible."
             ),
         )
 
@@ -3090,18 +3216,18 @@ def enforce_listing_group_reveal_priority(
 @app.post("/offers/{offer_id}/reveal")
 def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agent)):
     """
-    √önico punto del sistema que puede exponer el nombre/tel√©fono real del
+    +‹nico punto del sistema que puede exponer el nombre/tel+Æfono real del
     comprador al agente. Reemplaza el flujo anterior (que revelaba el
-    tel√©fono de la AGENCIA al comprador ‚Äî direcci√≥n invertida respecto del
+    tel+Æfono de la AGENCIA al comprador ‘«ˆ direcci+¶n invertida respecto del
     modelo de negocio documentado). Reglas:
       1. La propiedad de la oferta debe pertenecer a la agencia del agente.
       2. Si ya fue revelada antes, se devuelve el contacto sin volver a cobrar.
-      3. Si la agencia tiene suscripci√≥n con cupo disponible, se consume cupo
-         (gratis para el agente, ya pagado por adelantado v√≠a la suscripci√≥n).
-      4. Si no hay cupo o no hay suscripci√≥n, se cobra pay-per-lead v√≠a
+      3. Si la agencia tiene suscripci+¶n con cupo disponible, se consume cupo
+         (gratis para el agente, ya pagado por adelantado v+°a la suscripci+¶n).
+      4. Si no hay cupo o no hay suscripci+¶n, se cobra pay-per-lead v+°a
          PaymentGateway. Con el gateway mock (sin integrar pasarela real),
          esto siempre devuelve 402 con el transaction_id para completar el
-         pago ‚Äî nunca revela gratis por default.
+         pago ‘«ˆ nunca revela gratis por default.
     """
     with Session(engine) as db:
         offer = db.get(Offer, offer_id)
@@ -3134,19 +3260,19 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
                 }
             raise HTTPException(
                 status_code=409,
-                detail="Otro agente del grupo ya revel√≥ el contacto de esta oferta.",
+                detail="Otro agente del grupo ya revel+¶ el contacto de esta oferta.",
             )
 
         if agency.verification_status != "VERIFIED":
             raise HTTPException(
                 status_code=403,
-                detail="Tu agencia todav√≠a no est√° verificada. Complet√° Instagram/link de tu perfil y esper√° la revisi√≥n para poder revelar contactos.",
+                detail="Tu agencia todav+°a no est+Ì verificada. Complet+Ì Instagram/link de tu perfil y esper+Ì la revisi+¶n para poder revelar contactos.",
             )
 
         now = datetime.now(timezone.utc)
         enforce_listing_group_reveal_priority(db, prop, agency, offer, now)
 
-        # Cupo √önico v√≠a get_available_credit / consume_reveal_credit.
+        # Cupo +‹nico v+°a get_available_credit / consume_reveal_credit.
         method = consume_reveal_credit(db, agency)
         if method is not None:
             offer.contact_revealed = True
@@ -3160,8 +3286,8 @@ def reveal_contact(offer_id: str, session: dict[str, Any] = Depends(require_agen
             db.commit()
             return {"buyer_name": offer.buyer_name, "buyer_phone": offer.buyer_phone_raw, "buyer_email": offer.buyer_email, "method": method}
 
-        # Sin cupo de suscripci√≥n: pay-per-lead. Buscar si ya hay una
-        # transacci√≥n completada pendiente de aplicar (idempotencia b√°sica).
+        # Sin cupo de suscripci+¶n: pay-per-lead. Buscar si ya hay una
+        # transacci+¶n completada pendiente de aplicar (idempotencia b+Ìsica).
         existing_paid = db.scalar(
             select(RevealTransaction).where(
                 RevealTransaction.offer_id == offer.id,
@@ -3204,7 +3330,7 @@ def reveal_lead_contact(lead_id: str, session: dict[str, Any] = Depends(require_
     """Espejo de POST /offers/{offer_id}/reveal, operando sobre Lead en vez
     de Offer. Mismas reglas: pertenencia a la agencia (o al listing_group),
     idempotencia si ya fue revelado, cupo de suscripcion/credito primero,
-    pay-per-lead via PaymentGateway despues ‚Äî nunca revela gratis por
+    pay-per-lead via PaymentGateway despues ‘«ˆ nunca revela gratis por
     default."""
     with Session(engine) as db:
         lead = db.get(Lead, lead_id)
@@ -3298,31 +3424,31 @@ def reveal_lead_contact(lead_id: str, session: dict[str, Any] = Depends(require_
 
 @app.get("/payments/{transaction_id}/status")
 def payment_status(transaction_id: str, session: dict[str, Any] = Depends(require_agent)):
-    """Etapa 017/018: permite que el frontend pregunte '¬øya se confirm√≥?'
-    despu√©s de volver de un checkout de Lemon Squeezy, sin tener que generar
+    """Etapa 017/018: permite que el frontend pregunte '-+ya se confirm+¶?'
+    despu+Æs de volver de un checkout de Lemon Squeezy, sin tener que generar
     un checkout nuevo cada vez (a diferencia de reintentar
-    POST /offers/{id}/reveal directamente, que crear√≠a una transacci√≥n
-    nueva si todav√≠a no se pag√≥). Nunca revela nada ac√° ‚Äî solo dice si el
-    pago qued‚Äî COMPLETED; el reveal real sigue pasando por
+    POST /offers/{id}/reveal directamente, que crear+°a una transacci+¶n
+    nueva si todav+°a no se pag+¶). Nunca revela nada ac+Ì ‘«ˆ solo dice si el
+    pago qued‘«ˆ COMPLETED; el reveal real sigue pasando por
     POST /offers/{id}/reveal, que ya sabe devolver el contacto sin volver a
-    cobrar cuando encuentra una transacci√≥n COMPLETED (idempotencia)."""
+    cobrar cuando encuentra una transacci+¶n COMPLETED (idempotencia)."""
     with Session(engine) as db:
         txn = db.get(RevealTransaction, transaction_id)
         if not txn or txn.agency_id != session["agency_id"]:
-            raise HTTPException(status_code=404, detail="Transacci√≥n no encontrada")
+            raise HTTPException(status_code=404, detail="Transacci+¶n no encontrada")
         return {"status": txn.status}
 
 
 if ENV != "production":
     @app.post("/payments/{transaction_id}/mock-complete")
     def mock_complete_payment(transaction_id: str, session: dict[str, Any] = Depends(require_agent)):
-        """SOLO disponible fuera de producci√≥n ‚Äî simula la confirmaci√≥n de una
+        """SOLO disponible fuera de producci+¶n ‘«ˆ simula la confirmaci+¶n de una
         pasarela real para poder probar el flujo de reveal de punta a punta
-        en desarrollo, sin tarjeta ni integraci√≥n real todav√≠a."""
+        en desarrollo, sin tarjeta ni integraci+¶n real todav+°a."""
         with Session(engine) as db:
             txn = db.get(RevealTransaction, transaction_id)
             if not txn or txn.agency_id != session["agency_id"]:
-                raise HTTPException(status_code=404, detail="Transacci√≥n no encontrada")
+                raise HTTPException(status_code=404, detail="Transacci+¶n no encontrada")
             txn.status = "COMPLETED"
             txn.completed_at = datetime.now(timezone.utc)
             offer = db.get(Offer, txn.offer_id)
@@ -3425,7 +3551,7 @@ def create_payment_checkout(payload: CheckoutRequestIn, session: dict[str, Any] 
     }
     variant_id = variant_map.get(kind)
     if not variant_id:
-        raise HTTPException(status_code=400, detail="Plan inv√°lido o variant no configurado")
+        raise HTTPException(status_code=400, detail="Plan inv+Ìlido o variant no configurado")
     if kind == "reveal":
         transaction_id = f"rt-{uuid.uuid4().hex[:12]}"
         with Session(engine) as db:
@@ -3455,7 +3581,7 @@ async def lemonsqueezy_webhook(
     request: Request,
     x_signature: str | None = Header(default=None, alias="X-Signature"),
 ):
-    """Webhook Lemon Squeezy ‚Äî firma HMAC obligatoria.
+    """Webhook Lemon Squeezy ‘«ˆ firma HMAC obligatoria.
     Eventos: order_created (reveal), subscription_created/updated/cancelled.
     """
     raw_body = await request.body()
@@ -3465,7 +3591,7 @@ async def lemonsqueezy_webhook(
         raise HTTPException(status_code=401, detail="Falta firma")
     expected = hmac.new(LEMON_SQUEEZY_WEBHOOK_SECRET.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, x_signature):
-        raise HTTPException(status_code=401, detail="Firma inv√°lida")
+        raise HTTPException(status_code=401, detail="Firma inv+Ìlida")
 
     payload = json.loads(raw_body.decode("utf-8"))
     event_name = payload.get("meta", {}).get("event_name")
@@ -3564,11 +3690,11 @@ async def lemonsqueezy_webhook(
 
 @app.post("/offers/{offer_id}/{action}")
 def offer_action(offer_id: str, action: str, session: dict[str, Any] = Depends(require_agent)):
-    if action not in {"accept", "reject", "negotiate"}: raise HTTPException(status_code=400, detail="Acci√≥n inv√°lida")
+    if action not in {"accept", "reject", "negotiate"}: raise HTTPException(status_code=400, detail="Acci+¶n inv+Ìlida")
     with Session(engine) as db:
         agency = db.get(Agency, session["agency_id"])
         if not agency or agency.verification_status != "VERIFIED":
-            raise HTTPException(status_code=403, detail="Tu agencia todav√≠a no est√° verificada. No pod√©s gestionar ofertas hasta estar Verificada.")
+            raise HTTPException(status_code=403, detail="Tu agencia todav+°a no est+Ì verificada. No pod+Æs gestionar ofertas hasta estar Verificada.")
         offer = db.get(Offer, offer_id)
         if not offer: raise HTTPException(status_code=404, detail="Oferta no encontrada")
         prop = db.get(Property, offer.property_id)
@@ -3588,7 +3714,7 @@ class PropertySuggestIn(BaseModel):
 
 @app.post("/properties/{property_id}/suggest", status_code=201)
 def suggest_property(property_id: str, payload: PropertySuggestIn, session: dict[str, Any] = Depends(require_agent)):
-    """Agencia due√±a de property_id sugiere al comprador activo otra propiedad de OTRA agencia."""
+    """Agencia due+¶a de property_id sugiere al comprador activo otra propiedad de OTRA agencia."""
     with Session(engine) as db:
         source = db.get(Property, property_id)
         if not source or source.agency_id != session["agency_id"]:
@@ -3688,12 +3814,12 @@ def engage_suggestion(suggestion_id: str, session: dict[str, Any] = Depends(curr
 @app.post("/contact-requests", status_code=201)
 def contact_request(payload: ContactIn, session: dict[str, Any] = Depends(require_agent)):
     """
-    Canal B2B (agente <-> agencia), gratuito e inmediato ‚Äî ver doc 03.
-    El comprador NUNCA obtiene el contacto de la agencia por ac√°: su √önico
+    Canal B2B (agente <-> agencia), gratuito e inmediato ‘«ˆ ver doc 03.
+    El comprador NUNCA obtiene el contacto de la agencia por ac+Ì: su +‹nico
     canal para recibir contacto es que un agente pague/consuma cupo para
     revelar SU oferta (ver /offers/{id}/reveal). Antes, este endpoint le
-    devolv√≠a el tel√©fono de la agencia directamente al comprador, que es la
-    direcci√≥n incorrecta respecto del modelo de negocio documentado.
+    devolv+°a el tel+Æfono de la agencia directamente al comprador, que es la
+    direcci+¶n incorrecta respecto del modelo de negocio documentado.
     """
     with Session(engine) as db:
         agency = db.get(Agency, payload.agency_id)
@@ -3706,7 +3832,7 @@ def contact_request(payload: ContactIn, session: dict[str, Any] = Depends(requir
                 select(AgentSuppressionList).where(AgentSuppressionList.phone_e164 == agency.phone)
             )
             if suppressed:
-                raise HTTPException(status_code=403, detail="Esta agencia solicit√≥ no recibir m√°s contactos en la plataforma.")
+                raise HTTPException(status_code=403, detail="Esta agencia solicit+¶ no recibir m+Ìs contactos en la plataforma.")
 
         req_id = f"cr-{uuid.uuid4().hex[:12]}"
         request = ContactRequest(
@@ -3721,9 +3847,9 @@ def contact_request(payload: ContactIn, session: dict[str, Any] = Depends(requir
 
 @app.post("/agencies/{agency_id}/opt-out")
 def agency_opt_out(agency_id: str, session: dict[str, Any] = Depends(require_agent)):
-    """Baja permanente: la agencia deja de recibir contacto en fr√≠o o nuevas
+    """Baja permanente: la agencia deja de recibir contacto en fr+°o o nuevas
     publicaciones vinculadas por el crawler (ver doc 05). Es irreversible por
-    dise√±o ‚Äî quien quiera volver debe contactar soporte, no autoservicio."""
+    dise+¶o ‘«ˆ quien quiera volver debe contactar soporte, no autoservicio."""
     if session["agency_id"] != agency_id:
         raise HTTPException(status_code=403, detail="Agencia no autorizada")
     with Session(engine) as db:
@@ -3764,13 +3890,13 @@ def opportunities(agency_id: str, session: dict[str, Any] = Depends(require_agen
 
 @app.get("/agencies/by-slug/{slug}")
 def agency_by_slug(slug: str):
-    """Etapa 4 (subdominios por agencia): lookup p√∫blico, sin auth, para que
+    """Etapa 4 (subdominios por agencia): lookup p+¶blico, sin auth, para que
     el storefront de una agencia (ej. inmobiliaria-norte.propomi.lat, resuelto
-    por un middleware de Next.js que todav√≠a no existe en el frontend) pueda
-    traducir el subdominio a un agency_id y despu√©s pedir sus propiedades con
-    GET /properties?agency_id=<id> (ese endpoint ya es p√∫blico desde antes).
-    Solo expone datos ya p√∫blicos en otras pantallas (nombre/ciudad/estado de
-    verificaci√≥n) ‚Äî nunca tel√©fono ni ning√∫n dato de contacto."""
+    por un middleware de Next.js que todav+°a no existe en el frontend) pueda
+    traducir el subdominio a un agency_id y despu+Æs pedir sus propiedades con
+    GET /properties?agency_id=<id> (ese endpoint ya es p+¶blico desde antes).
+    Solo expone datos ya p+¶blicos en otras pantallas (nombre/ciudad/estado de
+    verificaci+¶n) ‘«ˆ nunca tel+Æfono ni ning+¶n dato de contacto."""
     with Session(engine) as db:
         ensure_seed(db)
         ensure_agency_slugs(db)
@@ -3831,7 +3957,7 @@ def set_agency_subscription(agency_id: str, payload: SubscriptionIn, session: di
         raise HTTPException(status_code=403, detail="Agencia no autorizada")
     plan = (payload.plan or "").strip().upper()
     if plan not in PLAN_CUPO:
-        raise HTTPException(status_code=400, detail=f"Plan inv√°lido. Valores: {', '.join(PLAN_CUPO.keys())}")
+        raise HTTPException(status_code=400, detail=f"Plan inv+Ìlido. Valores: {', '.join(PLAN_CUPO.keys())}")
     with Session(engine) as db:
         a = db.get(Agency, agency_id)
         if not a:
@@ -3875,7 +4001,7 @@ def relink_by_phone(agency_id: str, session: dict[str, Any] = Depends(require_ag
         count = sum(relink_properties(db, agency_id, phone) for phone in all_agency_phones(db, agency_id))
         db.commit()
         props = db.scalars(select(Property).where(Property.agency_id == agency_id)).all()
-        return {"count": count, "properties": [prop_dict(p) for p in props], "message": f"Encontramos {count} publicaciones nuevas vinculadas por tel√©fono." if count else "No encontramos publicaciones nuevas con ese tel√©fono."}
+        return {"count": count, "properties": [prop_dict(p) for p in props], "message": f"Encontramos {count} publicaciones nuevas vinculadas por tel+Æfono." if count else "No encontramos publicaciones nuevas con ese tel+Æfono."}
 
 
 @app.get("/agencies/{agency_id}/phones")
@@ -3900,12 +4026,12 @@ def add_agency_phone(agency_id: str, payload: PhoneIn, session: dict[str, Any] =
     if session["agency_id"] != agency_id: raise HTTPException(status_code=403, detail="Agencia no autorizada")
     phone = normalize_phone(payload.phone)
     if not phone:
-        raise HTTPException(status_code=400, detail="Ingres√° un tel√©fono v√°lido")
+        raise HTTPException(status_code=400, detail="Ingres+Ì un tel+Æfono v+Ìlido")
     with Session(engine) as db:
         if not db.get(Agency, agency_id):
             raise HTTPException(status_code=404, detail="Agencia no encontrada")
         if find_agency_by_phone(db, phone):
-            raise HTTPException(status_code=409, detail="Ese tel√©fono ya est√° asociado a una agencia")
+            raise HTTPException(status_code=409, detail="Ese tel+Æfono ya est+Ì asociado a una agencia")
         ap = AgencyPhone(id=f"aph-{uuid.uuid4().hex[:12]}", agency_id=agency_id, phone=phone)
         db.add(ap)
         db.commit()
@@ -3925,7 +4051,7 @@ def claim_agency(agency_id: str, session: dict[str, Any] = Depends(require_agent
 
 @app.get("/analytics/summary")
 def analytics(session: dict[str, Any] = Depends(require_agent)):
-    """Resumen acotado a la agencia de la sesi√≥n (no datos globales)."""
+    """Resumen acotado a la agencia de la sesi+¶n (no datos globales)."""
     with Session(engine) as db:
         ensure_seed(db)
         agency_id = session["agency_id"]
@@ -3950,7 +4076,7 @@ def analytics(session: dict[str, Any] = Depends(require_agent)):
 
 
 class SearchPerformedIn(BaseModel):
-    """Filtros an√≥nimos de b√∫squeda ‚Äî sin PII."""
+    """Filtros an+¶nimos de b+¶squeda ‘«ˆ sin PII."""
     model_config = {"extra": "forbid"}
 
     zone: str | None = None
@@ -3964,16 +4090,16 @@ class SearchPerformedIn(BaseModel):
     min_price: float | None = None
 
 
-_PII_KEY_HINTS = ("phone", "telefono", "tel√©fono", "email", "mail", "nombre", "name", "dni", "buyer_")
+_PII_KEY_HINTS = ("phone", "telefono", "tel+Æfono", "email", "mail", "nombre", "name", "dni", "buyer_")
 
 
 @app.post("/events/search_performed", status_code=201)
 async def post_search_performed(request: Request):
-    """Registra b√∫squeda agregada an√≥nima. Rechaza campos que parezcan PII."""
+    """Registra b+¶squeda agregada an+¶nima. Rechaza campos que parezcan PII."""
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="JSON inv√°lido")
+        raise HTTPException(status_code=400, detail="JSON inv+Ìlido")
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="Body debe ser objeto")
     for k in body.keys():
@@ -3983,7 +4109,7 @@ async def post_search_performed(request: Request):
     try:
         payload = SearchPerformedIn(**body)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Filtros inv√°lidos: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"Filtros inv+Ìlidos: {exc}") from exc
     zone = payload.zone
     tipo = payload.tipo or payload.type
     ambientes = payload.ambientes if payload.ambientes is not None else payload.rooms
@@ -4005,13 +4131,13 @@ async def post_search_performed(request: Request):
 
 @app.get("/analytics/demand")
 def demand(limit: int = 500, session: dict[str, Any] = Depends(require_agent)):
-    """Etapa 3 (secci√≥n 10 / fase Intelligence): lee los eventos
+    """Etapa 3 (secci+¶n 10 / fase Intelligence): lee los eventos
     `search_performed` que ya se vienen guardando desde GET /properties y
-    los agrega en rankings simples de demanda (zonas y tipos m√°s buscados).
-    No hay tabla propia de agregaci√≥n todav√≠a ‚Äî se calcula al vuelo sobre
-    los √∫ltimos `limit` eventos (default 500) para no recorrer toda la
-    tabla en cada llamada a medida que crezca. Es agregado y an√≥nimo: nunca
-    devuelve user_id ni ning√∫n dato de una b√∫squeda individual, solo
+    los agrega en rankings simples de demanda (zonas y tipos m+Ìs buscados).
+    No hay tabla propia de agregaci+¶n todav+°a ‘«ˆ se calcula al vuelo sobre
+    los +¶ltimos `limit` eventos (default 500) para no recorrer toda la
+    tabla en cada llamada a medida que crezca. Es agregado y an+¶nimo: nunca
+    devuelve user_id ni ning+¶n dato de una b+¶squeda individual, solo
     conteos totales por valor de filtro.
     """
     with Session(engine) as db:
@@ -4063,8 +4189,8 @@ def market_opportunities(
     session: dict[str, Any] = Depends(require_agent),
 ):
     """T5.7: cruza search_performed agregados (zona, max_price, type, rooms)
-    contra las zonas donde ESTA agencia tiene cat√°logo. Solo VERIFIED.
-    Agregado y an√≥nimo: nunca user_id ni b√∫squedas individuales."""
+    contra las zonas donde ESTA agencia tiene cat+Ìlogo. Solo VERIFIED.
+    Agregado y an+¶nimo: nunca user_id ni b+¶squedas individuales."""
     if session["agency_id"] != agency_id:
         raise HTTPException(status_code=403, detail="Agencia no autorizada")
     days = max(1, min(days, 90))
@@ -4076,11 +4202,11 @@ def market_opportunities(
         if agency.verification_status != "VERIFIED":
             raise HTTPException(
                 status_code=403,
-                detail="Tu agencia todav√≠a no est√° verificada. Las oportunidades de mercado solo est√°n disponibles para cuentas Verificadas.",
+                detail="Tu agencia todav+°a no est+Ì verificada. Las oportunidades de mercado solo est+Ìn disponibles para cuentas Verificadas.",
             )
 
         props = db.scalars(select(Property).where(Property.agency_id == agency_id)).all()
-        # Zonas del cat√°logo de la agencia (solo esas ‚Äî no mostrar demanda de zonas que no vende)
+        # Zonas del cat+Ìlogo de la agencia (solo esas ‘«ˆ no mostrar demanda de zonas que no vende)
         agency_zones: dict[str, int] = {}
         for p in props:
             if p.zone:
@@ -4096,7 +4222,7 @@ def market_opportunities(
             .limit(limit)
         ).all()
 
-        # Por zona de la agencia: conteo de b√∫squedas + max_price observados
+        # Por zona de la agencia: conteo de b+¶squedas + max_price observados
         zone_stats: dict[str, dict[str, Any]] = {
             z: {"searchCount": 0, "maxPrices": [], "types": {}, "rooms": {}}
             for z in agency_zones
@@ -4131,7 +4257,7 @@ def market_opportunities(
             prices = sorted(st["maxPrices"])
             budget_min = prices[0] if prices else None
             budget_max = prices[-1] if prices else None
-            # rango m√°s buscado: mediana simple de max_price
+            # rango m+Ìs buscado: mediana simple de max_price
             budget_median = None
             if prices:
                 mid = len(prices) // 2
@@ -4182,10 +4308,10 @@ def supply_demand_suggestions(
     limit: int = 20,
     session: dict[str, Any] = Depends(require_agent),
 ):
-    """Cruza demanda (search_performed agregados) con oferta del cat√°logo
-    visible (priority_score). Sugiere a la agencia qu√© perfiles conviene
-    priorizar. No filtra por agency_id en demanda (es se√±al de mercado
-    an√≥nima global); la oferta s√≠ puede filtrarse a propiedades propias
+    """Cruza demanda (search_performed agregados) con oferta del cat+Ìlogo
+    visible (priority_score). Sugiere a la agencia qu+Æ perfiles conviene
+    priorizar. No filtra por agency_id en demanda (es se+¶al de mercado
+    an+¶nima global); la oferta s+° puede filtrarse a propiedades propias
     si se pasa own_only=1 en el futuro.
     """
     from collections import Counter
@@ -4241,7 +4367,7 @@ def supply_demand_suggestions(
             "top_types": type_counts.most_common(10),
             "top_rooms": rooms_counts.most_common(10),
             "suggestions": suggestions,
-            "note": "Demanda an√≥nima global; oferta = cat√°logo no oculto ordenado por priority_score.",
+            "note": "Demanda an+¶nima global; oferta = cat+Ìlogo no oculto ordenado por priority_score.",
         }
 
 
@@ -4252,7 +4378,7 @@ def pricing_hint(
     property_type: str | None = None,
     session: dict[str, Any] = Depends(require_agent),
 ):
-    """Rango de precio sugerido por mediana de cat√°logo en zona (+filtros).
+    """Rango de precio sugerido por mediana de cat+Ìlogo en zona (+filtros).
     Research-ready: usa la misma base que compute_priority_score.
     """
     with Session(engine) as db:
@@ -4276,7 +4402,7 @@ def pricing_hint(
                 "zone": zone,
                 "sample": len(prices),
                 "hint": None,
-                "message": "Muestra insuficiente (<3) en cat√°logo para esa zona/filtros.",
+                "message": "Muestra insuficiente (<3) en cat+Ìlogo para esa zona/filtros.",
             }
         mid = len(prices) // 2
         median = prices[mid] if len(prices) % 2 else (prices[mid - 1] + prices[mid]) / 2
@@ -4292,7 +4418,7 @@ def pricing_hint(
             "p75": p75,
             "suggested_range": {"min": p25, "max": p75},
             "currency": "USD",
-            "method": "percentiles del cat√°logo actual (misma base que priority_score)",
+            "method": "percentiles del cat+Ìlogo actual (misma base que priority_score)",
         }
 
 
@@ -4309,7 +4435,7 @@ class AdminOtpVerifyIn(BaseModel):
 
 @app.post("/admin/auth/login")
 def admin_auth_login(payload: AdminLoginIn, request: Request):
-    """Paso 1: username+password. Si OK, env√≠a OTP SMS. No emite JWT todav√≠a."""
+    """Paso 1: username+password. Si OK, env+°a OTP SMS. No emite JWT todav+°a."""
     ensure_admin_seed()
     _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
     with Session(engine) as db:
@@ -4317,7 +4443,7 @@ def admin_auth_login(payload: AdminLoginIn, request: Request):
         if not admin or not bcrypt.checkpw(
             payload.password.encode("utf-8"), admin.password_hash.encode("utf-8")
         ):
-            raise HTTPException(status_code=401, detail="Usuario o contrase√±a incorrectos")
+            raise HTTPException(status_code=401, detail="Usuario o contrase+¶a incorrectos")
         phone = admin.phone
         code = f"{secrets.randbelow(1_000_000):06d}"
         db.query(OTPCode).filter(OTPCode.phone == phone, OTPCode.consumed == False).update({"consumed": True})
@@ -4332,7 +4458,7 @@ def admin_auth_login(payload: AdminLoginIn, request: Request):
         send_otp_sms(phone, code)
         sms_sent = True
     except Exception as exc:  # noqa: BLE001
-        print(f"[PROPOMI admin OTP] SMS fall√≥: {exc}")
+        print(f"[PROPOMI admin OTP] SMS fall+¶: {exc}")
         sms_sent = False
     body: dict[str, Any] = {
         "ok": True,
@@ -4347,13 +4473,13 @@ def admin_auth_login(payload: AdminLoginIn, request: Request):
 
 @app.post("/admin/auth/verify-otp")
 def admin_auth_verify_otp(payload: AdminOtpVerifyIn, request: Request):
-    """Paso 2: OTP v√°lido ? JWT role=ADMIN (8h)."""
+    """Paso 2: OTP v+Ìlido ? JWT role=ADMIN (8h)."""
     ensure_admin_seed()
     _rate.check(f"auth:ip:{_client_ip(request)}", RATE_AUTH_PER_IP)
     with Session(engine) as db:
         admin = db.scalars(select(AdminUser).where(AdminUser.username == payload.username.strip())).first()
         if not admin:
-            raise HTTPException(status_code=401, detail="Usuario inv√°lido")
+            raise HTTPException(status_code=401, detail="Usuario inv+Ìlido")
         now = datetime.now(timezone.utc)
         otp = db.scalar(
             select(OTPCode)
@@ -4361,18 +4487,18 @@ def admin_auth_verify_otp(payload: AdminOtpVerifyIn, request: Request):
             .order_by(OTPCode.created_at.desc())
         )
         if not otp:
-            raise HTTPException(status_code=401, detail="C√≥digo OTP inv√°lido o vencido")
+            raise HTTPException(status_code=401, detail="C+¶digo OTP inv+Ìlido o vencido")
         exp = otp.expires_at
         if exp.tzinfo is None:
             exp = exp.replace(tzinfo=timezone.utc)
         if exp < now:
             otp.consumed = True
             db.commit()
-            raise HTTPException(status_code=401, detail="C√≥digo OTP vencido")
+            raise HTTPException(status_code=401, detail="C+¶digo OTP vencido")
         if not secrets.compare_digest(otp.code_hash, hash_otp(payload.code.strip())):
             otp.verify_attempts = (otp.verify_attempts or 0) + 1
             db.commit()
-            raise HTTPException(status_code=401, detail="C√≥digo OTP inv√°lido o vencido")
+            raise HTTPException(status_code=401, detail="C+¶digo OTP inv+Ìlido o vencido")
         otp.consumed = True
         admin.last_login_at = now
         db.commit()
@@ -4386,7 +4512,7 @@ def admin_auth_verify_otp(payload: AdminOtpVerifyIn, request: Request):
 
 @app.get("/admin/auth/me")
 def admin_auth_me(session: dict[str, Any] = Depends(require_admin)):
-    """Confirma sesi√≥n admin (JWT o key)."""
+    """Confirma sesi+¶n admin (JWT o key)."""
     return {
         "ok": True,
         "auth": session.get("auth") or "jwt",
@@ -4397,9 +4523,9 @@ def admin_auth_me(session: dict[str, Any] = Depends(require_admin)):
 
 @app.get("/admin/agencies/pending")
 def admin_pending_agencies(_: None = Depends(require_admin)):
-    """Etapa 4: cola de agencias pendientes de revisi√≥n manual, ordenada
-    por `verification_priority` descendente (doc 6.2 ‚Äî quien ya se
-    suscribi√≥ antes de verificarse pasa primero, SLA 24hs)."""
+    """Etapa 4: cola de agencias pendientes de revisi+¶n manual, ordenada
+    por `verification_priority` descendente (doc 6.2 ‘«ˆ quien ya se
+    suscribi+¶ antes de verificarse pasa primero, SLA 24hs)."""
     with Session(engine) as db:
         ensure_seed(db)
         rows = db.scalars(
@@ -4417,13 +4543,13 @@ def admin_approve_agency(agency_id: str, request: Request, payload: AgencyReview
         if not a:
             raise HTTPException(status_code=404, detail="Agencia no encontrada")
         a.verification_status = "VERIFIED"
-        a.verified = True  # DEPRECATED, se mantiene en sync por compatibilidad hacia atr√°s
+        a.verified = True  # DEPRECATED, se mantiene en sync por compatibilidad hacia atr+Ìs
         a.verification_reviewed_at = datetime.now(timezone.utc)
         if payload and payload.notes:
-            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisi√≥n")
-        # Los 10 leads gratis al verificarse (doc 06.2.3/08) se otorgan ac√°,
-        # una sola vez ‚Äî si por alg√∫n motivo ya ten√≠a cupo cargado (no
-        # deber√≠a pasar en el flujo normal), no se lo pisa ni se lo duplica.
+            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisi+¶n")
+        # Los 10 leads gratis al verificarse (doc 06.2.3/08) se otorgan ac+Ì,
+        # una sola vez ‘«ˆ si por alg+¶n motivo ya ten+°a cupo cargado (no
+        # deber+°a pasar en el flujo normal), no se lo pisa ni se lo duplica.
         if a.free_leads_remaining == 0:
             a.free_leads_remaining = FREE_LEADS_ON_VERIFICATION
         lc = get_lead_credit(db, a.id)
@@ -4448,7 +4574,7 @@ def admin_reject_agency(agency_id: str, request: Request, payload: AgencyReviewI
         a.verified = False
         a.verification_reviewed_at = datetime.now(timezone.utc)
         if payload and payload.notes:
-            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisi√≥n")
+            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisi+¶n")
         db.commit()
         log_admin_action("agency_reject", "/admin/agencies/{id}/reject", agency_id, ip=_client_ip(request))
         return agency_admin_dict(a)
@@ -4468,7 +4594,7 @@ def admin_reopen_agency(agency_id: str, payload: AgencyReviewIn | None = None, _
         a.verified = False
         a.verification_reviewed_at = None
         if payload and payload.notes:
-            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisi√≥n")
+            a.verification_notes = sanitize_free_text(payload.notes, "notas de revisi+¶n")
         db.commit()
         log_admin_action("agency_reopen", "/admin/agencies/{id}/reopen", agency_id, ip=_client_ip(request))
         return agency_admin_dict(a)
@@ -4482,7 +4608,7 @@ def admin_list_agencies(
     _: None = Depends(require_admin),
 ):
     """Listado de soporte: todas las agencias (o filtradas por status / texto).
-    No expone datos de compradores ‚Äî solo perfil de agencia."""
+    No expone datos de compradores ‘«ˆ solo perfil de agencia."""
     limit = max(1, min(limit, 500))
     with Session(engine) as db:
         ensure_seed(db)
@@ -4490,7 +4616,7 @@ def admin_list_agencies(
         if status:
             st = status.strip().upper()
             if st not in {"PENDING", "VERIFIED", "REJECTED"}:
-                raise HTTPException(status_code=400, detail="status inv√°lido")
+                raise HTTPException(status_code=400, detail="status inv+Ìlido")
             stmt = stmt.where(Agency.verification_status == st)
         rows = list(db.scalars(stmt.order_by(Agency.name)).all())
         if q:
@@ -4511,8 +4637,8 @@ def admin_list_agencies(
 
 @app.get("/admin/cold-start/pending")
 def admin_cold_start_pending(_: None = Depends(require_admin)):
-    """Cola de notificaciones manuales T6.1. √önico endpoint que expone el
-    tel√©fono scrapeado de la agencia no reclamada ‚Äî protegido por X-Admin-Key.
+    """Cola de notificaciones manuales T6.1. +‹nico endpoint que expone el
+    tel+Æfono scrapeado de la agencia no reclamada ‘«ˆ protegido por X-Admin-Key.
     El resumen de la oferta nunca incluye datos del comprador."""
     with Session(engine) as db:
         tasks = db.scalars(
@@ -4536,9 +4662,9 @@ def admin_cold_start_pending(_: None = Depends(require_admin)):
                 "status": t.status,
                 "createdAt": t.created_at.isoformat() if t.created_at else None,
                 "messageTemplate": (
-                    f"Hola ‚Äî alguien ofreci√≥ {t.currency} {t.amount:,.0f} por "
-                    f"¬´{t.property_title}¬ª ({t.property_zone}) en Propomi. "
-                    f"Reclam√° tu perfil y ver el detalle: "
+                    f"Hola ‘«ˆ alguien ofreci+¶ {t.currency} {t.amount:,.0f} por "
+                    f"-Ω{t.property_title}-+ ({t.property_zone}) en Propomi. "
+                    f"Reclam+Ì tu perfil y ver el detalle: "
                     f"https://propomi.lat/onboarding/{t.onboarding_token}"
                 ),
             }
@@ -4577,12 +4703,12 @@ def admin_cold_start_mark_sent(
 
 @app.get("/onboarding/{token}")
 def get_onboarding(token: str):
-    """T6.2: resumen p√∫blico del cold-start. Nunca expone tel√©fonos ni
-    datos del comprador ‚Äî solo lo necesario para motivar el claim."""
+    """T6.2: resumen p+¶blico del cold-start. Nunca expone tel+Æfonos ni
+    datos del comprador ‘«ˆ solo lo necesario para motivar el claim."""
     with Session(engine) as db:
         task = db.scalar(select(ColdStartTask).where(ColdStartTask.onboarding_token == token))
         if not task:
-            raise HTTPException(status_code=404, detail="Link inv√°lido o vencido")
+            raise HTTPException(status_code=404, detail="Link inv+Ìlido o vencido")
         created = task.created_at
         if created and created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
@@ -4590,7 +4716,7 @@ def get_onboarding(token: str):
             if task.status in {"PENDING", "SENT"}:
                 task.status = "EXPIRED"
                 db.commit()
-            raise HTTPException(status_code=410, detail="Este link de onboarding expir√≥")
+            raise HTTPException(status_code=410, detail="Este link de onboarding expir+¶")
         if task.status == "CLAIMED":
             return {
                 "status": "CLAIMED",
@@ -4598,10 +4724,10 @@ def get_onboarding(token: str):
                 "propertyZone": task.property_zone,
                 "amount": task.amount,
                 "currency": task.currency,
-                "message": "Este perfil ya fue reclamado. Entr√° a /agencia con tu tel√©fono.",
+                "message": "Este perfil ya fue reclamado. Entr+Ì a /agencia con tu tel+Æfono.",
             }
         if task.status == "EXPIRED":
-            raise HTTPException(status_code=410, detail="Este link de onboarding expir√≥")
+            raise HTTPException(status_code=410, detail="Este link de onboarding expir+¶")
         agency_name = None
         if task.agency_id:
             agency = db.get(Agency, task.agency_id)
@@ -4630,30 +4756,30 @@ def complete_onboarding(
     payload: OnboardingCompleteIn,
     session: dict[str, Any] = Depends(require_agent),
 ):
-    """T6.2: el agente (ya autenticado por OTP con el tel√©fono de la
+    """T6.2: el agente (ya autenticado por OTP con el tel+Æfono de la
     agencia) completa Instagram/link, marca claimed y consume el token.
     Token de un solo uso: status ? CLAIMED."""
     with Session(engine) as db:
         task = db.scalar(select(ColdStartTask).where(ColdStartTask.onboarding_token == token))
         if not task:
-            raise HTTPException(status_code=404, detail="Link inv√°lido o vencido")
+            raise HTTPException(status_code=404, detail="Link inv+Ìlido o vencido")
         created = task.created_at
         if created and created.tzinfo is None:
             created = created.replace(tzinfo=timezone.utc)
         if created and datetime.now(timezone.utc) - created > timedelta(days=ONBOARDING_TOKEN_DAYS):
             task.status = "EXPIRED"
             db.commit()
-            raise HTTPException(status_code=410, detail="Este link de onboarding expir√≥")
+            raise HTTPException(status_code=410, detail="Este link de onboarding expir+¶")
         if task.status == "CLAIMED":
             raise HTTPException(status_code=400, detail="Este perfil ya fue reclamado")
         if task.status == "EXPIRED":
-            raise HTTPException(status_code=410, detail="Este link de onboarding expir√≥")
+            raise HTTPException(status_code=410, detail="Este link de onboarding expir+¶")
         if not task.agency_id:
-            raise HTTPException(status_code=400, detail="Esta invitaci√≥n no tiene agencia asociada todav√≠a")
+            raise HTTPException(status_code=400, detail="Esta invitaci+¶n no tiene agencia asociada todav+°a")
         if session.get("agency_id") != task.agency_id:
             raise HTTPException(
                 status_code=403,
-                detail="Entr√° con el tel√©fono de la agencia asociada a esta invitaci√≥n.",
+                detail="Entr+Ì con el tel+Æfono de la agencia asociada a esta invitaci+¶n.",
             )
         agency = db.get(Agency, task.agency_id)
         if not agency:
@@ -4664,7 +4790,7 @@ def complete_onboarding(
             agency.website_link = payload.website_link.strip() or None
         if payload.name and payload.name.strip():
             agency.name = payload.name.strip()
-        # Si sigue PENDING de verificaci√≥n, queda en cola; no auto-VERIFIED.
+        # Si sigue PENDING de verificaci+¶n, queda en cola; no auto-VERIFIED.
         if agency.verification_status not in {"VERIFIED", "REJECTED"}:
             agency.verification_status = "PENDING"
         task.status = "CLAIMED"
@@ -4674,14 +4800,14 @@ def complete_onboarding(
             "agencyId": agency.id,
             "agencyName": agency.name,
             "verificationStatus": agency.verification_status,
-            "message": "Perfil reclamado. Complet√° la verificaci√≥n desde el panel de agencia si todav√≠a est√° pendiente.",
+            "message": "Perfil reclamado. Complet+Ì la verificaci+¶n desde el panel de agencia si todav+°a est+Ì pendiente.",
         }
 
 
 
 @app.post("/admin/properties/expire-stale")
 def admin_expire_stale_properties(request: Request, _: None = Depends(require_admin)):
-    """Cron / disparo manual: oculta propiedades con antig√ºedad > MAX_AGE_DAYS."""
+    """Cron / disparo manual: oculta propiedades con antig++edad > MAX_AGE_DAYS."""
     with Session(engine) as db:
         result = expire_stale_properties(db)
     log_admin_action("expire_stale", "/admin/properties/expire-stale", detail=result if isinstance(result, dict) else {}, ip=_client_ip(request))
@@ -4696,7 +4822,7 @@ def admin_run_crawler(
     sources: str | None = None,
     source: str | None = None,
 ):
-    """Disparo as√≠ncrono del crawler (ADMIN_KEY).
+    """Disparo as+°ncrono del crawler (ADMIN_KEY).
 
     Responde 202 de inmediato con crawl_run_id. El trabajo corre en BackgroundTasks.
     Query:
@@ -4706,7 +4832,7 @@ def admin_run_crawler(
     Estado: GET /admin/crawler/status/{crawl_run_id}
     """
     if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
-        raise HTTPException(status_code=401, detail="Admin key inv√°lida")
+        raise HTTPException(status_code=401, detail="Admin key inv+Ìlida")
     _rate.check(f"admin:ip:{_client_ip(request)}", RATE_ADMIN_PER_IP)
 
     source_ids: list[str] | None = None
@@ -4728,7 +4854,7 @@ def admin_run_crawler(
         "status": "accepted",
         "crawl_run_id": run_id,
         "sources": source_ids,
-        "message": "Crawl encolado. Consult√° GET /admin/crawler/status/{crawl_run_id}",
+        "message": "Crawl encolado. Consult+Ì GET /admin/crawler/status/{crawl_run_id}",
     }
 
 
@@ -4739,9 +4865,9 @@ def admin_crawler_status(
     crawl_run_id: str | None = None,
     x_admin_key: str | None = Header(default=None, alias="X-Admin-Key"),
 ):
-    """Progreso de una corrida (o la m√°s reciente si no se pasa id)."""
+    """Progreso de una corrida (o la m+Ìs reciente si no se pasa id)."""
     if not x_admin_key or not secrets.compare_digest(x_admin_key, ADMIN_KEY):
-        raise HTTPException(status_code=401, detail="Admin key inv√°lida")
+        raise HTTPException(status_code=401, detail="Admin key inv+Ìlida")
     _rate.check(f"admin:ip:{_client_ip(request)}", RATE_ADMIN_PER_IP)
     with _CRAWL_RUNS_LOCK:
         if crawl_run_id:
