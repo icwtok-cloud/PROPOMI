@@ -167,13 +167,13 @@ export default function AgentOfferActions({
         )}
         {!hasPaidPlan && onCheckout && (
           <div className="offer-plan-upsell">
-            <span className="muted small">Planes mensuales</span>
+            <span className="upsell-title">Ahorrá con un plan · o pagá un lead</span>
             <div className="offer-plan-row">
               <button type="button" className="secondary" disabled={!!checkoutLoadingKey}
                 onClick={()=>onCheckout('plan_basic')}>
                 {checkoutLoadingKey==='plan_basic'?'…':'Basic · 30/mes'}
               </button>
-              <button type="button" className="secondary" disabled={!!checkoutLoadingKey}
+              <button type="button" className="secondary upsell-highlight" disabled={!!checkoutLoadingKey}
                 onClick={()=>onCheckout('plan_pro')}>
                 {checkoutLoadingKey==='plan_pro'?'…':'Pro · 70/mes'}
               </button>

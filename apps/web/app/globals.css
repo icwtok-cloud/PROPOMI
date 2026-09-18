@@ -378,3 +378,135 @@ section#propiedades .grid{
   .grid.properties,
   section#propiedades .grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 }
+
+/* ========== Agencia UX polish 2026-09-18 ========== */
+.pill-ok{background:#eef8f1;color:#1f6b3b}
+.pill-pending{background:#fff7e8;color:#8a6116}
+.pill-error{background:#FBEDE7;color:#9E3F28}
+.pill.pill-ok,.pill.pill-pending,.pill.pill-error{
+  display:inline-flex;align-items:center;gap:5px;font-weight:700;
+}
+
+/* Shell del panel: más aire y menos “página en blanco” */
+.agent-shell{padding-bottom:48px}
+.agentdash-card{max-width:440px;margin:48px auto 80px}
+.agentlogin{
+  background:#fff;border:1px solid #e2e7ed;border-radius:22px;
+  padding:32px 28px;box-shadow:0 18px 50px rgba(16,32,51,.08);
+}
+.agentlogin .eyebrow{margin-bottom:6px}
+.agentlogin h3{margin:4px 0 8px;font-size:24px;letter-spacing:-.4px}
+.agentloginrow input:focus{
+  outline:0;border-color:#BF4E32;box-shadow:0 0 0 3px rgba(191,78,50,.12);
+}
+
+/* Métricas: acento lateral + lectura más clara */
+.agentmetrics div{
+  position:relative;overflow:hidden;
+  border-left:3px solid transparent;
+}
+.agentmetrics div:nth-child(1){border-left-color:#BF4E32}
+.agentmetrics div:nth-child(2){border-left-color:#C96B4A}
+.agentmetrics div:nth-child(3){border-left-color:#1f6b3b}
+.agentmetrics div:nth-child(4){border-left-color:#314258}
+.agentmetrics div:nth-child(5){border-left-color:#8a6116}
+
+/* Tabs con más presencia */
+.agentdashtabs{
+  background:#fff;border:1px solid #e2e7ed;border-radius:16px;
+  padding:8px;box-shadow:0 4px 16px rgba(16,32,51,.04);
+}
+.agentdashtabs .tab{border:0;background:transparent}
+
+/* Ofertas: card más “lead inbox” */
+.offercard{
+  border-radius:16px;padding:16px 18px;border-left-width:4px;
+  box-shadow:0 6px 20px rgba(16,32,51,.05);
+}
+.offercardhead strong{font-size:20px;letter-spacing:-.3px}
+.offercard-meta{
+  display:flex;flex-wrap:wrap;gap:6px 12px;margin:6px 0 4px;
+}
+.offercard-meta .chip-soft{
+  font-size:11.5px;font-weight:650;color:#536174;
+  background:#f3f6f9;border-radius:999px;padding:4px 10px;
+}
+.agentdashpane{gap:14px}
+
+/* Empty / notice más legibles */
+.empty{
+  padding:40px 28px;border-radius:18px;
+  background:linear-gradient(180deg,#fbfaf8,#f5f7fa);
+  border:1.5px dashed #e2c6b3;
+}
+.empty strong{display:block;color:#102033;margin-bottom:6px;font-size:15px}
+
+/* Upsell: bloque claro, CTA secundaria destacada */
+.offer-plan-upsell{
+  margin-top:10px;padding:12px 12px 10px;border-radius:12px;
+  background:linear-gradient(180deg,#fbf8f6,#f5f7fa);
+  border:1px solid #efe4dc;border-top:1px solid #efe4dc;
+}
+.offer-plan-upsell .upsell-title{
+  display:block;font-size:11px;font-weight:800;letter-spacing:.06em;
+  text-transform:uppercase;color:#8a6116;margin-bottom:8px;
+}
+.offer-plan-row{gap:8px}
+.offer-plan-row .secondary{
+  background:#fff;border-color:#e2c6b3;font-weight:700;
+  transition:border-color .15s,background .15s,transform .1s;
+}
+.offer-plan-row .secondary:hover:not(:disabled){
+  border-color:#BF4E32;background:#fff0f1;color:#9E3F28;
+}
+.offer-plan-row .secondary.upsell-highlight{
+  border-color:#BF4E32;background:#BF4E32;color:#fff;
+}
+.offer-plan-row .secondary.upsell-highlight:hover:not(:disabled){
+  background:#9E3F28;color:#fff;
+}
+
+/* Reveal boxes un poco más sólidos */
+.reveal-box{padding:10px 12px;border-radius:10px;font-weight:600}
+.reveal-box--done{border:1px solid #cfe9d8}
+.reveal-box--pending{border:1px solid #f0e0b8}
+
+/* Oportunidades / filas de propiedad */
+.opprow{
+  border-radius:14px;padding:14px 16px;
+  transition:box-shadow .15s,border-color .15s;
+}
+.opprow:hover{border-color:#d0d8e2;box-shadow:0 6px 18px rgba(16,32,51,.06)}
+
+/* Sección intro (qué hacer acá) */
+.pane-intro{
+  display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  padding:14px 16px;border-radius:14px;margin-bottom:4px;
+  background:#fff;border:1px solid #e2e7ed;
+}
+.pane-intro h3{margin:0 0 4px;font-size:16px;letter-spacing:-.2px}
+.pane-intro p{margin:0;font-size:13px;color:#728096;line-height:1.45;max-width:520px}
+
+/* Storefront / detalle: menos “placa blanca plana” */
+.modal.wide{box-shadow:0 40px 120px rgba(0,0,0,.4)}
+.detail .bigprice{letter-spacing:-.8px;color:#102033}
+.detail .detailactions{
+  margin-top:16px;padding-top:14px;border-top:1px solid #eef1f5;
+  display:flex;flex-wrap:wrap;gap:8px;
+}
+.detail .notice{margin-top:14px}
+.detail-photo-placeholder{
+  width:100%;height:360px;border-radius:14px;
+  background:linear-gradient(145deg,#e8edf3,#f5f7fa);
+  display:grid;place-items:center;color:#9aa8b8;font-weight:700;font-size:15px;
+}
+.storefront-hero-sub{max-width:560px;color:#b9c7d9;font-size:16px;line-height:1.55;margin-top:10px}
+
+/* Thumbnails del detalle */
+.detail-thumbs{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.detail-thumb{
+  padding:0;border:2px solid transparent;border-radius:8px;overflow:hidden;
+  width:56px;height:56px;cursor:pointer;background:#f0ebe6;
+}
+.detail-thumb.active{border-color:#BF4E32}
+.detail-thumb img{width:100%;height:100%;object-fit:cover;display:block}

@@ -294,7 +294,7 @@ export default function AgentDashboard(){
 
   const storefrontPath=agency?.slug?`/tienda/${agency.slug}`:null;
 
-  return <div className="container agent-panel">
+  return <div className="container agent-shell">
     <div className="agentdashhead">
       <div>
         <span className="eyebrow">Panel de agencia</span>
@@ -326,8 +326,14 @@ export default function AgentDashboard(){
     </div>
 
     {section==='ofertas' && <div className="agentdashpane">
+      <div className="pane-intro">
+        <div>
+          <h3>Bandeja de ofertas</h3>
+          <p>Revisá propuestas de precio, contraofertá con un toque y revelá el contacto solo cuando valga la pena.</p>
+        </div>
+      </div>
       {agency?.verificationStatus!=='VERIFIED' && (
-        <div className="notice">
+        <div className="notice notice-warn">
           {offersRestrictedCount && offersRestrictedCount>0
             ? <>Tenés <strong>{offersRestrictedCount}</strong> oferta{offersRestrictedCount===1?'':'s'} esperando — verificá tu cuenta para verlas y poder revelar contactos.</>
             : <>Tu agencia está <strong>{agency?.verificationStatus==='REJECTED'?'rechazada':'pendiente de verificación'}</strong>. Cuando esté Verificada vas a poder ver el detalle de las ofertas y revelar contactos.</>}
@@ -335,7 +341,7 @@ export default function AgentDashboard(){
         </div>
       )}
       {agency?.verificationStatus==='VERIFIED' && offers.length===0 && (
-        <div className="empty">Todavía no recibiste ofertas. En cuanto un comprador proponga un precio en alguna de tus publicaciones, va a aparecer acá.</div>
+        <div className="empty"><strong>Todavía no hay ofertas</strong>En cuanto un comprador proponga un precio en alguna de tus publicaciones, va a aparecer acá con acciones listas para aceptar, rechazar o contraofertar.</div>
       )}
       {agency?.verificationStatus==='VERIFIED' && offers.map(o=><div key={o.id} className="offercard">
         <div className="offercardhead"><strong>USD {o.amount.toLocaleString('en-US')}</strong><span className="pill">{o.status}</span></div>
@@ -345,8 +351,12 @@ export default function AgentDashboard(){
             {o.listing_group_id?' · ficha multi-agente':''}
           </p>
         )}
-        {o.origin && <p className="muted small">Origen: {o.origin}</p>}
-        <div className="muted small">{o.payment_form} · {o.timeframe||'Plazo sin especificar'} · Capital: {o.capital?`USD ${o.capital.toLocaleString('en-US')}`:'—'}</div>
+        <div className="offercard-meta">
+          {o.payment_form && <span className="chip-soft">{o.payment_form}</span>}
+          <span className="chip-soft">{o.timeframe||'Plazo sin especificar'}</span>
+          <span className="chip-soft">Capital: {o.capital?`USD ${o.capital.toLocaleString('en-US')}`:'—'}</span>
+          {o.origin && <span className="chip-soft">Origen: {o.origin}</span>}
+        </div>
         {o.comment && <p className="muted small">{o.comment}</p>}
         <AgentOfferActions
           offer={o}
@@ -365,7 +375,15 @@ export default function AgentDashboard(){
     </div>}
 
     {section==='oportunidades' && <div className="agentdashpane">
-      {(!opps || opps.opportunities.length===0) && <div className="empty">Sin actividad reciente todavía en tus publicaciones.</div>}
+      <div className="pane-intro">
+        <div>
+          <h3>Señales de interés</h3>
+          <p>Vistas, guardados, visitas y consultas sobre tus fichas. Te ayuda a priorizar qué publicaciones empujar.</p>
+        </div>
+      </div>
+      {(!opps || opps.opportunities.length===0) && (
+        <div className="empty"><strong>Sin actividad todavía</strong>Cuando alguien mire, guarde o consulte una de tus propiedades, lo vas a ver acá en orden reciente.</div>
+      )}
       {opps?.opportunities.map(e=><div key={e.id} className="opprow">
         <span>{EVENT_LABELS[e.event]||e.event}</span>
         <span className="muted small">{new Date(e.created_at).toLocaleString('es-AR')}</span>
@@ -373,21 +391,33 @@ export default function AgentDashboard(){
     </div>}
 
     {section==='demanda' && <div className="agentdashpane">
+      <div className="pane-intro">
+        <div>
+          <h3>Demanda del mercado</h3>
+          <p>Qué buscan los compradores (zonas, tipos, operación). Úsalo para decidir dónde publicar o pautar.</p>
+        </div>
+      </div>
       <DemandPanel session={session}/>
     </div>}
 
     {section==='propiedades' && <div className="agentdashpane">
+      <div className="pane-intro">
+        <div>
+          <h3>Tus propiedades</h3>
+          <p>Publicá, copiá el link para redes y sugerí fichas a compradores. Solo agencias verificadas pueden dar de alta.</p>
+        </div>
+      </div>
       {agency?.verificationStatus!=='VERIFIED' && (
-        <div className="notice">
+        <div className="notice notice-warn">
           Tu agencia tiene que estar <strong>Verificada</strong> para publicar propiedades. Completá Instagram en Mi cuenta y esperá la revisión.
         </div>
       )}
 
       <div className="summarycard">
-        <strong>Tus publicaciones</strong>
+        <strong>Listado activo</strong>
         <span className="muted small">{myProperties.length} propiedad{myProperties.length===1?'':'es'}</span>
       </div>
-      {myProperties.length===0 && <div className="empty">Todavía no tenés propiedades publicadas en Propomi.</div>}
+      {myProperties.length===0 && <div className="empty"><strong>Sin publicaciones todavía</strong>Cuando publiques o se vinculen avisos por teléfono, van a aparecer acá con link para compartir.</div>}
       {myProperties.map(p=>{
         const cover=(p.images&&p.images.length>0)?p.images[0]:p.image;
         const photoCount=(p.images&&p.images.length>0)?p.images.length:(p.image?1:0);

@@ -1,3 +1,25 @@
+## 2026-09-18 — UX panel agencia + storefront alineado al home
+
+- **Problema reportado:** detalle de tienda (`/tienda/[slug]`) se veía
+  más plano/distinto al del home; panel de agencia blanco y poco guía
+  de “qué hacer”.
+- **Storefront:** mismo patrón de detalle que home — navegación de
+  fotos, thumbs, acciones Hacer pregunta / Pedir visita / Proponer
+  precio, y `IntentWizard` unificado con modos. Placeholder si no hay
+  imagen.
+- **Panel agencia (solo presentación, sin tocar lógica de negocio):**
+  - Intros por pestaña (Ofertas, Oportunidades, Demanda, Propiedades)
+  - Cards de oferta con chips de meta (pago, plazo, capital, origen)
+  - Empty states con título + instrucción
+  - Upsell con título claro y highlight en plan Pro
+  - CSS: métricas con acento, tabs en contenedor, login más sólido,
+    reveal/upsell/opprow refinados
+- **Archivos:** `globals.css`, `AgentDashboard.tsx`,
+  `AgentOfferActions.tsx`, `app/tienda/[slug]/page.tsx`,
+  `PROGRESS_LOG.md`
+
+---
+
 ## 2026-09-18 — Fix build Vercel + limpieza BOM / handoff
 
 - **Causa del fail de Vercel:** `apps/web/components/ComparePanel.tsx` tenía

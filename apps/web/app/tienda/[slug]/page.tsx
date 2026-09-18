@@ -1,9 +1,9 @@
 'use client';
 import {use,useEffect,useState} from 'react';
 import Link from 'next/link';
-import {ShieldCheck} from 'lucide-react';
+import {CalendarDays,ChevronLeft,ChevronRight,MessageSquare,ShieldCheck} from 'lucide-react';
 import PropertyCard from '../../../components/PropertyCard';
-import IntentWizard from '../../../components/IntentWizard';
+import IntentWizard, {WizardMode} from '../../../components/IntentWizard';
 import {getAgencyBySlug,getProperties,trackEvent,captureOfferOriginFromUrl} from '../../../lib/api';
 import {Agency,Property} from '../../../lib/types';
 
@@ -22,7 +22,7 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
   const [notFound,setNotFound] = useState(false);
   const [items,setItems] = useState<Property[]>([]);
   const [saved,setSaved] = useState<string[]>([]);
-  const [offer,setOffer] = useState<Property | null>(null);
+  const [wizard,setWizard] = useState<{p:Property;mode:WizardMode}|null>(null);
   const [detail,setDetail] = useState<Property | null>(null);
   const [photoIdx,setPhotoIdx] = useState(0);
   const [toast,setToast] = useState('');
@@ -84,25 +84,29 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
         <div className="eyebrow">Storefront de agencia</div>
         <h1>{agency ? agency.name : 'Cargando…'}</h1>
         {agency && <div className="focus-badge"><ShieldCheck size={14}/> {agency.verificationStatus === 'VERIFIED' ? 'Agencia verificada' : 'Verificación pendiente'}</div>}
-        <p>{items.length} propiedad{items.length === 1 ? '' : 'es'} publicada{items.length === 1 ? '' : 's'} en Propomi.</p>
+        <p className="storefront-hero-sub">{items.length} propiedad{items.length === 1 ? '' : 'es'} publicada{items.length === 1 ? '' : 's'} en Propomi. Explorá, preguntá o proponé precio con el mismo flujo seguro que en el portal.</p>
       </div></section>
 
       <section className="section"><div className="container">
         <div className="grid">{items.map(p =>
           <PropertyCard key={p.id} p={p} saved={saved.includes(p.id)} compared={false}
             onSave={() => toggleSave(p)} onCompare={() => {}}
-            onOffer={() => setOffer(p)} onView={() => openDetail(p)}/>)}
+            onOffer={() => setWizard({p, mode:'offer'})} onView={() => openDetail(p)}/>)}
         </div>
         {agency && items.length === 0 && <div className="empty">Esta agencia todavía no tiene propiedades activas en Propomi.</div>}
       </div></section>
     </main>
 
-    {offer && <IntentWizard p={offer} mode="offer" onClose={() => setOffer(null)} onDone={m => { setOffer(null); setToast(m); }}/>}
+    {wizard && <IntentWizard p={wizard.p} mode={wizard.mode} onClose={() => setWizard(null)} onDone={m => { setWizard(null); setToast(m); }}/>}
 
     {detail && <div className="modalback"><div className="modal wide">
       <div className="modalhead">
-        <div><span className="eyebrow">Detalle · {detail.freshness}</span><h2>{detail.title}</h2><p className="muted">{detail.zone}, {detail.city}</p></div>
-        <button className="close" onClick={() => setDetail(null)}>×</button>
+        <div>
+          <span className="eyebrow">Detalle · {detail.freshness || 'publicación'}</span>
+          <h2>{detail.title}</h2>
+          <p className="muted">{detail.zone}, {detail.city}{detail.source ? ` · ${detail.source}` : ''}</p>
+        </div>
+        <button className="close" type="button" onClick={() => setDetail(null)} aria-label="Cerrar">×</button>
       </div>
       <div className="detail">
         {(() => {
@@ -110,13 +114,24 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
           const current=photos[Math.min(photoIdx,Math.max(photos.length-1,0))]||detail.image;
           return (
             <div>
-              <img src={current} alt={detail.title}/>
+              {current ? (
+                <div className="detail-photo-wrap">
+                  <img src={current} alt={detail.title}/>
+                  {photos.length>1 && (
+                    <>
+                      <button type="button" className="detail-photo-nav prev" aria-label="Foto anterior" onClick={()=>setPhotoIdx(i=>(i-1+photos.length)%photos.length)}><ChevronLeft size={18}/></button>
+                      <button type="button" className="detail-photo-nav next" aria-label="Foto siguiente" onClick={()=>setPhotoIdx(i=>(i+1)%photos.length)}><ChevronRight size={18}/></button>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="detail-photo-placeholder">Sin foto disponible</div>
+              )}
               {photos.length>1 && (
-                <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap',alignItems:'center'}}>
+                <div className="detail-thumbs">
                   {photos.map((src,i)=>(
-                    <button key={src+i} type="button" onClick={()=>setPhotoIdx(i)}
-                      style={{padding:0,border:i===photoIdx?'2px solid #c2632f':'2px solid transparent',borderRadius:8,overflow:'hidden',width:56,height:56,cursor:'pointer',background:'#f0ebe6'}}>
-                      <img src={src} alt="" style={{width:'100%',height:'100%',objectFit:'cover',display:'block'}}/>
+                    <button key={src+i} type="button" className={i===photoIdx?'detail-thumb active':'detail-thumb'} onClick={()=>setPhotoIdx(i)}>
+                      <img src={src} alt=""/>
                     </button>
                   ))}
                   <span className="muted small">{photoIdx+1}/{photos.length}</span>
@@ -125,20 +140,35 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
             </div>
           );
         })()}
-        <div><div className="bigprice">
+        <div>
+          <div className="bigprice">
             {detail.priceMin!=null&&detail.priceMax!=null&&detail.priceMin!==detail.priceMax
               ? <>USD {detail.priceMin.toLocaleString('en-US')} – {detail.priceMax.toLocaleString('en-US')}</>
-              : <>USD {detail.price.toLocaleString('en-US')}</>}
+              : <>USD {Number(detail.price||0).toLocaleString('en-US')}</>}
           </div>
           {detail.groupMemberCount!=null&&detail.groupMemberCount>1&&(
             <p className="muted small">Ficha multi-agente · {detail.groupMemberCount} publicaciones</p>
           )}
           <p>{detail.description}</p>
           <div className="specs large">{detail.surface} m² · {detail.rooms} ambientes · {detail.bedrooms} dormitorios · {detail.bathrooms} baño</div>
+          {(detail.source || detail.freshness) && (
+            <div className="tags">
+              {detail.source && <span>Fuente: {detail.source}</span>}
+              {detail.freshness && <span>{detail.freshness}</span>}
+            </div>
+          )}
           <div className="detailactions">
-            <button className="primary" onClick={() => { setDetail(null); setOffer(detail); }}>Proponer precio</button>
+            <button type="button" className="secondary" onClick={() => { setDetail(null); setWizard({p: detail, mode: 'question'}); }}>
+              <MessageSquare size={15}/> Hacer pregunta
+            </button>
+            <button type="button" className="secondary" onClick={() => { setDetail(null); setWizard({p: detail, mode: 'visit'}); }}>
+              <CalendarDays size={15}/> Pedir visita
+            </button>
+            <button type="button" className="primary" onClick={() => { setDetail(null); setWizard({p: detail, mode: 'offer'}); }}>
+              Proponer precio
+            </button>
           </div>
-          <div className="notice"><b>Privacidad:</b> proponer un precio no comparte automáticamente tu teléfono o email.</div>
+          <div className="notice"><b>Privacidad:</b> ninguna de estas acciones comparte automáticamente tu teléfono o email.</div>
         </div>
       </div>
     </div></div>}
