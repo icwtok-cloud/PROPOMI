@@ -575,6 +575,7 @@ export default function Home(){
       <div className="brand">prop<span className="omiWord">omi</span></div>
       <p>Propomi.lat · Descubrimiento, intención, decisión y negociación inmobiliaria.</p>
       <small>Arquitectura preparada para LATAM: moneda, país, zona, fuente y unidades desacopladas.</small>
+      <p className="legal-entity">Propomi is a product of <strong>HernanV, INC.</strong> · 651 N Broad St, Suite 201, Middletown, Delaware 19709, USA</p>
     </div></footer>
   </>;
 }
