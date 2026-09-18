@@ -3441,17 +3441,24 @@ if ENV != "production":
 def _ls_create_checkout_url(variant_id: str, agency_id: str, custom: dict[str, str], email: str | None = None) -> str | None:
     if not (LEMON_SQUEEZY_API_KEY and LEMON_SQUEEZY_STORE_ID and variant_id):
         return None
-    # Lemon exige que TODO valor en checkout_data.custom sea string (no null).
-    # Si un producto/variant heredó custom fields offer_id/lead_id como requeridos
-    # (p.ej. clonado desde el producto reveal), mandamos "" en todos los checkouts.
-    custom_str = {str(k): ("" if v is None else str(v)) for k, v in (custom or {}).items()}
-    if "offer_id" not in custom_str:
-        custom_str["offer_id"] = ""
-    if "lead_id" not in custom_str:
-        custom_str["lead_id"] = ""
+
+    def _ls_custom_str(v: Any) -> str:
+        # Lemon valida custom.* como string; null falla.
+        # "" a veces también lo rechaza (lo trata como vacío/null en custom fields
+        # definidos en el producto). Usar placeholder no vacío.
+        if v is None:
+            return "none"
+        s = str(v).strip()
+        return s if s else "none"
+
+    # Siempre incluir offer_id/lead_id como string no vacío (compra suelta de
+    # reveal no trae oferta/lead; los planes tampoco).
+    custom_str = {str(k): _ls_custom_str(v) for k, v in (custom or {}).items()}
+    custom_str["offer_id"] = _ls_custom_str(custom_str.get("offer_id"))
+    custom_str["lead_id"] = _ls_custom_str(custom_str.get("lead_id"))
     checkout_data: dict[str, Any] = {"custom": custom_str}
     if email:
-        checkout_data["email"] = email
+        checkout_data["email"] = str(email)
     payload = {
         "data": {
             "type": "checkouts",
@@ -3465,9 +3472,11 @@ def _ls_create_checkout_url(variant_id: str, agency_id: str, custom: dict[str, s
             },
         }
     }
+    body_bytes = json.dumps(payload).encode("utf-8")
+    print(f"[PROPOMI LEMON SQUEEZY] checkout payload custom={custom_str!r} variant={variant_id}")
     req = urllib.request.Request(
         f"{LEMON_SQUEEZY_API_BASE}/checkouts",
-        data=json.dumps(payload).encode("utf-8"),
+        data=body_bytes,
         method="POST",
         headers={
             "Accept": "application/vnd.api+json",
@@ -3567,8 +3576,11 @@ def create_payment_checkout(payload: CheckoutRequestIn, session: dict[str, Any] 
             ))
             db.commit()
         custom = {
-            "transaction_id": transaction_id, "agency_id": agency_id, "kind": "reveal",
-            "offer_id": payload.offer_id or "", "lead_id": payload.lead_id or "",
+            "transaction_id": str(transaction_id),
+            "agency_id": str(agency_id),
+            "kind": "reveal",
+            "offer_id": str(payload.offer_id) if payload.offer_id else "none",
+            "lead_id": str(payload.lead_id) if payload.lead_id else "none",
         }
         url = _ls_create_checkout_url(str(variant_id), agency_id, custom, payload.email)
         if not url:
