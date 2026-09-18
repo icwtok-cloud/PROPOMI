@@ -1,4 +1,4 @@
-use client';
+'use client';
 import { Property } from '../lib/types';
 import { X } from 'lucide-react';
 

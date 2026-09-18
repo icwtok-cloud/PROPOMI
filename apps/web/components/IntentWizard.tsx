@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 import {useState,useRef,useEffect} from 'react';
 import {Property,Intent,Session} from '../lib/types';
 import {createOffer,createLead,saveIntent,trackEvent,getOrCreateBuyerSession,getBuyerProfile,setBuyerProfile,requestOtp,verifyOtpBuyer,setBuyerSession,linkGoogleIdentity,getOfferOrigin,clearBuyerIdentity} from '../lib/api';

@@ -1,3 +1,27 @@
+## 2026-09-18 — Fix build Vercel + limpieza BOM / handoff
+
+- **Causa del fail de Vercel:** `apps/web/components/ComparePanel.tsx` tenía
+  `use client;` **sin comillas** (el parser de Next/SWC lo tomaba como
+  expression statement). Error exacto:
+  `Expected ';', '}' or <eof>` en línea 1.
+- **Fix:** cambiado a `'use client';` (mismo estilo que el resto del repo).
+- **BOM UTF-8:** removido de `IntentWizard.tsx` y `app/layout.tsx` (el BOM
+  al inicio del archivo puede romper el directive y el parseo en algunos
+  entornos).
+- **Verificado:** el resto de `.tsx` ya usaba `'use client';` o `"use client";`
+  correctamente. El guard de `scripts/check.sh` ya detectaba este caso.
+- **No se tocaron** wizard ni upsell de ofertas (ya estaban implementados
+  en `IntentWizard.tsx` y `AgentOfferActions.tsx` + wiring en
+  `AgentDashboard.tsx`). Mapping Lemon (`plan_basic`→PLAN_30,
+  `plan_pro`→PLAN_50, `plan_premium`→PLAN_99) coherente FE/BE.
+- **Archivos tocados en este paquete:**
+  - `apps/web/components/ComparePanel.tsx`
+  - `apps/web/components/IntentWizard.tsx` (solo strip BOM)
+  - `apps/web/app/layout.tsx` (solo strip BOM)
+  - `PROGRESS_LOG.md` (esta entrada)
+
+---
+
 ## 2026-09-13 — Cierre de sesión / punto de retomada
 
 - **Este es un corte de sesión de chat, no una etapa nueva.** El usuario va
