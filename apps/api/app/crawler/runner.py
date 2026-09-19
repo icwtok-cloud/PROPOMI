@@ -359,15 +359,38 @@ def run_source(db, source: SourceConfig) -> dict[str, Any]:
             stats["errors"] += 1
             continue
 
-        payload = to_property_payload(raw)
+        try:
+            payload = to_property_payload(raw)
+        except Exception:
+            logger.exception("crawler source=%s normalize falló url=%s", source.id, url)
+            stats["errors"] += 1
+            continue
         if is_duplicate(payload, seen_fp):
             stats["skipped"] += 1
             continue
 
-        result = upsert_payload(db, payload, source.id)
-        stats[result] += 1
+        # Aislar error por ficha: savepoint local para que un DataError
+        # (varchar overflow, etc.) no envenene la sesión ni aborte el resto
+        # de la fuente ni las fuentes siguientes.
+        try:
+            with db.begin_nested():
+                result = upsert_payload(db, payload, source.id)
+            stats[result] += 1
+        except Exception:
+            logger.exception(
+                "crawler source=%s upsert falló url=%s (rollback local)",
+                source.id,
+                url,
+            )
+            stats["errors"] += 1
+            # begin_nested ya hizo rollback del savepoint; sesión queda usable
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        logger.exception("crawler source=%s commit final falló", source.id)
+        db.rollback()
+        raise
     return {"discovered": len(detail_urls), **stats}
 
 
@@ -434,6 +457,10 @@ def run_crawl(
             logger.exception("crawler source=%s failed", sid)
             report["sources"][sid] = {"error": str(exc)}
             report["ok"] = False
+            try:
+                db.rollback()
+            except Exception:
+                logger.exception("crawler source=%s rollback post-error falló", sid)
         completed.append(sid)
         _emit("source_done", sid)
 

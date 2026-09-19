@@ -25,7 +25,7 @@ function isValidCityName(name: string | null | undefined): boolean {
   return true;
 }
 
-const COUNTRY_OPTIONS=['Todos','Argentina','Paraguay','Uruguay'];
+const COUNTRY_OPTIONS=['Todos','Argentina','Paraguay','Uruguay','México'];
 
 export default function Home(){
   const [items,setItems]=useState<Property[]>([]);
@@ -91,12 +91,14 @@ export default function Home(){
       setZone(zonesForCity[0]||'');
     }
   },[city,zonesByCity]);
+  // Carga inicial rápida (muestra aleatoria) + sesión / deep-link.
+  // La búsqueda real se dispara en el efecto de filtros más abajo.
   useEffect(()=>{(async()=>{
     try{
       setIsLoading(true);
       setLoadError(null);
-      const items=dedupeByGroup(await getPropertiesRandom(30,{operation:'Venta'}));
-      setItems(items);
+      const initial=dedupeByGroup(await getPropertiesRandom(30,{operation:'Venta'}));
+      setItems(initial);
       try{
         const s=await getOrCreateBuyerSession();
         const offersList=await listOffers(s);
@@ -106,13 +108,13 @@ export default function Home(){
       if(typeof window==='undefined')return;
       const pid=new URLSearchParams(window.location.search).get('property');
       if(!pid)return;
-      let found=items.find(p=>p.id===pid)||null;
+      let found=initial.find(p=>p.id===pid)||null;
       if(!found){
         const all=await getProperties({operation:'Venta'});
         const raw=all.find(p=>p.id===pid);
         if(raw){
           found=raw.listingGroupId
-            ?(items.find(p=>p.listingGroupId===raw.listingGroupId)||raw)
+            ?(initial.find(p=>p.listingGroupId===raw.listingGroupId)||raw)
             :raw;
         }
       }
@@ -127,6 +129,72 @@ export default function Home(){
       setIsLoading(false);
     }
   })()},[]);
+
+  // Búsqueda real contra GET /properties cuando el usuario arma filtros.
+  // Sin esto el home solo veía las 30 random iniciales y el inventario del
+  // crawler (MX, pozo, etc.) no aparecía aunque estuviera en la DB.
+  useEffect(()=>{
+    const hasGeoFilter =
+      (country && country !== 'Todos') ||
+      !!province ||
+      !!city ||
+      !!zone;
+    const hasTypeFilter = ptype !== 'Todos' || (rooms && rooms !== 'Todos');
+    const hasBudget = !!budget;
+    // Primera pintura: dejar la muestra random. Solo refetch cuando hay
+    // criterios reales (país, provincia, ciudad, tipo, presupuesto…).
+    if (!hasGeoFilter && !hasTypeFilter && !hasBudget) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        setIsLoading(true);
+        setLoadError(null);
+        const filters: Record<string, string | number | boolean> = {
+          operation: 'Venta',
+        };
+        if (country && country !== 'Todos') filters.country = country;
+        if (province) filters.province = province;
+        if (city) filters.city = city;
+        if (zone) filters.zone = zone;
+        if (ptype === 'En Pozo') {
+          filters.under_construction = true;
+        } else if (ptype && ptype !== 'Todos') {
+          filters.type = ptype;
+        }
+        if (rooms && rooms !== 'Todos') filters.rooms = Number(rooms);
+        if (budget) filters.max_price = Number(budget);
+        if (parking) filters.parking = true;
+        if (credit) filters.credit = true;
+        if (investmentOnly) filters.investment_opportunity = true;
+
+        const list = dedupeByGroup(await getProperties(filters));
+        if (!cancelled) {
+          setItems(list);
+          try {
+            trackSearchPerformed({
+              country: country !== 'Todos' ? country : undefined,
+              province: province || undefined,
+              city: city || undefined,
+              zone: zone || undefined,
+              type: ptype !== 'Todos' ? ptype : undefined,
+              rooms: rooms !== 'Todos' ? rooms : undefined,
+              max_price: budget || undefined,
+              result_count: list.length,
+            } as any);
+          } catch { /* analytics best-effort */ }
+        }
+      } catch (e: any) {
+        if (!cancelled) {
+          setLoadError(e?.message || 'No pudimos buscar propiedades. Probá de nuevo.');
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [country, province, city, zone, ptype, rooms, budget, parking, credit, investmentOnly]);
+
   useEffect(()=>{if(toast){const t=setTimeout(()=>setToast(''),3500);return()=>clearTimeout(t)}},[toast]);
   useEffect(()=>{
     const onScroll=()=>{
@@ -278,6 +346,7 @@ export default function Home(){
                           ...canonicalAdminUnits('Argentina'),
                           ...canonicalAdminUnits('Paraguay'),
                           ...canonicalAdminUnits('Uruguay'),
+                          ...canonicalAdminUnits('México'),
                           ...Object.values(provincesByCountry).flat(),
                         ])).sort((a,b)=>a.localeCompare(b,'es'))
                   ).map(pr=><option key={pr} value={pr}>{pr}</option>)}

@@ -219,8 +219,9 @@ def to_property_payload(raw: RawListing | dict[str, Any], source_id: str | None 
     _cmap = {"AR": "Argentina", "PY": "Paraguay", "UY": "Uruguay", "ar": "Argentina", "py": "Paraguay", "uy": "Uruguay"}
     country = _cmap.get(str(country), str(country))
     province = (d.get("province") or extras.get("province") or "")[:100]
-    zone = fix_mojibake(d.get("zone") or "")
-    city = fix_mojibake(d.get("city") or "")
+    # DB columns zone/city are String(100); long addresses from InfoCasas etc. must not raise DataError
+    zone = fix_mojibake(d.get("zone") or "")[:100]
+    city = fix_mojibake(d.get("city") or "")[:100]
     title = fix_mojibake((d.get("title") or "Sin título")[:180])
     description = fix_mojibake(strip_description(d.get("description")))
 

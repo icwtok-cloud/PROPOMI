@@ -72,16 +72,54 @@ export const UY_DEPARTMENTS: string[] = [
   'Treinta y Tres',
 ];
 
+/** 32 entidades federativas de México (nombres cortos de uso habitual) */
+export const MX_STATES: string[] = [
+  'Aguascalientes',
+  'Baja California',
+  'Baja California Sur',
+  'Campeche',
+  'Chiapas',
+  'Chihuahua',
+  'Ciudad de México',
+  'Coahuila',
+  'Colima',
+  'Durango',
+  'Estado de México',
+  'Guanajuato',
+  'Guerrero',
+  'Hidalgo',
+  'Jalisco',
+  'Michoacán',
+  'Morelos',
+  'Nayarit',
+  'Nuevo León',
+  'Oaxaca',
+  'Puebla',
+  'Querétaro',
+  'Quintana Roo',
+  'San Luis Potosí',
+  'Sinaloa',
+  'Sonora',
+  'Tabasco',
+  'Tamaulipas',
+  'Tlaxcala',
+  'Veracruz',
+  'Yucatán',
+  'Zacatecas',
+];
+
 export function canonicalAdminUnits(country: string): string[] {
   if (country === 'Argentina') return AR_PROVINCES;
   if (country === 'Paraguay') return PY_DEPARTMENTS;
   if (country === 'Uruguay') return UY_DEPARTMENTS;
+  if (country === 'México' || country === 'Mexico') return MX_STATES;
   return [];
 }
 
 /** Label del 2º nivel territorial según país del buscador. */
 export function adminUnitLabel(country: string): string {
   if (country === 'Paraguay' || country === 'Uruguay') return 'Departamento';
+  if (country === 'México' || country === 'Mexico') return 'Estado';
   if (country === 'Argentina') return 'Provincia';
   return 'Provincia / Departamento';
 }
