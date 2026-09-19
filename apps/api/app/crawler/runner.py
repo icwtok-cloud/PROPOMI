@@ -375,7 +375,19 @@ def run_source(db, source: SourceConfig) -> dict[str, Any]:
             continue
 
         try:
-            payload = to_property_payload(raw)
+            # Siempre pasar source.id: evita que parsers compartidos
+            # (ej. mercadolibre_mx → parse_detail ML) fijen país AR por error.
+            payload = to_property_payload(raw, source_id=source.id)
+            payload["source"] = source.id
+            from .normalize import SOURCE_COUNTRY
+            if not payload.get("country") or (
+                source.id.endswith("_mx") and payload.get("country") == "Argentina"
+            ):
+                payload["country"] = (
+                    SOURCE_COUNTRY.get(source.id)
+                    or payload.get("country")
+                    or "Argentina"
+                )
         except Exception:
             logger.exception("crawler source=%s normalize falló url=%s", source.id, url)
             stats["errors"] += 1

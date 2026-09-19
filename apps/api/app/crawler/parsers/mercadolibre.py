@@ -92,6 +92,54 @@ def _province_from_url_or_html(url: str, html: str) -> str:
     return "Buenos Aires"
 
 
+def _province_mx_from_url_or_html(url: str, html: str) -> str:
+    """Estados de México desde URL de listado/ficha ML MX."""
+    u = url.lower()
+    h = html.lower()[:8000]
+    pairs = [
+        ("distrito-federal", "Ciudad de México"),
+        ("ciudad-de-mexico", "Ciudad de México"),
+        ("cdmx", "Ciudad de México"),
+        ("estado-de-mexico", "Estado de México"),
+        ("edo-mex", "Estado de México"),
+        ("jalisco", "Jalisco"),
+        ("nuevo-leon", "Nuevo León"),
+        ("nuevo_leon", "Nuevo León"),
+        ("queretaro", "Querétaro"),
+        ("puebla", "Puebla"),
+        ("guanajuato", "Guanajuato"),
+        ("yucatan", "Yucatán"),
+        ("quintana-roo", "Quintana Roo"),
+        ("baja-california-sur", "Baja California Sur"),
+        ("baja-california", "Baja California"),
+        ("veracruz", "Veracruz"),
+        ("chihuahua", "Chihuahua"),
+        ("coahuila", "Coahuila"),
+        ("michoacan", "Michoacán"),
+        ("morelos", "Morelos"),
+        ("hidalgo", "Hidalgo"),
+        ("aguascalientes", "Aguascalientes"),
+        ("san-luis-potosi", "San Luis Potosí"),
+        ("tamaulipas", "Tamaulipas"),
+        ("sonora", "Sonora"),
+        ("sinaloa", "Sinaloa"),
+        ("tabasco", "Tabasco"),
+        ("oaxaca", "Oaxaca"),
+        ("chiapas", "Chiapas"),
+        ("guerrero", "Guerrero"),
+        ("durango", "Durango"),
+        ("nayarit", "Nayarit"),
+        ("colima", "Colima"),
+        ("tlaxcala", "Tlaxcala"),
+        ("campeche", "Campeche"),
+        ("zacatecas", "Zacatecas"),
+    ]
+    for key, name in pairs:
+        if key in u or key in h:
+            return name
+    return ""
+
+
 def parse_detail(html: str, url: str) -> RawListing | None:
     price = None
     currency = "USD"
@@ -185,10 +233,25 @@ def parse_detail(html: str, url: str) -> RawListing | None:
     rooms = first_int(
         *(m.group(1) for m in re.finditer(r"(\d)\s*ambientes?", title + " " + description, re.I))
     )
-    province = _province_from_url_or_html(url, html)
+    is_mx = (
+        "mercadolibre.com.mx" in url.lower()
+        or (item_id or "").upper().startswith("MLM")
+        or bool(re.search(r"\bMLM-?\d+", url, re.I))
+    )
+    if is_mx:
+        province = _province_mx_from_url_or_html(url, html)
+        src = "mercadolibre_mx"
+        country = "México"
+        # MX usa MXN con frecuencia
+        if currency in ("ARS", ""):
+            currency = "MXN"
+    else:
+        province = _province_from_url_or_html(url, html)
+        src = SOURCE
+        country = "Argentina"
 
     return RawListing(
-        source=SOURCE,
+        source=src,
         source_url=url,
         external_id=item_id,
         title=title[:180],
@@ -203,4 +266,5 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         operation=detect_operation_from_signals(url=url, html=html, title=title),
         images=images[:5],
         origin_published_at=origin or None,
+        extras={"country": country},
     )

@@ -217,7 +217,11 @@ def to_property_payload(raw: RawListing | dict[str, Any], source_id: str | None 
         or "Argentina"
     )
     # normalizar códigos cortos
-    _cmap = {"AR": "Argentina", "PY": "Paraguay", "UY": "Uruguay", "ar": "Argentina", "py": "Paraguay", "uy": "Uruguay"}
+    _cmap = {
+        "AR": "Argentina", "PY": "Paraguay", "UY": "Uruguay", "MX": "México",
+        "ar": "Argentina", "py": "Paraguay", "uy": "Uruguay", "mx": "México",
+        "Mexico": "México", "mexico": "México",
+    }
     country = _cmap.get(str(country), str(country))
     province = (d.get("province") or extras.get("province") or "")[:100]
     # DB columns zone/city are String(100); long addresses from InfoCasas etc. must not raise DataError
