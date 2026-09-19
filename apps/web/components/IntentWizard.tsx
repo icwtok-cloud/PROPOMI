@@ -7,12 +7,16 @@ import {formatMoney} from '../lib/geo';
 
 export type WizardMode='offer'|'question'|'visit';
 
-const CAPITAL_BUCKETS=[
-  {label:'Menos de USD 50.000',value:30000},
-  {label:'USD 50.000 – 80.000',value:50000},
-  {label:'USD 80.000 – 120.000',value:80000},
-  {label:'Más de USD 120.000',value:120000},
-];
+function capitalBuckets(currency?: string | null) {
+  const c = (currency || 'USD').toUpperCase();
+  // Misma escala numérica; solo cambia el código de moneda visible (sin FX).
+  return [
+    {label:`Menos de ${c} 50.000`, value:30000},
+    {label:`${c} 50.000 – 80.000`, value:50000},
+    {label:`${c} 80.000 – 120.000`, value:80000},
+    {label:`Más de ${c} 120.000`, value:120000},
+  ];
+}
 const PAYMENT_FORMS=[
   {label:'Contado',value:'CASH'},
   {label:'Mixta',value:'MIXED'},
@@ -150,7 +154,7 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
     setError(null);
     try{
       const session:Session|null=await getOrCreateBuyerSession();
-      const capital=CAPITAL_BUCKETS[capitalIdx].value;
+      const capital=capitalBuckets(p.currency)[capitalIdx].value;
       const payment_form=PAYMENT_FORMS[paymentIdx].value;
       const comment=conditions.length?conditions.join(', '):undefined;
       const origin=getOfferOrigin();
@@ -254,7 +258,7 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
       {step===2&&<div className="wizstep">
         <div className="qlabel">¿Con cuánto capital disponible contás?</div>
         <div className="qhelp small">Es un rango, no necesitás el monto exacto.</div>
-        <div className="chipgrid">{CAPITAL_BUCKETS.map((c,i)=>
+        <div className="chipgrid">{capitalBuckets(p.currency).map((c,i)=>
           <button key={c.label} className={capitalIdx===i?'wchip selected':'wchip'} onClick={()=>setCapitalIdx(i)}>{c.label}</button>)}
         </div>
         <div className="qlabel">¿Cómo pensás pagar?</div>

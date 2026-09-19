@@ -116,7 +116,7 @@ export default function AgentDashboard(){
   const [opps,setOpps]=useState<OppData|null>(null);
   const [analytics,setAnalytics]=useState<{properties:number;events:number;offers:number}|null>(null);
   const [section,setSection]=useState<'ofertas'|'oportunidades'|'demanda'|'propiedades'|'cuenta'>('ofertas');
-  const [propForm,setPropForm]=useState({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
+  const [propForm,setPropForm]=useState({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',currency:'USD',surface:'',rooms:'2',description:'',imageUrls:''});
   const [propFormFiles,setPropFormFiles]=useState<File[]>([]);
   const [photoBusyId,setPhotoBusyId]=useState<string|null>(null);
   const [geoCatalog,setGeoCatalog]=useState<GeoCatalog|null>(null);
@@ -267,7 +267,7 @@ export default function AgentDashboard(){
         .slice(0,5);
       const created=await createProperty({
         title,zone,city,country,province,price,surface,rooms,
-        type,operation:'Venta',currency:'USD',
+        type,operation:'Venta',currency:propForm.currency||'USD',
         description:propForm.description.trim()||undefined,
         images,
       },session);
@@ -279,7 +279,7 @@ export default function AgentDashboard(){
           notify(upErr?.message||'Propiedad publicada, pero falló la subida de fotos. Podés reintentar desde el listado.');
         }
       }
-      setPropForm({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
+      setPropForm({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',currency:'USD',surface:'',rooms:'2',description:'',imageUrls:''});
       setPropFormFiles([]);
       notify('Propiedad publicada.');
       try{
@@ -399,7 +399,7 @@ function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers
         <div className="empty"><strong>Todavía no hay ofertas</strong>En cuanto un comprador proponga un precio en alguna de tus publicaciones, va a aparecer acá con acciones listas para aceptar, rechazar o contraofertar.</div>
       )}
       {agency?.verificationStatus==='VERIFIED' && offers.map(o=><div key={o.id} className="offercard">
-        <div className="offercardhead"><strong>USD {o.amount.toLocaleString('en-US')}</strong><span className="pill">{o.status}</span></div>
+        <div className="offercardhead"><strong>{formatMoney(o.amount, o.currency)}</strong><span className="pill">{o.status}</span></div>
         {(o.property_title||o.property_zone) && (
           <p className="muted small" style={{margin:'4px 0'}}>
             {o.property_title||'Propiedad'}{o.property_zone?` · ${o.property_zone}`:''}
@@ -409,7 +409,7 @@ function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers
         <div className="offercard-meta">
           {o.payment_form && <span className="chip-soft">{o.payment_form}</span>}
           <span className="chip-soft">{o.timeframe||'Plazo sin especificar'}</span>
-          <span className="chip-soft">Capital: {o.capital?`USD ${o.capital.toLocaleString('en-US')}`:'—'}</span>
+          <span className="chip-soft">Capital: {o.capital?formatMoney(o.capital, o.currency):'—'}</span>
           {o.origin && <span className="chip-soft">Origen: {o.origin}</span>}
         </div>
         {o.comment && <p className="muted small">{o.comment}</p>}
@@ -575,7 +575,7 @@ function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers
           <div className="publish-grid-2">
             <label className="publish-field">País
               <select value={propForm.country} onChange={e=>{
-                setPropForm(f=>({...f,country:e.target.value,province:'',city:''}));
+                setPropForm(f=>({...f,country:e.target.value,province:'',city:'',currency:e.target.value==='México'||e.target.value==='Mexico'?'MXN':e.target.value==='Paraguay'?'PYG':e.target.value==='Uruguay'?'UYU':'USD'}));
               }}>
                 {(geoCatalog?.countries||['Argentina','Paraguay','Uruguay']).map(c=><option key={c} value={c}>{c}</option>)}
               </select>
@@ -613,8 +613,17 @@ function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers
         <div className="publish-section">
           <div className="publish-section-title">Precio y superficie</div>
           <div className="publish-grid-3">
-            <label className="publish-field">Precio (USD)
+            <label className="publish-field">Precio
               <input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/>
+            </label>
+            <label className="publish-field">Moneda
+              <select value={propForm.currency} onChange={e=>setPropForm(f=>({...f,currency:e.target.value}))}>
+                <option value="USD">USD</option>
+                <option value="ARS">ARS</option>
+                <option value="MXN">MXN</option>
+                <option value="UYU">UYU</option>
+                <option value="PYG">PYG</option>
+              </select>
             </label>
             <label className="publish-field">Superficie (m²)
               <input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/>

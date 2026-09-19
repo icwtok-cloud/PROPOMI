@@ -18,7 +18,6 @@ SOURCE_COUNTRY: dict[str, str] = {
     "mercadolibre_mx": "México",
     "inmoup": "Argentina",
     "inmoclick": "Argentina",
-    "icasas": "Argentina",
     "bienesonline": "Argentina",
     "argencasas": "Argentina",
     "departamentosenpozo": "Argentina",

@@ -7,7 +7,7 @@ import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
 import {getProperties,getPropertiesRandom,dedupeByGroup,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters,getMySuggestions,engageSuggestion,getPropertiesAll} from '../lib/api';
 import {Property,Offer} from '../lib/types';
-import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel,formatMoney} from '../lib/geo';
+import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel,formatMoney,currencyLabel,defaultCurrencyForCountry} from '../lib/geo';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
 const FUNNEL=['Vistas','Guardados','Comparaciones','Consultas','Visitas','Ofertas','Negociaciones','Contacto compartido','Operaciones'];
@@ -173,7 +173,10 @@ export default function Home(){
           filters.type = ptype;
         }
         if (rooms && rooms !== 'Todos') filters.rooms = Number(rooms);
-        if (budget) filters.max_price = Number(budget);
+        if (budget && country && country !== 'Todos') {
+          filters.max_price = Number(budget);
+          filters.currency = defaultCurrencyForCountry(country);
+        }
         if (parking) filters.parking = true;
         if (credit) filters.credit = true;
         if (investmentOnly) filters.investment_opportunity = true;
@@ -246,7 +249,10 @@ export default function Home(){
       if (ptype === 'En Pozo') filters.under_construction = true;
       else if (ptype && ptype !== 'Todos') filters.type = ptype;
       if (rooms && rooms !== 'Todos') filters.rooms = Number(rooms);
-      if (budget) filters.max_price = Number(budget);
+      if (budget && country && country !== 'Todos') {
+        filters.max_price = Number(budget);
+        filters.currency = defaultCurrencyForCountry(country);
+      }
       if (parking) filters.parking = true;
       if (credit) filters.credit = true;
       if (investmentOnly) filters.investment_opportunity = true;
@@ -282,7 +288,11 @@ export default function Home(){
       if(ptype==='En Pozo'){ if(!(p.underConstruction||p.type==='En Pozo')) return false; }
       else if(ptype!=='Todos'&&p.type!==ptype) return false;
       if(rooms&&rooms!=='Todos'&&p.rooms!==Number(rooms)) return false;
-      if(!(p.price<=Number(budget||Infinity))) return false;
+      if(budget){
+        const bc = country && country !== 'Todos' ? defaultCurrencyForCountry(country) : null;
+        if(bc && (p.currency||'USD').toUpperCase() !== bc) return false;
+        if(!(p.price<=Number(budget||Infinity))) return false;
+      }
       if(parking&&!p.parking) return false;
       if(credit&&!p.credit) return false;
       if(balcony&&!p.balcony) return false;
@@ -322,7 +332,12 @@ export default function Home(){
 
   const whereLabel=[country&&country!=='Todos'?country:null,province||null,city||null,zone||null].filter(Boolean).join(' · ')||'Cualquier lugar';
   const typeLabel=ptype==='Todos'?(rooms==='Todos'?'Tipo y ambientes':`${rooms} amb.`):(rooms==='Todos'?propertyTypeLabel(ptype,country):`${propertyTypeLabel(ptype,country)} · ${rooms} amb.`);
-  const budgetLabel=budget?`Hasta USD ${Number(budget).toLocaleString('en-US')}`:'Cualquier presupuesto';
+  const budgetCurrency = country && country !== 'Todos' ? defaultCurrencyForCountry(country) : null;
+  const budgetLabel = !budget
+    ? 'Cualquier presupuesto'
+    : budgetCurrency
+      ? `Hasta ${currencyLabel(budgetCurrency)} ${Number(budget).toLocaleString('en-US')}`
+      : `Hasta ${Number(budget).toLocaleString('en-US')} (elegí país)`;
   const typeIcon=(name:string)=>{
     if(name==='Casa')return <HomeIcon size={18}/>;
     if(name==='Oficina')return <Briefcase size={18}/>;
@@ -448,9 +463,10 @@ export default function Home(){
           {openSeg==='budget'&&(
             <div className="pill-popover">
               <div className="pill-pop-head"><strong>Presupuesto máximo</strong><button type="button" className="icon" onClick={()=>setOpenSeg(null)} aria-label="Cerrar"><X size={18}/></button></div>
-              <label className="budget-big">USD
-                <input value={budget} onChange={e=>setBudget(e.target.value.replace(/[^\d]/g,''))} inputMode="numeric" placeholder="120000"/>
+              <label className="budget-big">{budgetCurrency || 'Moneda'}
+                <input value={budget} onChange={e=>setBudget(e.target.value.replace(/[^\d]/g,''))} inputMode="numeric" placeholder="120000" disabled={!budgetCurrency}/>
               </label>
+              {!budgetCurrency && <p className="muted small">Elegí un país para filtrar por presupuesto (sin mezclar monedas).</p>}
               <p className="muted small">Filtrado en vivo · solo propiedades en venta</p>
             </div>
           )}
@@ -526,7 +542,7 @@ export default function Home(){
       <section className="section darksection"><div className="container">
         <div className="decision-grid">
           <div><div className="eyebrow">Tu capacidad de compra</div><h2>Menos ruido. Más contexto para decidir.</h2>
-            <p>Con USD {Number(budget).toLocaleString('en-US')} de presupuesto, Propomi puede separar inventario compatible y alternativas cuando existen datos suficientes.</p></div>
+            <p>Con {budgetCurrency ? currencyLabel(budgetCurrency) + ' ' : ''}{Number(budget).toLocaleString('en-US')} de presupuesto, Propomi puede separar inventario compatible y alternativas cuando existen datos suficientes.</p></div>
           <div className="metrics">
             <div><b>{filtered.length}</b><span>compatibles</span></div>
             <div><b>{filtered.filter(x=>x.zone===zone).length}</b><span>en tu zona</span></div>
@@ -548,7 +564,7 @@ export default function Home(){
           <div className="howcard"><h3>Tu perfil de intención</h3>
             <div className="profile">
               <div><span>Propiedad</span><b>La que estés evaluando</b></div>
-              <div><span>Presupuesto</span><b>USD {Number(budget).toLocaleString('en-US')}</b></div>
+              <div><span>Presupuesto</span><b>{budgetCurrency ? currencyLabel(budgetCurrency) + ' ' : ''}{Number(budget).toLocaleString('en-US')}</b></div>
               <div><span>Capital disponible</span><b>USD 80.000</b></div>
               <div><span>Financiación</span><b>Sí / a definir</b></div>
               <div><span>Plazo</span><b>30–60 días</b></div>

@@ -233,7 +233,7 @@ FREE_LEADS_ON_VERIFICATION = 10
 LISTING_GROUP_REVEAL_WINDOW_WITH_SUB_HOURS = 24
 LISTING_GROUP_REVEAL_WINDOW_NO_SUB_HOURS = 6
 ONBOARDING_TOKEN_DAYS = 14  # T6.2: token de onboarding expira a los 14 dÃ­as  # doc 06.2.3 / 08: primeros 10 reveals gratis al verificarse
-PROPERTY_FRESHNESS_DAYS = 60  # doc 05 (Etapa 2): filtro de cold-start â€” una propiedad
+PROPERTY_FRESHNESS_DAYS = 60  # Oculta en GET /properties si last_seen_at es más viejo. Distinto de crawler.runner.MAX_AGE_DAYS (90) que rechaza altas nuevas por antigüedad de origin_published_at.
 # que el crawler no vuelve a ver hace mÃ¡s de 60 dÃ­as se considera potencialmente
 # vendida/dada de baja en el portal de origen y se oculta de la bÃºsqueda pÃºblica
 # (no se borra: sigue en la base por si el crawler la vuelve a detectar y
@@ -2497,6 +2497,7 @@ def _properties_base_stmt(
     under_construction: bool | None, investment_opportunity: bool | None,
     exclude_agency_id: str | None,
     include_hidden: bool, admin_ok: bool,
+    currency: str | None = None,
 ):
     """Arma el SELECT + filtros compartido entre /properties (orden por
     prioridad) y /properties/random (orden aleatorio, preview rÃ¡pida del
@@ -2515,7 +2516,11 @@ def _properties_base_stmt(
     if type: stmt = stmt.where(Property.type == type)
     if operation: stmt = stmt.where(Property.operation == operation)
     if rooms: stmt = stmt.where(Property.rooms == rooms)
-    if max_price: stmt = stmt.where(Property.price <= max_price)
+    if max_price is not None:
+        stmt = stmt.where(Property.price <= max_price)
+        # Sin FX: si el cliente manda currency, no mezclar números de monedas distintas
+        if currency:
+            stmt = stmt.where(Property.currency == currency)
     if parking is not None: stmt = stmt.where(Property.parking == parking)
     if credit is not None: stmt = stmt.where(Property.credit == credit)
     if agency_id: stmt = stmt.where(Property.agency_id == agency_id)
@@ -2534,6 +2539,7 @@ def properties(
     rooms: int | None = None, max_price: float | None = None, parking: bool | None = None,
     credit: bool | None = None, agency_id: str | None = None,
     country: str | None = None, province: str | None = None,
+    currency: str | None = None,
     under_construction: bool | None = None, investment_opportunity: bool | None = None,
     exclude_agency_id: str | None = None,
     # Paginación (default 48, max 100). Evita devolver el catálogo entero.
@@ -2565,7 +2571,7 @@ def properties(
         stmt = _properties_base_stmt(
             db, zone=zone, city=city, type=type, operation=operation, rooms=rooms,
             max_price=max_price, parking=parking, credit=credit, agency_id=agency_id,
-            country=country, province=province, under_construction=under_construction,
+            country=country, currency=currency, province=province, under_construction=under_construction,
             investment_opportunity=investment_opportunity, exclude_agency_id=exclude_agency_id,
             include_hidden=include_hidden, admin_ok=admin_ok,
         )
@@ -2643,7 +2649,7 @@ def properties_random(
         stmt = _properties_base_stmt(
             db, zone=zone, city=city, type=type, operation=operation, rooms=rooms,
             max_price=max_price, parking=parking, credit=credit, agency_id=agency_id,
-            country=country, province=province, under_construction=under_construction,
+            country=country, currency=currency, province=province, under_construction=under_construction,
             investment_opportunity=investment_opportunity, exclude_agency_id=exclude_agency_id,
             include_hidden=False, admin_ok=admin_ok,
         )
@@ -2901,6 +2907,7 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
             buyer_phone_raw=payload.buyer_phone,
             buyer_phone_normalized=buyer_phone_normalized,
             **offer_data,
+            currency=p.currency or "USD",
         )
         db.add(offer)
         event_ctx: dict[str, Any] = {"amount": payload.amount}
@@ -2938,7 +2945,7 @@ def create_offer(payload: OfferIn, session: dict[str, Any] = Depends(current_ses
                 agency_id=agency_id_for_task,
                 target_phone=str(target_phone),
                 amount=payload.amount,
-                currency="USD",
+                currency=p.currency or "USD",
                 property_title=p.title,
                 property_zone=p.zone,
                 onboarding_token=token,

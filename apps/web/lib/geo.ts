@@ -130,6 +130,16 @@ export function propertyTypeLabel(typeName: string, country: string): string {
   return typeName;
 }
 
+/** Moneda dominante por país para filtros/UI (sin FX). AR suele listar en USD. */
+export function defaultCurrencyForCountry(country: string | null | undefined): string {
+  const c = (country || '').trim();
+  if (c === 'México' || c === 'Mexico') return 'MXN';
+  if (c === 'Paraguay') return 'PYG';
+  if (c === 'Uruguay') return 'UYU';
+  if (c === 'Argentina') return 'USD';
+  return 'USD';
+}
+
 /** Prefijo de moneda para listados multi-país (no convertir: solo mostrar). */
 export function currencyLabel(code: string | null | undefined): string {
   const c = (code || 'USD').toUpperCase().trim();

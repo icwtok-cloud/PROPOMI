@@ -3,6 +3,7 @@ import {useState} from 'react';
 import {Check,Handshake,Lock,RefreshCw,Unlock,X} from 'lucide-react';
 import {Offer,Session} from '../lib/types';
 import {counterOffer,mockCompletePayment,offerAction,paymentStatus,revealContact} from '../lib/api';
+import {formatMoney} from '../lib/geo';
 
 // Igual criterio que del lado comprador: nada de texto/números libres.
 // La contraoferta se arma con presets sobre el monto ofrecido por el
@@ -125,7 +126,7 @@ export default function AgentOfferActions({
         {COUNTER_PRESETS.map(v=>
           <button key={v} className={pct===v?'quickbtn active':'quickbtn'} onClick={()=>setPct(v)}>+{v}%</button>)}
       </div>
-      <button className="primary" disabled={busy} onClick={counter}><RefreshCw size={14}/> Contraofertar USD {fmt(counterAmount)}</button>
+      <button className="primary" disabled={busy} onClick={counter}><RefreshCw size={14}/> Contraofertar {formatMoney(counterAmount, offer.currency)}</button>
     </div>
 
     {revealed ? (

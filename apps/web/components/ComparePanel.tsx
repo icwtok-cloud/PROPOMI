@@ -1,11 +1,13 @@
 'use client';
 import { Property } from '../lib/types';
 import { X } from 'lucide-react';
+import { formatMoney } from '../lib/geo';
 
 type Row = { key: string; get: (p: Property) => string | number };
 
 const ROWS: Row[] = [
-  { key: 'Precio', get: (p) => `USD ${Number(p.price||0).toLocaleString('en-US')}` },
+  { key: 'Precio', get: (p) => formatMoney(p.price, p.currency) },
+  { key: 'País', get: (p) => p.country || '—' },
   { key: 'Superficie', get: (p) => p.surface != null ? `${p.surface} m²` : 'N/D' },
   { key: 'Ambientes', get: (p) => p.rooms ?? 'N/D' },
   { key: 'Dormitorios', get: (p) => p.bedrooms ?? 'N/D' },

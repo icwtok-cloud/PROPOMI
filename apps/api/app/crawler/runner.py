@@ -31,7 +31,7 @@ from .selectors import SOURCES, SourceConfig
 
 logger = logging.getLogger("propomi.crawler")
 
-MAX_AGE_DAYS = 90
+MAX_AGE_DAYS = 90  # Rechaza altas nuevas si origin_published_at es más viejo. Distinto de main.PROPERTY_FRESHNESS_DAYS (60) que oculta filas sin last_seen reciente.
 USER_AGENT = "PropomiBot/0.1 (+https://propomi.lat; research)"
 
 # Scale 2026-09-19 — flywheel: más páginas/detalles por corrida.
@@ -352,6 +352,11 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
 
 def run_source(db, source: SourceConfig) -> dict[str, Any]:
     detail_urls = discover_detail_urls(source, db=db)
+    if not detail_urls and getattr(source, "enabled", True):
+        logger.warning(
+            "crawler source=%s discovered=0 — revisar list_urls/extractor",
+            source.id,
+        )
     stats = {"created": 0, "updated": 0, "skipped": 0, "errors": 0}
     seen_fp: set[str] = set()
 

@@ -9,6 +9,7 @@ import {
   MarketOpportunities,
 } from '../lib/api';
 import {DemandRequest,DemandSummary,Session} from '../lib/types';
+import {formatMoney} from '../lib/geo';
 
 /**
  * Pestaña Demanda: (1) demandas genéricas premium de la agencia
@@ -110,7 +111,7 @@ export default function DemandPanel({session}:{session:Session|null}){
     }
   }
 
-  const fmt=(n:number|null|undefined)=>n==null?'—':`USD ${Number(n).toLocaleString('en-US')}`;
+  const fmt=(n:number|null|undefined,cur?:string|null)=>n==null?'—':formatMoney(n, cur);
   const activeRequests=requests.filter(r=>r.active);
 
   return <div className="demand-stack">
@@ -156,7 +157,7 @@ export default function DemandPanel({session}:{session:Session|null}){
           <label className="agent-field">Ambientes mínimos
             <input type="number" min={0} max={20} value={roomsMin} onChange={e=>setRoomsMin(e.target.value)} placeholder="2"/>
           </label>
-          <label className="agent-field">Precio máximo (USD)
+          <label className="agent-field">Precio máximo
             <input type="number" min={1} value={priceMax} onChange={e=>setPriceMax(e.target.value)} placeholder="150000"/>
           </label>
           <div className="account-span-2" style={{display:'flex',gap:10,alignItems:'center'}}>
