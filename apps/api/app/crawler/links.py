@@ -191,6 +191,27 @@ def _bienesonline(html: str, base_url: str) -> list[str]:
     hrefs += re.findall(r'href="(/es/[^"]*/propiedad/\d+[^"]*)"', html)
     return _dedupe([urljoin(base_url, h) for h in hrefs])
 
+
+
+def _tokko_agency(html: str, base_url: str) -> list[str]:
+    from .parsers.tokko_agency import extract_detail_urls_tokko
+    return extract_detail_urls_tokko(html, base_url)
+
+
+def _agency_prop_uy(html: str, base_url: str) -> list[str]:
+    from .parsers.agency_prop_uy import extract_detail_urls
+    return extract_detail_urls(html, base_url)
+
+
+def _agency_orangehome_mx(html: str, base_url: str) -> list[str]:
+    from .parsers.agency_orangehome_mx import extract_detail_urls
+    return extract_detail_urls(html, base_url)
+
+
+def _agency_nuevaalianza_py(html: str, base_url: str) -> list[str]:
+    from .parsers.agency_nuevaalianza_py import extract_detail_urls
+    return extract_detail_urls(html, base_url)
+
 EXTRACTORS = {
     "zonaprop": _zonaprop,
     "argenprop": _argenprop,
@@ -209,6 +230,11 @@ EXTRACTORS = {
     "departamentosenpozo": _departamentosenpozo,
     "bullano": _bullano,
     "grupoedisur": _grupoedisur,
+    "agency_paganini_ar": _tokko_agency,
+    "agency_prey_ar": _tokko_agency,
+    "agency_prop_uy": _agency_prop_uy,
+    "agency_orangehome_mx": _agency_orangehome_mx,
+    "agency_nuevaalianza_py": _agency_nuevaalianza_py,
 }
 
 

@@ -1,4 +1,8 @@
 from . import (
+    agency_nuevaalianza_py,
+    agency_orangehome_mx,
+    agency_prop_uy,
+    tokko_agency,
     argenprop,
     argencasas,
     bienesonline,
@@ -34,6 +38,11 @@ PARSERS = {
     "departamentosenpozo": departamentosenpozo.parse_detail,
     "bullano": bullano.parse_detail,
     "grupoedisur": grupoedisur.parse_detail,
+    "agency_paganini_ar": tokko_agency.parse_detail_paganini,
+    "agency_prey_ar": tokko_agency.parse_detail_prey,
+    "agency_prop_uy": agency_prop_uy.parse_detail,
+    "agency_orangehome_mx": agency_orangehome_mx.parse_detail,
+    "agency_nuevaalianza_py": agency_nuevaalianza_py.parse_detail,
 }
 
 

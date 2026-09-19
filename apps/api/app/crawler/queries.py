@@ -338,3 +338,39 @@ def bienesonline_list_urls() -> Iterator[str]:
         "es/argentina/san-luis",
     ):
         yield f"https://bienesonline.ai/{path}"
+
+
+# --- Agencias TIER A (2026-09-19) ---
+
+def agency_paganini_ar_list_urls() -> Iterator[str]:
+    """Paganini (Rosario) — Tokko; operation[]=1 = venta."""
+    yield "https://paganini.com.ar/propiedades?operation[]=1"
+    for page in range(2, 8):
+        yield f"https://paganini.com.ar/propiedades?operation[]=1&page={page}"
+
+
+def agency_prey_ar_list_urls() -> Iterator[str]:
+    """Prey (Rosario) — Tokko; catálogo + venta."""
+    yield "https://preypropiedades.com/propiedades"
+    yield "https://www.preypropiedades.com/Venta"
+    for page in range(2, 8):
+        yield f"https://preypropiedades.com/propiedades?page={page}"
+
+
+def agency_prop_uy_list_urls() -> Iterator[str]:
+    """PROP Uruguay — solo comprar (venta)."""
+    yield "https://prop.com.uy/propiedades/comprar"
+    for page in range(2, 6):
+        yield f"https://prop.com.uy/propiedades/comprar?page={page}"
+
+
+def agency_orangehome_mx_list_urls() -> Iterator[str]:
+    """Orange Home Guadalajara — home + inmuebles.php."""
+    yield "https://www.orangehomeinmobiliaria.com.mx/"
+    yield "https://www.orangehomeinmobiliaria.com.mx/inmuebles.php"
+
+
+def agency_nuevaalianza_py_list_urls() -> Iterator[str]:
+    """Nueva Alianza Asunción — listado venta primero."""
+    yield "https://inmobiliariana.com.py/"  # listado venta con acentos rompe urllib ascii; home expone /propiedad/{id}
+    yield "https://inmobiliariana.com.py/"

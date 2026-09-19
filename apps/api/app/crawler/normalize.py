@@ -28,6 +28,11 @@ SOURCE_COUNTRY: dict[str, str] = {
     "zonaprop": "Argentina",
     "argenprop": "Argentina",
     "properati": "Argentina",
+    "agency_paganini_ar": "Argentina",
+    "agency_prey_ar": "Argentina",
+    "agency_prop_uy": "Uruguay",
+    "agency_orangehome_mx": "México",
+    "agency_nuevaalianza_py": "Paraguay",
 }
 
 

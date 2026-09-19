@@ -1,7 +1,7 @@
 """Configuración por fuente: dominio, generador de URLs de listado, robots_note.
 
 Estado 2026-09-19b:
-  enabled=True (14): previas + argencasas, departamentosenpozo, bullano,
+  enabled=True (19): 14 portales + 5 agencias TIER A; previas + argencasas, departamentosenpozo, bullano,
     mercadolibre_mx, grupoedisur. ML AR/MX con paginación _Desde_N.
   enabled=False: zonaprop/argenprop/properati + cola SPA/anti-bot.
 run_crawl() salta fuentes con enabled=False.
@@ -251,6 +251,49 @@ SOURCES: dict[str, SourceConfig] = {
         list_urls_fn=lambda: iter([]),
         enabled=False,
         robots_note="2026-09-16: robots 200; /propiedades 404; home 200 sin patrón de ficha claro en triage — pendiente URL de listado real.",
+    ),
+
+
+    # --- Agencias TIER A verified (2026-09-19 smoke) ---
+    "agency_paganini_ar": SourceConfig(
+        id="agency_paganini_ar",
+        name="Paganini (Rosario)",
+        base_url="https://paganini.com.ar",
+        list_urls_fn=queries.agency_paganini_ar_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: Tokko CMS; /propiedades?operation[]=1 venta; fichas /propiedad/{slug}--{id}; sin CF.",
+    ),
+    "agency_prey_ar": SourceConfig(
+        id="agency_prey_ar",
+        name="Prey (Rosario)",
+        base_url="https://preypropiedades.com",
+        list_urls_fn=queries.agency_prey_ar_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: Tokko CMS (mismo template que Paganini); /propiedad/{slug}--{id}; sin CF.",
+    ),
+    "agency_prop_uy": SourceConfig(
+        id="agency_prop_uy",
+        name="PROP (Montevideo)",
+        base_url="https://prop.com.uy",
+        list_urls_fn=queries.agency_prop_uy_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: /propiedades/comprar; fichas ...-pNNNNNN; sin CF.",
+    ),
+    "agency_orangehome_mx": SourceConfig(
+        id="agency_orangehome_mx",
+        name="Orange Home (Guadalajara)",
+        base_url="https://www.orangehomeinmobiliaria.com.mx",
+        list_urls_fn=queries.agency_orangehome_mx_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: home + /{id}/inmuebles/{slug}; moneda MXN; sin CF.",
+    ),
+    "agency_nuevaalianza_py": SourceConfig(
+        id="agency_nuevaalianza_py",
+        name="Nueva Alianza (Asunción)",
+        base_url="https://inmobiliariana.com.py",
+        list_urls_fn=queries.agency_nuevaalianza_py_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: /propiedad/{id}; listado venta; sin CF.",
     ),
 
 }
