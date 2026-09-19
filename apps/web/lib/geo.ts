@@ -129,3 +129,27 @@ export function propertyTypeLabel(typeName: string, country: string): string {
   if (typeName === 'Departamento' && country === 'Uruguay') return 'Apartamento';
   return typeName;
 }
+
+/** Prefijo de moneda para listados multi-país (no convertir: solo mostrar). */
+export function currencyLabel(code: string | null | undefined): string {
+  const c = (code || 'USD').toUpperCase().trim();
+  if (c === 'MXN' || c === 'MN' || c === 'MX$') return 'MXN';
+  if (c === 'ARS' || c === 'AR$') return 'ARS';
+  if (c === 'UYU' || c === '$U') return 'UYU';
+  if (c === 'PYG' || c === 'GS' || c === '₲') return 'PYG';
+  if (c === 'USD' || c === 'US$' || c === 'U$S' || c === 'U$') return 'USD';
+  return c || 'USD';
+}
+
+/** Formatea un precio con su moneda de origen (sin conversión FX). */
+export function formatMoney(
+  amount: number | null | undefined,
+  currency?: string | null,
+  locale = 'es-AR',
+): string {
+  const n = Number(amount || 0);
+  const label = currencyLabel(currency);
+  const formatted = n.toLocaleString(locale, { maximumFractionDigits: 0 });
+  return `${label} ${formatted}`;
+}
+

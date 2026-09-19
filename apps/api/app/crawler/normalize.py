@@ -33,6 +33,29 @@ SOURCE_COUNTRY: dict[str, str] = {
 
 
 
+
+def _norm_currency(raw: str | None, country: str = "") -> str:
+    """Normaliza códigos de moneda; default por país si falta o es inválido."""
+    c = (raw or "").upper().strip()
+    aliases = {
+        "US$": "USD", "U$S": "USD", "U$": "USD", "DOLAR": "USD", "DÓLAR": "USD",
+        "MX$": "MXN", "MN": "MXN", "PESOS MEXICANOS": "MXN",
+        "AR$": "ARS", "$": "ARS",
+        "$U": "UYU", "UY$": "UYU",
+        "GS": "PYG", "₲": "PYG", "GUARANIES": "PYG", "GUARANÍES": "PYG",
+    }
+    c = aliases.get(c, c)
+    if c in ("USD", "MXN", "ARS", "UYU", "PYG", "EUR", "BRL"):
+        return c
+    # default por país
+    defaults = {
+        "México": "MXN", "Mexico": "MXN",
+        "Paraguay": "PYG",
+        "Uruguay": "UYU",
+        "Argentina": "USD",  # mercado inmobiliario AR suele cotizar en USD
+    }
+    return defaults.get(country, "USD")
+
 def parse_origin_date(raw: str | None) -> datetime | None:
     """Parsea fechas de publicación del portal de origen.
 
@@ -235,7 +258,7 @@ def to_property_payload(raw: RawListing | dict[str, Any], source_id: str | None 
         "type": d.get("property_type") or d.get("type") or "Departamento",
         "operation": d.get("operation") or "Venta",
         "price": float(d.get("price") or 0),
-        "currency": d.get("currency") or "USD",
+        "currency": _norm_currency(d.get("currency"), country),
         "zone": zone,
         "city": city,
         "country": country,

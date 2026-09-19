@@ -242,8 +242,15 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         province = _province_mx_from_url_or_html(url, html)
         src = "mercadolibre_mx"
         country = "México"
-        # MX usa MXN con frecuencia
-        if currency in ("ARS", ""):
+        # En MX la moneda local es MXN. Solo conservar USD si el portal
+        # la declaró explícitamente (priceCurrency / currency_id).
+        cur = (currency or "").upper().strip()
+        if cur in ("MXN", "MN", "MX$"):
+            currency = "MXN"
+        elif cur in ("USD", "US$", "U$S", "U$"):
+            currency = "USD"
+        else:
+            # ARS vacío o desconocido → MXN (no pintar pesos AR como dólares)
             currency = "MXN"
     else:
         province = _province_from_url_or_html(url, html)

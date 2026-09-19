@@ -7,7 +7,7 @@ import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
 import {getProperties,getPropertiesRandom,dedupeByGroup,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters,getMySuggestions,engageSuggestion} from '../lib/api';
 import {Property,Offer} from '../lib/types';
-import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel} from '../lib/geo';
+import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel,formatMoney} from '../lib/geo';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
 const FUNNEL=['Vistas','Guardados','Comparaciones','Consultas','Visitas','Ofertas','Negociaciones','Contacto compartido','Operaciones'];
@@ -596,8 +596,8 @@ export default function Home(){
         })()}
         <div><div className="bigprice">
             {detail.priceMin!=null&&detail.priceMax!=null&&detail.priceMin!==detail.priceMax
-              ? <>USD {detail.priceMin.toLocaleString('en-US')} – {detail.priceMax.toLocaleString('en-US')}</>
-              : <>USD {detail.price.toLocaleString('en-US')}</>}
+              ? <>{formatMoney(detail.priceMin, detail.currency)} – {formatMoney(detail.priceMax, detail.currency)}</>
+              : <>{formatMoney(detail.price, detail.currency)}</>}
           </div>
           {detail.groupMemberCount!=null&&detail.groupMemberCount>1&&(
             <p className="muted small">Ficha multi-agente · {detail.groupMemberCount} publicaciones</p>
@@ -618,7 +618,7 @@ export default function Home(){
                   ) : null}
                   <div style={{flex:1,minWidth:140}}>
                     <strong>{s.property.title}</strong>
-                    <div className="muted small">{s.property.zone} · USD {Number(s.property.price||0).toLocaleString('en-US')}</div>
+                    <div className="muted small">{s.property.zone} · {formatMoney(Number(s.property.price||0), s.property.currency)}</div>
                   </div>
                   <button type="button" className="primary" onClick={async()=>{
                     try{await engageSuggestion(s.id)}catch{}

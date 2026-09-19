@@ -2,6 +2,7 @@
 import {useState} from 'react';
 import {Heart,GitCompare,ArrowUpRight,ChevronLeft,ChevronRight} from 'lucide-react';
 import {Property} from '../lib/types';
+import {formatMoney} from '../lib/geo';
 
 export default function PropertyCard({
   p,saved,compared,onSave,onCompare,onView,onOffer,
@@ -72,11 +73,13 @@ export default function PropertyCard({
         <h3 className="pcard-title">{p.title}</h3>
         <strong className="price pcard-price">
           {p.priceMin != null && p.priceMax != null && p.priceMin !== p.priceMax
-            ? <>USD {p.priceMin.toLocaleString('en-US')} – {p.priceMax.toLocaleString('en-US')}</>
-            : <>USD {p.price.toLocaleString('en-US')}</>}
+            ? <>{formatMoney(p.priceMin, p.currency)} – {formatMoney(p.priceMax, p.currency)}</>
+            : <>{formatMoney(p.price, p.currency)}</>}
         </strong>
         <div className="pcard-subtitle muted">
-          {p.zone}{p.city ? ` · ${p.city}` : ''}{p.type ? ` · ${p.type}` : ''}
+          {[p.country && p.country !== 'Argentina' ? p.country : null, p.zone || p.city, p.type]
+            .filter(Boolean)
+            .join(' · ')}
         </div>
         {p.groupMemberCount != null && p.groupMemberCount > 1 && (
           <div className="muted small">Misma propiedad publicada por {p.groupMemberCount} agentes · precio en rango</div>
