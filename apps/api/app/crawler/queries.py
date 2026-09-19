@@ -128,7 +128,12 @@ def inmoclick_list_urls() -> Iterator[str]:
 
 
 def mercadolibre_list_urls() -> Iterator[str]:
-    """ML Inmuebles AR — casas, deptos, PH, terrenos, campos (24 provincias)."""
+    """ML Inmuebles AR — casas, deptos, PH, terrenos, campos (24 provincias).
+
+    Paginación ML: offset 48 ítems → `_Desde_49`, `_Desde_97`, `_Desde_145`
+    (4 páginas por combo provincia×tipo). El cursor de runner recorta por
+    MAX_LIST_PAGES / MAX_DETAILS para no saturar una sola corrida.
+    """
     provincias = (
         "capital-federal",
         "buenos-aires",
@@ -156,13 +161,17 @@ def mercadolibre_list_urls() -> Iterator[str]:
         "tierra-del-fuego",
     )
     tipos = ("casas", "departamentos", "ph", "terrenos", "campos")
+    # page offsets ML (1-based item index)
+    offsets = ("", "_Desde_49", "_Desde_97", "_Desde_145")
     for prov in provincias:
         for tipo in tipos:
-            yield f"https://inmuebles.mercadolibre.com.ar/{tipo}/venta/{prov}/"
+            base = f"https://inmuebles.mercadolibre.com.ar/{tipo}/venta/{prov}"
+            for off in offsets:
+                yield f"{base}/{off}" if off else f"{base}/"
 
 
 def mercadolibre_mx_list_urls() -> Iterator[str]:
-    """ML Inmuebles México — estados prioritarios + tipos clave."""
+    """ML Inmuebles México — cobertura amplia de estados + tipos + paginación."""
     estados = (
         "distrito-federal",
         "estado-de-mexico",
@@ -174,6 +183,7 @@ def mercadolibre_mx_list_urls() -> Iterator[str]:
         "yucatan",
         "quintana-roo",
         "baja-california",
+        "baja-california-sur",
         "veracruz",
         "chihuahua",
         "coahuila",
@@ -182,20 +192,38 @@ def mercadolibre_mx_list_urls() -> Iterator[str]:
         "hidalgo",
         "aguascalientes",
         "san-luis-potosi",
+        "tamaulipas",
+        "sonora",
+        "sinaloa",
+        "tabasco",
+        "oaxaca",
+        "chiapas",
+        "guerrero",
+        "durango",
+        "nayarit",
+        "colima",
+        "tlaxcala",
+        "campeche",
+        "zacatecas",
     )
-    tipos = ("casas", "departamentos", "terrenos", "locales-comerciales")
+    tipos = ("casas", "departamentos", "terrenos", "locales-comerciales", "oficinas")
+    offsets = ("", "_Desde_49", "_Desde_97")
     for est in estados:
         for tipo in tipos:
-            yield f"https://inmuebles.mercadolibre.com.mx/{tipo}/venta/{est}/"
+            base = f"https://inmuebles.mercadolibre.com.mx/{tipo}/venta/{est}"
+            for off in offsets:
+                yield f"{base}/{off}" if off else f"{base}/"
 
 
 def argencasas_list_urls() -> Iterator[str]:
-    """Argencasas — venta nacional + paginación amplia."""
+    """Argencasas — venta nacional + paginación amplia por tipo."""
     yield "https://www.argencasas.com/venta"
-    for page in range(2, 31):
+    for page in range(2, 61):
         yield f"https://www.argencasas.com/motor/props.php?superoper=0&page={page}"
-    for tipo in ("casas", "departamentos", "ph", "locales", "terrenos"):
+    for tipo in ("casas", "departamentos", "ph", "locales", "terrenos", "campos", "quintas"):
         yield f"https://www.argencasas.com/venta/{tipo}"
+        for page in range(2, 11):
+            yield f"https://www.argencasas.com/venta/{tipo}?page={page}"
 
 
 def departamentosenpozo_list_urls() -> Iterator[str]:
@@ -230,8 +258,8 @@ def bullano_list_urls() -> Iterator[str]:
 
 
 def infocasas_py_list_urls() -> Iterator[str]:
-    """InfoCasas Paraguay — listados por ciudad + tipos (SSR + __NEXT_DATA__)."""
-    for path in (
+    """InfoCasas Paraguay — listados por ciudad + tipos + páginas (?page=N)."""
+    paths = (
         "venta/inmuebles/asuncion",
         "venta/inmuebles/san-lorenzo",
         "venta/inmuebles/luque",
@@ -244,17 +272,21 @@ def infocasas_py_list_urls() -> Iterator[str]:
         "venta/inmuebles/mariano-roque-alonso",
         "venta/inmuebles/villa-elisa",
         "venta/inmuebles/pedro-juan-caballero",
+        "venta/inmuebles/itaugua",
         "venta/casas",
         "venta/departamentos",
         "venta/terrenos",
         "venta",
-    ):
+    )
+    for path in paths:
         yield f"https://www.infocasas.com.py/{path}"
+        for page in range(2, 6):
+            yield f"https://www.infocasas.com.py/{path}?page={page}"
 
 
 def infocasas_uy_list_urls() -> Iterator[str]:
-    """InfoCasas Uruguay — listados por ciudad / departamento + tipos."""
-    for path in (
+    """InfoCasas Uruguay — listados por ciudad / departamento + tipos + páginas."""
+    paths = (
         "venta/inmuebles/montevideo",
         "venta/inmuebles/canelones",
         "venta/inmuebles/maldonado",
@@ -265,12 +297,25 @@ def infocasas_uy_list_urls() -> Iterator[str]:
         "venta/inmuebles/soriano",
         "venta/inmuebles/florida",
         "venta/inmuebles/san-jose",
+        "venta/inmuebles/rivera",
+        "venta/inmuebles/tacuarembo",
         "venta/casas",
         "venta/apartamentos",
         "venta/terrenos",
         "venta",
-    ):
+    )
+    for path in paths:
         yield f"https://www.infocasas.com.uy/{path}"
+        for page in range(2, 6):
+            yield f"https://www.infocasas.com.uy/{path}?page={page}"
+
+
+def grupoedisur_list_urls() -> Iterator[str]:
+    """Grupo Edisur (Córdoba) — catálogo de desarrollos / pozo."""
+    yield "https://www.grupoedisur.com.ar/desarrollos/"
+    yield "https://www.grupoedisur.com.ar/desarrollos/proyectos/"
+    yield "https://www.edisur.com.ar/proyectos"
+    yield "https://www.edisur.com.ar/"
 
 
 def bienesonline_list_urls() -> Iterator[str]:

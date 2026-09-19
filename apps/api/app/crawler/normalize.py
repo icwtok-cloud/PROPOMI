@@ -23,6 +23,7 @@ SOURCE_COUNTRY: dict[str, str] = {
     "argencasas": "Argentina",
     "departamentosenpozo": "Argentina",
     "bullano": "Argentina",
+    "grupoedisur": "Argentina",
     "infocasas_py": "Paraguay",
     "infocasas_uy": "Uruguay",
     "zonaprop": "Argentina",

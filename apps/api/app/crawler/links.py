@@ -131,6 +131,30 @@ def _bullano(html: str, base_url: str) -> list[str]:
     return _dedupe([urljoin(base_url, h) for h in hrefs])
 
 
+def _grupoedisur(html: str, base_url: str) -> list[str]:
+    """Proyectos / unidades bajo /desarrollos/... (absolutos o relativos)."""
+    hrefs = re.findall(
+        r'href="((?:https://www\.grupoedisur\.com\.ar)?/desarrollos/[a-z0-9\-/]+/?)"',
+        html,
+        re.I,
+    )
+    out: list[str] = []
+    for h in hrefs:
+        u = urljoin("https://www.grupoedisur.com.ar", h)
+        # Saltar listados raíz
+        path = u.rstrip("/").split("/desarrollos")[-1]
+        if not path or path == "/":
+            continue
+        if path.rstrip("/") in ("/proyectos", "/desarrollos"):
+            continue
+        # Preferir fichas de profundidad >= 2 segmentos (ej. /casonas/torrentes)
+        depth = [p for p in path.split("/") if p]
+        if len(depth) < 2:
+            continue
+        out.append(u)
+    return _dedupe(out)
+
+
 def _inmoclick(html: str, base_url: str) -> list[str]:
     hrefs = re.findall(r'href="([^"]+/inmuebles/\d+/ficha/[^"]+)"', html)
     return _dedupe([urljoin(base_url, h) for h in hrefs])
@@ -184,6 +208,7 @@ EXTRACTORS = {
     "argencasas": _argencasas,
     "departamentosenpozo": _departamentosenpozo,
     "bullano": _bullano,
+    "grupoedisur": _grupoedisur,
 }
 
 

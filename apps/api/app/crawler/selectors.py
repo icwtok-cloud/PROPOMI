@@ -1,8 +1,8 @@
 """Configuración por fuente: dominio, generador de URLs de listado, robots_note.
 
-Estado 2026-09-19:
-  enabled=True (13): previas + argencasas, departamentosenpozo, bullano,
-    mercadolibre_mx. ML AR ampliado a ph/terrenos/campos.
+Estado 2026-09-19b:
+  enabled=True (14): previas + argencasas, departamentosenpozo, bullano,
+    mercadolibre_mx, grupoedisur. ML AR/MX con paginación _Desde_N.
   enabled=False: zonaprop/argenprop/properati + cola SPA/anti-bot.
 run_crawl() salta fuentes con enabled=False.
 """
@@ -186,6 +186,14 @@ SOURCES: dict[str, SourceConfig] = {
         list_urls_fn=queries.mercadolibre_mx_list_urls,
         enabled=True,
         robots_note="2026-09-19: mismo patrón ML AR (poly-card + JSON-LD Product); prefijo MLM-; estados prioritarios.",
+    ),
+    "grupoedisur": SourceConfig(
+        id="grupoedisur",
+        name="Grupo Edisur",
+        base_url="https://www.grupoedisur.com.ar",
+        list_urls_fn=queries.grupoedisur_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: /desarrollos/* fichas estáticas; pozo Córdoba; sin CF.",
     ),
     # --- Cola anti-bot / no viable (2026-09-16 triage) — enabled=False ---
     "remax_ar": SourceConfig(

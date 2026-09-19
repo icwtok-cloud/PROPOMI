@@ -36,40 +36,43 @@ USER_AGENT = "PropomiBot/0.1 (+https://propomi.lat; research)"
 
 # Scale 2026-09-19 — flywheel: más páginas/detalles por corrida.
 # Delay moderado para no martillar; cron cada 6h acumula inventario.
-MAX_LIST_PAGES_PER_SOURCE = 25
-MAX_DETAILS_PER_SOURCE = 800
-REQUEST_DELAY_SECONDS = 0.6
+MAX_LIST_PAGES_PER_SOURCE = 30
+MAX_DETAILS_PER_SOURCE = 1000
+REQUEST_DELAY_SECONDS = 0.55
+HTTP_RETRIES = 3
 
 # Overrides por fuente (volumen alto en agregadores nacionales).
 MAX_LIST_PAGES_PER_SOURCE_OVERRIDE: dict[str, int] = {
     "cordobaprop": 20,
-    "mercadolibre": 40,
-    "mercadolibre_mx": 30,
+    "mercadolibre": 50,
+    "mercadolibre_mx": 45,
     "mendozaprop": 15,
     "bienesonline": 20,
     "inmoup": 15,
-    "inmoclick": 20,
-    "infocasas_py": 15,
-    "infocasas_uy": 15,
-    "argencasas": 20,
+    "inmoclick": 25,
+    "infocasas_py": 25,
+    "infocasas_uy": 25,
+    "argencasas": 30,
     "departamentosenpozo": 5,
-    "bullano": 15,
+    "bullano": 18,
     "mercado_unico": 8,
+    "grupoedisur": 6,
 }
 MAX_DETAILS_PER_SOURCE_OVERRIDE: dict[str, int] = {
-    "mercadolibre": 1500,
-    "mercadolibre_mx": 1000,
+    "mercadolibre": 2000,
+    "mercadolibre_mx": 1500,
     "mendozaprop": 600,
     "cordobaprop": 600,
     "bienesonline": 600,
     "mercado_unico": 300,
     "inmoup": 600,
-    "inmoclick": 800,
-    "infocasas_py": 600,
-    "infocasas_uy": 600,
-    "argencasas": 500,
+    "inmoclick": 1000,
+    "infocasas_py": 900,
+    "infocasas_uy": 900,
+    "argencasas": 800,
     "departamentosenpozo": 900,
-    "bullano": 400,
+    "bullano": 500,
+    "grupoedisur": 120,
 }
 
 # Tope de paginación por fuente (robots.txt / cortesía). Al llegar se reinicia.
@@ -92,29 +95,41 @@ def max_details_for(source_id: str) -> int:
 
 
 def _get(url: str, timeout: int = 20) -> str:
-    resp = requests.get(
-        url,
-        headers={"User-Agent": USER_AGENT, "Accept-Language": "es-AR,es;q=0.9"},
-        timeout=timeout,
-    )
-    resp.raise_for_status()
-    # Preferir UTF-8 real del body (muchos portales no declaran charset y
-    # requests asume ISO-8859-1 → mojibake). Si UTF-8 falla, apparent_encoding.
-    raw = resp.content
-    try:
-        return raw.decode("utf-8")
-    except UnicodeDecodeError:
-        enc = resp.apparent_encoding or resp.encoding or "utf-8"
-        if enc and enc.lower() in ("iso-8859-1", "latin-1", "windows-1252"):
-            # reintentar utf-8 con replace solo si apparent también es latin
-            try:
-                return raw.decode("utf-8", errors="replace")
-            except Exception:
-                pass
+    """GET con reintentos suaves (timeouts / 5xx) para no tumbar el cron."""
+    last_exc: Exception | None = None
+    for attempt in range(1, HTTP_RETRIES + 1):
         try:
-            return raw.decode(enc, errors="replace")
-        except Exception:
-            return raw.decode("utf-8", errors="replace")
+            resp = requests.get(
+                url,
+                headers={"User-Agent": USER_AGENT, "Accept-Language": "es-AR,es;q=0.9"},
+                timeout=timeout,
+            )
+            # 429 / 5xx → reintento; 4xx duro (excepto 429) → raise
+            if resp.status_code == 429 or resp.status_code >= 500:
+                raise requests.HTTPError(f"{resp.status_code} for {url}", response=resp)
+            resp.raise_for_status()
+            raw = resp.content
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                enc = resp.apparent_encoding or resp.encoding or "utf-8"
+                if enc and enc.lower() in ("iso-8859-1", "latin-1", "windows-1252"):
+                    try:
+                        return raw.decode("utf-8", errors="replace")
+                    except Exception:
+                        pass
+                try:
+                    return raw.decode(enc, errors="replace")
+                except Exception:
+                    return raw.decode("utf-8", errors="replace")
+        except Exception as exc:
+            last_exc = exc
+            if attempt < HTTP_RETRIES:
+                time.sleep(0.8 * attempt)
+                continue
+            raise
+    assert last_exc is not None
+    raise last_exc
 
 
 def _get_or_create_cursor(db, source_id: str):

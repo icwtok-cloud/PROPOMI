@@ -5,6 +5,7 @@ from . import (
     bullano,
     cordobaprop,
     departamentosenpozo,
+    grupoedisur,
     infocasas,
     inmoup,
     inmoclick,
@@ -32,6 +33,7 @@ PARSERS = {
     "argencasas": argencasas.parse_detail,
     "departamentosenpozo": departamentosenpozo.parse_detail,
     "bullano": bullano.parse_detail,
+    "grupoedisur": grupoedisur.parse_detail,
 }
 
 
