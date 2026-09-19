@@ -5,7 +5,7 @@ import {Search,Check,GitCompare,ShieldCheck,Sparkles,CalendarDays,Handshake,BarC
 import PropertyCard from '../components/PropertyCard';
 import IntentWizard, {WizardMode} from '../components/IntentWizard';
 import ComparePanel from '../components/ComparePanel';
-import {getProperties,getPropertiesRandom,dedupeByGroup,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters,getMySuggestions,engageSuggestion} from '../lib/api';
+import {getProperties,getPropertiesRandom,dedupeByGroup,trackEvent,listOffers,isOffersRestricted,getOrCreateBuyerSession,captureOfferOriginFromUrl,trackSearchPerformed,getPropertyFilters,getMySuggestions,engageSuggestion,getPropertiesAll} from '../lib/api';
 import {Property,Offer} from '../lib/types';
 import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel,formatMoney} from '../lib/geo';
 
@@ -28,7 +28,10 @@ function isValidCityName(name: string | null | undefined): boolean {
 const COUNTRY_OPTIONS=['Todos','Argentina','Paraguay','Uruguay','México'];
 
 export default function Home(){
-  const [items,setItems]=useState<Property[]>([]);
+  const [items,setItems]=useState<Property[]>([])
+  const [searchTotal,setSearchTotal]=useState<number|null>(null);
+  const [hasMore,setHasMore]=useState(false);
+  const [loadingMore,setLoadingMore]=useState(false);;
   const [budget,setBudget]=useState('');
   // Etapa 2 (bug reportado 2026-09-15): "Dónde" ya no es una lista fija de
   // barrios de Buenos Aires — city/zone se autodetectan de lo que el
@@ -110,7 +113,7 @@ export default function Home(){
       if(!pid)return;
       let found=initial.find(p=>p.id===pid)||null;
       if(!found){
-        const all=await getProperties({operation:'Venta'});
+        const all=await getPropertiesAll({operation:'Venta'}, 5);
         const raw=all.find(p=>p.id===pid);
         if(raw){
           found=raw.listingGroupId
@@ -130,9 +133,8 @@ export default function Home(){
     }
   })()},[]);
 
-  // Búsqueda real contra GET /properties cuando el usuario arma filtros.
-  // Sin esto el home solo veía las 30 random iniciales y el inventario del
-  // crawler (MX, pozo, etc.) no aparecía aunque estuviera en la DB.
+  // Búsqueda real paginada contra GET /properties (limit 48).
+  // Evita bajar miles de filas de una; "Cargar más" pide el siguiente offset.
   useEffect(()=>{
     const hasGeoFilter =
       (country && country !== 'Todos') ||
@@ -141,17 +143,22 @@ export default function Home(){
       !!zone;
     const hasTypeFilter = ptype !== 'Todos' || (rooms && rooms !== 'Todos');
     const hasBudget = !!budget;
-    // Primera pintura: dejar la muestra random. Solo refetch cuando hay
-    // criterios reales (país, provincia, ciudad, tipo, presupuesto…).
-    if (!hasGeoFilter && !hasTypeFilter && !hasBudget) return;
+    if (!hasGeoFilter && !hasTypeFilter && !hasBudget) {
+      setSearchTotal(null);
+      setHasMore(false);
+      return;
+    }
 
     let cancelled = false;
     (async () => {
       try {
         setIsLoading(true);
         setLoadError(null);
+        setHasMore(false);
         const filters: Record<string, string | number | boolean> = {
           operation: 'Venta',
+          limit: 48,
+          offset: 0,
         };
         if (country && country !== 'Todos') filters.country = country;
         if (province) filters.province = province;
@@ -168,9 +175,12 @@ export default function Home(){
         if (credit) filters.credit = true;
         if (investmentOnly) filters.investment_opportunity = true;
 
-        const list = dedupeByGroup(await getProperties(filters));
+        const page = await getProperties(filters);
+        const list = dedupeByGroup(page.items);
         if (!cancelled) {
           setItems(list);
+          setSearchTotal(page.total);
+          setHasMore(!!page.has_more);
           try {
             trackSearchPerformed({
               country: country !== 'Todos' ? country : undefined,
@@ -180,7 +190,7 @@ export default function Home(){
               type: ptype !== 'Todos' ? ptype : undefined,
               rooms: rooms !== 'Todos' ? rooms : undefined,
               max_price: budget || undefined,
-              result_count: list.length,
+              result_count: page.total,
             } as any);
           } catch { /* analytics best-effort */ }
         }
@@ -215,6 +225,44 @@ export default function Home(){
     return ()=>document.removeEventListener('mousedown',close);
   },[openSeg]);
 
+
+
+  async function loadMore(){
+    if(loadingMore||!hasMore) return;
+    try{
+      setLoadingMore(true);
+      const filters: Record<string, string | number | boolean> = {
+        operation: 'Venta',
+        limit: 48,
+        offset: items.length,
+      };
+      if (country && country !== 'Todos') filters.country = country;
+      if (province) filters.province = province;
+      if (city) filters.city = city;
+      if (zone) filters.zone = zone;
+      if (ptype === 'En Pozo') filters.under_construction = true;
+      else if (ptype && ptype !== 'Todos') filters.type = ptype;
+      if (rooms && rooms !== 'Todos') filters.rooms = Number(rooms);
+      if (budget) filters.max_price = Number(budget);
+      if (parking) filters.parking = true;
+      if (credit) filters.credit = true;
+      if (investmentOnly) filters.investment_opportunity = true;
+      const page = await getProperties(filters);
+      const incoming = dedupeByGroup(page.items);
+      setItems(prev => {
+        const seen = new Set(prev.map(x => x.id));
+        const merged = [...prev];
+        for (const p of incoming) if (!seen.has(p.id)) merged.push(p);
+        return merged;
+      });
+      setHasMore(!!page.has_more);
+      if (page.total != null) setSearchTotal(page.total);
+    }catch(e:any){
+      setToast(e?.message||'No se pudo cargar más resultados');
+    }finally{
+      setLoadingMore(false);
+    }
+  }
 
   const filtered=useMemo(()=>{
     let list=items.filter(p=>{
@@ -414,7 +462,7 @@ export default function Home(){
               </button>
             </div>
             <div className="results-live">
-              <span className="results-count">{isLoading?'…':`${filtered.length} resultado${filtered.length===1?'':'s'}`}</span>
+              <span className="results-count">{isLoading?'…':`${searchTotal!=null?searchTotal:filtered.length} resultado${(searchTotal!=null?searchTotal:filtered.length)===1?'':'s'}${hasMore&&searchTotal!=null?` · mostrando ${filtered.length}`:''}`}</span>
               <label className="sort-label">Ordenar
                 <select value={sortBy} onChange={e=>setSortBy(e.target.value as any)}>
                   <option value="relevance">Relevancia</option>
@@ -463,6 +511,13 @@ export default function Home(){
         </div>
         )}
         {!isLoading&&filtered.length===0&&!loadError&&<div className="empty">No encontramos propiedades con estos criterios. Ampliá presupuesto, zona o ambientes.</div>}
+        {hasMore&&!isLoading&&(
+          <div style={{display:'flex',justifyContent:'center',margin:'24px 0 8px'}}>
+            <button type="button" className="secondary" disabled={loadingMore} onClick={loadMore}>
+              {loadingMore?'Cargando…':'Cargar más resultados'}
+            </button>
+          </div>
+        )}
       </div></section>
 
       <section className="section darksection"><div className="container">

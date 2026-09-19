@@ -27,7 +27,50 @@ export async function engageSuggestion(suggestionId: string, session?: Session |
   return req<{status:string}>(`/property-suggestions/${suggestionId}/engage`, { method: 'POST' }, s.token);
 }
 
-export async function getProperties(filters?:Record<string,string|number|boolean>){if(!base){const agencyId=filters?.agency_id;return agencyId?PROPERTIES.filter(p=>p.agencyId===agencyId):PROPERTIES}const qs=new URLSearchParams();Object.entries(filters||{}).forEach(([k,v])=>v!==''&&v!==undefined&&qs.set(k,String(v)));return req<Property[]>(`/properties?${qs}`)}
+export type PropertiesPage = {items:Property[];total:number;limit:number;offset:number;has_more:boolean};
+
+/** Búsqueda paginada. Default limit=48. Devuelve página + total (no el catálogo entero). */
+export async function getProperties(
+  filters?: Record<string, string | number | boolean>
+): Promise<PropertiesPage> {
+  if (!base) {
+    const agencyId = filters?.agency_id;
+    const all = agencyId ? PROPERTIES.filter(p => p.agencyId === agencyId) : PROPERTIES;
+    const limit = Number(filters?.limit ?? 48);
+    const offset = Number(filters?.offset ?? 0);
+    const items = all.slice(offset, offset + limit);
+    return {items, total: all.length, limit, offset, has_more: offset + items.length < all.length};
+  }
+  const qs = new URLSearchParams();
+  const merged = {limit: 48, offset: 0, ...(filters || {})};
+  Object.entries(merged).forEach(([k, v]) => {
+    if (v !== '' && v !== undefined && v !== null) qs.set(k, String(v));
+  });
+  const data = await req<PropertiesPage | Property[]>(`/properties?${qs}`);
+  // Compat: si el backend aún devolviera array plano
+  if (Array.isArray(data)) {
+    return {items: data, total: data.length, limit: data.length, offset: 0, has_more: false};
+  }
+  return data;
+}
+
+/** Lista plana (admin / deep-link). Pide páginas hasta agotar o tope de seguridad. */
+export async function getPropertiesAll(
+  filters?: Record<string, string | number | boolean>,
+  maxPages = 20
+): Promise<Property[]> {
+  const out: Property[] = [];
+  let offset = 0;
+  const limit = 100;
+  for (let i = 0; i < maxPages; i++) {
+    const page = await getProperties({...(filters || {}), limit, offset});
+    out.push(...page.items);
+    if (!page.has_more) break;
+    offset += page.items.length;
+  }
+  return out;
+}
+
 export async function getPropertiesRandom(n:number=30,filters?:Record<string,string|number|boolean>):Promise<Property[]>{
   if(!base){
     const agencyId=filters?.agency_id;
@@ -427,7 +470,8 @@ export async function getListingGroup(propertyId:string):Promise<ListingGroup>{
 
 /** Deja una sola ficha por listing_group y adjunta rango de precio (T8.7 UX). */
 export async function getPropertiesDeduped(filters?:Record<string,string|number|boolean>):Promise<Property[]>{
-  const items=await getProperties(filters);
+  const page=await getProperties(filters);
+  const items=page.items;
   const seen=new Set<string>();
   const out:Property[]=[];
   const groupCache=new Map<string,ListingGroup>();

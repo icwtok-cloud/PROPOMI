@@ -2536,6 +2536,9 @@ def properties(
     country: str | None = None, province: str | None = None,
     under_construction: bool | None = None, investment_opportunity: bool | None = None,
     exclude_agency_id: str | None = None,
+    # Paginación (default 48, max 100). Evita devolver el catálogo entero.
+    limit: int = 48,
+    offset: int = 0,
     # Etapa 3 (secciÃ³n 10 / fase Intelligence): session_id opcional del
     # frontend para poder agrupar bÃºsquedas de una misma sesiÃ³n anÃ³nima sin
     # necesitar login (mismo campo que ya usa POST /events). authorization
@@ -2568,36 +2571,46 @@ def properties(
         )
         # Default: mayor probabilidad de rotaciÃ³n primero (encargo #2).
         stmt = stmt.order_by(Property.priority_score.desc(), Property.detected_at.desc())
-        results = db.scalars(stmt).all()
-        if city == "Sin descripciÃ³n":
+        # Total antes de paginar (para el home: "N resultados" + cargar más)
+        total = db.scalar(
+            select(func.count()).select_from(stmt.order_by(None).subquery())
+        ) or 0
+        page_limit = max(1, min(int(limit or 48), 100))
+        page_offset = max(0, int(offset or 0))
+        results = db.scalars(stmt.offset(page_offset).limit(page_limit)).all()
+        if city == "Sin descripción":
             results = [p for p in results if not is_valid_city_name(p.city)]
 
-        # Etapa 3: evento agregado y anÃ³nimo por cada bÃºsqueda â€” insumo para
-        # matching/recomendaciones/demanda/pricing (doc, secciÃ³n 10, fase
-        # Intelligence). No se guarda ningÃºn dato nuevo de contacto ni texto
-        # libre; solo los filtros ya pÃºblicos de la query y el resultado.
+        # Etapa 3: evento agregado y anónimo por cada búsqueda.
         filters_used = {
             k: v for k, v in {
                 "zone": zone, "city": city, "type": type, "operation": operation, "rooms": rooms,
                 "max_price": max_price, "parking": parking, "credit": credit,
-                "agency_id": agency_id,
+                "agency_id": agency_id, "country": country, "province": province,
+                "limit": page_limit, "offset": page_offset,
             }.items() if v is not None
         }
-        db.add(Event(
-            name="search_performed",
-            user_id=session.get("user_id") if session else None,
-            agency_id=session.get("agency_id") if session else None,
-            session_id=session_id,
-            context={"filters": filters_used, "result_count": len(results)},
-        ))
-        db.commit()
+        # Solo loguear search en la primera página para no inflar analytics
+        if page_offset == 0:
+            db.add(Event(
+                name="search_performed",
+                user_id=session.get("user_id") if session else None,
+                agency_id=session.get("agency_id") if session else None,
+                session_id=session_id,
+                context={"filters": filters_used, "result_count": int(total)},
+            ))
+            db.commit()
 
-        # Perf: rango de precio de grupo resuelto en UNA sola query agregada
-        # para todo el batch (ver _bulk_group_info) en vez de que el
-        # frontend dispare un GET /properties/{id}/group por cada propiedad
-        # agrupada â€” eso era el cuello de botella real de la carga del home.
         group_info = _bulk_group_info(db, results)
-        return [prop_dict(p, group_info) for p in results]
+        items = [prop_dict(p, group_info) for p in results]
+        return {
+            "items": items,
+            "total": int(total),
+            "limit": page_limit,
+            "offset": page_offset,
+            "has_more": page_offset + len(items) < int(total),
+        }
+
 
 
 @app.get("/properties/random")
