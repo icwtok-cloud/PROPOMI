@@ -2,6 +2,7 @@ from . import (
     agency_brokers_py,
     agency_canepa_uy,
     agency_dunod_ar,
+    agency_marcaraices_uy,
     agency_gorlero_uy,
     agency_nuevaalianza_py,
     agency_orangehome_mx,
@@ -51,6 +52,9 @@ PARSERS = {
     "agency_canepa_uy": agency_canepa_uy.parse_detail,
     "agency_gorlero_uy": agency_gorlero_uy.parse_detail,
     "agency_dunod_ar": agency_dunod_ar.parse_detail,
+    "agency_habitat_ar": tokko_agency.parse_detail_habitat,
+    "agency_newport_uy": tokko_agency.parse_detail_newport,
+    "agency_marcaraices_uy": agency_marcaraices_uy.parse_detail,
 }
 
 

@@ -1,18 +1,21 @@
 country,city_area,name,official_url,catalog_url,inventory_types,tier,status,source_id,notes
 Paraguay,Multi,Brokers,https://www.brokers.com.py/,https://www.brokers.com.py/,depto|casa|terreno|comercial,B,go,agency_brokers_py,enabled 2026-09-19; ~248 fichas home
 Uruguay,Punta del Este,Canepa,https://www.canepa.com.uy/,https://www.canepa.com.uy/casas/en-venta/,casa|apto|terreno|campo,B,go,agency_canepa_uy,enabled 2026-09-19; listados por tipo
-Uruguay,Montevideo,Boutique,https://www.inmobiliariaboutique.com.uy/,https://www.inmobiliariaboutique.com.uy/,departamento|casa,B,go,agency_boutique_uy,enabled 2026-09-19 ronda3; parser filtra alquiler puro
-Paraguay,Multi,Rodan,https://rodan.com.py/,https://rodan.com.py/propiedades/,loteo|fraccion,B,deferred,,loteos; parser P5 UX
-Paraguay,Multi,Crecer,https://www.crecer.com.py/,https://www.crecer.com.py/loteamientos,loteo,B,deferred,,SPA-light loteamientos
-Argentina,CABA,Puerto y Cia,https://www.puertoycia.com/,https://www.puertoycia.com/propiedades.php,venta|pozo|depto|casa,B,deferred,,hrefs de ficha no estables en HTML
-Argentina,Rosario,Habitat,https://www.habitatinmobiliariarosario.com/,https://www.habitatinmobiliariarosario.com/Propiedades,depto|casa|terreno,B,deferred,,posible Tokko; listado sin /propiedad/--id en smoke
-Uruguay,Montevideo,Newport,https://www.newportpropiedades.com/,https://www.newportpropiedades.com/Buscar,venta|obra_nueva,B,deferred,,buscador opaco
-Mexico,Zapopan,Punta Premier,https://puntapremierinmobiliaria.com/,https://puntapremierinmobiliaria.com/shop/,lujo|casa|depto,B,deferred,,WooCommerce shop
+Uruguay,Montevideo,Boutique,https://www.inmobiliariaboutique.com.uy/,https://www.inmobiliariaboutique.com.uy/,departamento|casa,B,no-go,,detalle.aspx; mayormente alquiler mensual en home
+Paraguay,Multi,Rodan,https://rodan.com.py/,https://rodan.com.py/propiedades/,loteo|fraccion,B,deferred,,detalle SPA/JS; listado /fraccion/{id} ok pero ficha vacía sin JS
+Paraguay,Multi,Crecer,https://www.crecer.com.py/,https://www.crecer.com.py/loteamientos,loteo,B,no-go,,sin hrefs de ficha en HTML
+Argentina,CABA,Puerto y Cia,https://www.puertoycia.com/,https://www.puertoycia.com/propiedades.php,venta|pozo|depto|casa,B,deferred,,listado 200 pero sin hrefs de ficha estables
+Argentina,Rosario,Habitat,https://www.habitatinmobiliariarosario.com/,https://www.habitatinmobiliariarosario.com/Venta,depto|casa|terreno,B,go,agency_habitat_ar,enabled B3 2026-09-19; Tokko /p/{id}-slug
+Uruguay,Montevideo,Newport,https://www.newportpropiedades.com/,https://www.newportpropiedades.com/Venta,venta|obra_nueva|depto|casa,B,go,agency_newport_uy,enabled B3 2026-09-19; Tokko /p/{id}-slug
+Mexico,Zapopan,Punta Premier,https://puntapremierinmobiliaria.com/,https://puntapremierinmobiliaria.com/propiedades-de-lujo-en-venta/,lujo|casa|depto,B,deferred,,WooCommerce; URLs /casa-en-venta-*/ sin product schema limpio
 Uruguay,Punta del Este,Gorlero,https://www.inmobiliariagorlero.com/,https://www.inmobiliariagorlero.com/casas/en-venta/,casa|apto,B,go,agency_gorlero_uy,enabled 2026-09-19 ronda2
 Uruguay,Punta del Este,Terramar,https://www.terramar.com.uy/,https://www.terramar.com.uy/,venta,B,no-go,,poca señal de catálogo en home
-Argentina,Rosario,Ellena,https://ellenapropiedades.com.ar/,https://ellenapropiedades.com.ar/propiedades,depto|casa,B,candidate,,filtros operation; re-eval hrefs
+Argentina,Rosario,Ellena,https://ellenapropiedades.com.ar/,https://ellenapropiedades.com.ar/propiedades,depto|casa,B,no-go,,500/timeout en smoke 2026-09-19
 Argentina,Rosario,Dunod,https://dunod.com.ar/,https://dunod.com.ar/inmuebles/?status%5B%5D=venta,depto|casa,B,go,agency_dunod_ar,enabled 2026-09-19 ronda2; ~200 hrefs
 Argentina,Rosario,Uno Propiedades,https://unopropiedades.com.ar/,https://unopropiedades.com.ar/propiedades,depto|casa,B,no-go,404 en catalog_url smoke
 Argentina,Rosario,Ducler,https://ducler.com.ar/,https://ducler.com.ar/propiedades,depto|casa,B,no-go,404 en catalog_url smoke
 Paraguay,Asuncion,Ogapar,https://ogapar.com.py/,https://ogapar.com.py/,depto|casa,B,no-go,DNS no resuelve
-Uruguay,Montevideo,Address,https://www.address.com.uy/,https://www.address.com.uy/propiedades/,casa|apto,B,go,agency_address_uy,enabled 2026-09-19 ronda3
+Uruguay,Montevideo,Marca Raices,https://www.marcaraices.com/,https://www.marcaraices.com/apartamentos/en-venta/,departamento|casa|terreno,B,go,agency_marcaraices_uy,enabled B3 2026-09-19; ~286 aptos venta
+Mexico,Guadalajara,GDL Propiedades,https://www.gdlpropiedades.com/,https://gdl-propiedades.easybroker.com/properties,venta|casa|depto,B,deferred,,catálogo en EasyBroker subdomain
+Paraguay,Multi,Atalaya,https://atalaya.com.py/,https://atalaya.com.py/,loteo,B,no-go,,sin hrefs de ficha en home
+Uruguay,Uruguay,Mi Casa Ya,https://micasaya.uy/,https://micasaya.uy/,departamento|casa,B,no-go,,sin listado HTML estable

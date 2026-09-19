@@ -236,13 +236,13 @@ def _agency_dunod_ar(html: str, base_url: str) -> list[str]:
 
 
 
-def _agency_address_uy(html: str, base_url: str) -> list[str]:
-    from .parsers.agency_address_uy import extract_detail_urls
-    return extract_detail_urls(html, base_url)
+def _tokko_agency_p(html: str, base_url: str) -> list[str]:
+    from .parsers.tokko_agency import extract_detail_urls_tokko_p
+    return extract_detail_urls_tokko_p(html, base_url)
 
 
-def _agency_boutique_uy(html: str, base_url: str) -> list[str]:
-    from .parsers.agency_boutique_uy import extract_detail_urls
+def _agency_marcaraices_uy(html: str, base_url: str) -> list[str]:
+    from .parsers.agency_marcaraices_uy import extract_detail_urls
     return extract_detail_urls(html, base_url)
 
 EXTRACTORS = {
@@ -272,8 +272,9 @@ EXTRACTORS = {
     "agency_canepa_uy": _agency_canepa_uy,
     "agency_gorlero_uy": _agency_gorlero_uy,
     "agency_dunod_ar": _agency_dunod_ar,
-    "agency_address_uy": _agency_address_uy,
-    "agency_boutique_uy": _agency_boutique_uy,
+    "agency_habitat_ar": _tokko_agency_p,
+    "agency_newport_uy": _tokko_agency_p,
+    "agency_marcaraices_uy": _agency_marcaraices_uy,
 }
 
 

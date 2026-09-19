@@ -410,14 +410,32 @@ def agency_dunod_ar_list_urls() -> Iterator[str]:
     for page in range(2, 8):
         yield f"https://dunod.com.ar/inmuebles/page/{page}/?status%5B%5D=venta"
 
-def agency_address_uy_list_urls() -> Iterator[str]:
-    """Address UY — /propiedades/ + home + páginas."""
-    yield "https://www.address.com.uy/propiedades/"
-    yield "https://www.address.com.uy/"
+
+def agency_habitat_ar_list_urls() -> Iterator[str]:
+    """Hábitat Rosario — Tokko /p/{id}-slug; listados Venta + Propiedades."""
+    yield "https://www.habitatinmobiliariarosario.com/Venta"
+    yield "https://www.habitatinmobiliariarosario.com/Propiedades"
     for page in range(2, 6):
-        yield f"https://www.address.com.uy/propiedades/page/{page}/"
+        yield f"https://www.habitatinmobiliariarosario.com/Venta?page={page}"
 
 
-def agency_boutique_uy_list_urls() -> Iterator[str]:
-    """Boutique Montevideo — home con detalle.aspx?id= (parser filtra alquiler puro)."""
-    yield "https://www.inmobiliariaboutique.com.uy/"
+def agency_newport_uy_list_urls() -> Iterator[str]:
+    """Newport Montevideo — Tokko /p/{id}-slug; /Venta filtra alquiler."""
+    yield "https://www.newportpropiedades.com/Venta"
+    yield "https://www.newportpropiedades.com/Buscar"
+    for page in range(2, 5):
+        yield f"https://www.newportpropiedades.com/Venta?page={page}"
+
+
+def agency_marcaraices_uy_list_urls() -> Iterator[str]:
+    """Marca Raíces UY — listados por tipo en venta (mismo patrón Canepa)."""
+    for path in (
+        "apartamentos/en-venta/",
+        "casas/en-venta/",
+        "terrenos/en-venta/",
+        "campos/en-venta/",
+        "chacras/en-venta/",
+        "locales/en-venta/",
+        "oficinas/en-venta/",
+    ):
+        yield f"https://www.marcaraices.com/{path}"

@@ -1,8 +1,8 @@
 """Configuración por fuente: dominio, generador de URLs de listado, robots_note.
 
 Estado 2026-09-19b:
-  enabled=True (19): 14 portales + 5 agencias TIER A; previas + argencasas, departamentosenpozo, bullano,
-    mercadolibre_mx, grupoedisur. ML AR/MX con paginación _Desde_N.
+  enabled=True (22): 14 portales + 5 TIER A + 7 TIER B (incl. habitat/newport/marcaraices ronda B3);
+    previas + argencasas, departamentosenpozo, bullano, mercadolibre_mx, grupoedisur.
   enabled=False: zonaprop/argenprop/properati + cola SPA/anti-bot.
 run_crawl() salta fuentes con enabled=False.
 """
@@ -334,21 +334,30 @@ SOURCES: dict[str, SourceConfig] = {
     ),
 
 
-    "agency_address_uy": SourceConfig(
-        id="agency_address_uy",
-        name="Address (Montevideo)",
-        base_url="https://www.address.com.uy",
-        list_urls_fn=queries.agency_address_uy_list_urls,
+    # --- TIER B3 (2026-09-19 re-eval deferred + discovery) ---
+    "agency_habitat_ar": SourceConfig(
+        id="agency_habitat_ar",
+        name="Hábitat (Rosario)",
+        base_url="https://www.habitatinmobiliariarosario.com",
+        list_urls_fn=queries.agency_habitat_ar_list_urls,
         enabled=True,
-        robots_note="2026-09-19 TIER B ronda3: /propiedad/{id}_slug/; /propiedades/ ~24 hrefs; sin CF.",
+        robots_note="2026-09-19 B3: Tokko /p/{id}-slug; /Venta ~15+ fichas HTML; sin CF.",
     ),
-    "agency_boutique_uy": SourceConfig(
-        id="agency_boutique_uy",
-        name="Boutique (Montevideo)",
-        base_url="https://www.inmobiliariaboutique.com.uy",
-        list_urls_fn=queries.agency_boutique_uy_list_urls,
+    "agency_newport_uy": SourceConfig(
+        id="agency_newport_uy",
+        name="Newport (Montevideo)",
+        base_url="https://www.newportpropiedades.com",
+        list_urls_fn=queries.agency_newport_uy_list_urls,
         enabled=True,
-        robots_note="2026-09-19 TIER B ronda3: detalle.aspx?id=; parser descarta alquiler puro; sin CF.",
+        robots_note="2026-09-19 B3: Tokko /p/{id}-slug; /Venta sin alquiler en slug; sin CF.",
+    ),
+    "agency_marcaraices_uy": SourceConfig(
+        id="agency_marcaraices_uy",
+        name="Marca Raíces (Montevideo)",
+        base_url="https://www.marcaraices.com",
+        list_urls_fn=queries.agency_marcaraices_uy_list_urls,
+        enabled=True,
+        robots_note="2026-09-19 B3: /apartamentos|casas/en-venta/ + /{Tipo}/{id}; ~286 aptos venta; sin CF.",
     ),
 
 }
