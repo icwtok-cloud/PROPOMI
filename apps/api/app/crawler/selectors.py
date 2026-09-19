@@ -296,4 +296,23 @@ SOURCES: dict[str, SourceConfig] = {
         robots_note="2026-09-19: /propiedad/{id}; listado venta; sin CF.",
     ),
 
+
+    # --- Agencias TIER B (2026-09-19 discovery) ---
+    "agency_brokers_py": SourceConfig(
+        id="agency_brokers_py",
+        name="Brokers (Paraguay)",
+        base_url="https://www.brokers.com.py",
+        list_urls_fn=queries.agency_brokers_py_list_urls,
+        enabled=True,
+        robots_note="2026-09-19 TIER B: home ~248 fichas /propiedad/{id}_slug; sin CF.",
+    ),
+    "agency_canepa_uy": SourceConfig(
+        id="agency_canepa_uy",
+        name="Cánepa & Cánepa (UY)",
+        base_url="https://www.canepa.com.uy",
+        list_urls_fn=queries.agency_canepa_uy_list_urls,
+        enabled=True,
+        robots_note="2026-09-19 TIER B: /casas|apartamentos|terrenos/en-venta/ + /{Tipo}/{id}; sin CF.",
+    ),
+
 }

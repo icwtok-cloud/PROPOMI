@@ -374,3 +374,21 @@ def agency_nuevaalianza_py_list_urls() -> Iterator[str]:
     """Nueva Alianza Asunción — listado venta primero."""
     yield "https://inmobiliariana.com.py/"  # listado venta con acentos rompe urllib ascii; home expone /propiedad/{id}
     yield "https://inmobiliariana.com.py/"
+
+def agency_brokers_py_list_urls() -> Iterator[str]:
+    """Brokers Paraguay — home expone muchas /propiedad/{id}_slug."""
+    yield "https://www.brokers.com.py/"
+    yield "https://www.brokers.com.py/propiedades/"
+    for page in range(2, 6):
+        yield f"https://www.brokers.com.py/page/{page}/"
+
+
+def agency_canepa_uy_list_urls() -> Iterator[str]:
+    """Cánepa UY — listados por tipo en venta."""
+    for path in (
+        "casas/en-venta/",
+        "apartamentos/en-venta/",
+        "terrenos/en-venta/",
+        "campos/en-venta/",
+    ):
+        yield f"https://www.canepa.com.uy/{path}"

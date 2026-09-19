@@ -212,6 +212,17 @@ def _agency_nuevaalianza_py(html: str, base_url: str) -> list[str]:
     from .parsers.agency_nuevaalianza_py import extract_detail_urls
     return extract_detail_urls(html, base_url)
 
+
+
+def _agency_brokers_py(html: str, base_url: str) -> list[str]:
+    from .parsers.agency_brokers_py import extract_detail_urls
+    return extract_detail_urls(html, base_url)
+
+
+def _agency_canepa_uy(html: str, base_url: str) -> list[str]:
+    from .parsers.agency_canepa_uy import extract_detail_urls
+    return extract_detail_urls(html, base_url)
+
 EXTRACTORS = {
     "zonaprop": _zonaprop,
     "argenprop": _argenprop,
@@ -235,6 +246,8 @@ EXTRACTORS = {
     "agency_prop_uy": _agency_prop_uy,
     "agency_orangehome_mx": _agency_orangehome_mx,
     "agency_nuevaalianza_py": _agency_nuevaalianza_py,
+    "agency_brokers_py": _agency_brokers_py,
+    "agency_canepa_uy": _agency_canepa_uy,
 }
 
 
