@@ -315,4 +315,22 @@ SOURCES: dict[str, SourceConfig] = {
         robots_note="2026-09-19 TIER B: /casas|apartamentos|terrenos/en-venta/ + /{Tipo}/{id}; sin CF.",
     ),
 
+
+    "agency_gorlero_uy": SourceConfig(
+        id="agency_gorlero_uy",
+        name="Gorlero (Punta del Este)",
+        base_url="https://www.inmobiliariagorlero.com",
+        list_urls_fn=queries.agency_gorlero_uy_list_urls,
+        enabled=True,
+        robots_note="2026-09-19 TIER B: /casas|apartamentos/en-venta/ + /{Tipo}/{id}; sin CF.",
+    ),
+    "agency_dunod_ar": SourceConfig(
+        id="agency_dunod_ar",
+        name="Dunod (Rosario)",
+        base_url="https://dunod.com.ar",
+        list_urls_fn=queries.agency_dunod_ar_list_urls,
+        enabled=True,
+        robots_note="2026-09-19 TIER B: /inmueble/{slug}/; listado status=venta ~200 hrefs; sin CF.",
+    ),
+
 }

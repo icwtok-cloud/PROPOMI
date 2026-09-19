@@ -392,3 +392,20 @@ def agency_canepa_uy_list_urls() -> Iterator[str]:
         "campos/en-venta/",
     ):
         yield f"https://www.canepa.com.uy/{path}"
+
+def agency_gorlero_uy_list_urls() -> Iterator[str]:
+    """Gorlero PDE — listados por tipo en venta (mismo patrón Canepa)."""
+    for path in (
+        "casas/en-venta/",
+        "apartamentos/en-venta/",
+        "terrenos/en-venta/",
+        "campos/en-venta/",
+    ):
+        yield f"https://www.inmobiliariagorlero.com/{path}"
+
+
+def agency_dunod_ar_list_urls() -> Iterator[str]:
+    """Dunod Rosario — WP inmuebles status=venta + paginación."""
+    yield "https://dunod.com.ar/inmuebles/?status%5B%5D=venta"
+    for page in range(2, 8):
+        yield f"https://dunod.com.ar/inmuebles/page/{page}/?status%5B%5D=venta"

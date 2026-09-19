@@ -8,10 +8,10 @@ Argentina,CABA,Puerto y Cia,https://www.puertoycia.com/,https://www.puertoycia.c
 Argentina,Rosario,Habitat,https://www.habitatinmobiliariarosario.com/,https://www.habitatinmobiliariarosario.com/Propiedades,depto|casa|terreno,B,deferred,,posible Tokko; listado sin /propiedad/--id en smoke
 Uruguay,Montevideo,Newport,https://www.newportpropiedades.com/,https://www.newportpropiedades.com/Buscar,venta|obra_nueva,B,deferred,,buscador opaco
 Mexico,Zapopan,Punta Premier,https://puntapremierinmobiliaria.com/,https://puntapremierinmobiliaria.com/shop/,lujo|casa|depto,B,deferred,,WooCommerce shop
-Uruguay,Punta del Este,Gorlero,https://www.inmobiliariagorlero.com/,https://www.inmobiliariagorlero.com/casas/en-venta/,casa|apto,B,candidate,,mismo patrón Canepa-like; re-smoke
+Uruguay,Punta del Este,Gorlero,https://www.inmobiliariagorlero.com/,https://www.inmobiliariagorlero.com/casas/en-venta/,casa|apto,B,go,agency_gorlero_uy,enabled 2026-09-19 ronda2
 Uruguay,Punta del Este,Terramar,https://www.terramar.com.uy/,https://www.terramar.com.uy/,venta,B,no-go,,poca señal de catálogo en home
 Argentina,Rosario,Ellena,https://ellenapropiedades.com.ar/,https://ellenapropiedades.com.ar/propiedades,depto|casa,B,candidate,,filtros operation; re-eval hrefs
-Argentina,Rosario,Dunod,https://dunod.com.ar/,https://dunod.com.ar/inmuebles/?status%5B%5D=venta,depto|casa,B,candidate,,WP inmuebles status=venta
+Argentina,Rosario,Dunod,https://dunod.com.ar/,https://dunod.com.ar/inmuebles/?status%5B%5D=venta,depto|casa,B,go,agency_dunod_ar,enabled 2026-09-19 ronda2; ~200 hrefs
 Argentina,Rosario,Uno Propiedades,https://unopropiedades.com.ar/,https://unopropiedades.com.ar/propiedades,depto|casa,B,no-go,404 en catalog_url smoke
 Argentina,Rosario,Ducler,https://ducler.com.ar/,https://ducler.com.ar/propiedades,depto|casa,B,no-go,404 en catalog_url smoke
 Paraguay,Asuncion,Ogapar,https://ogapar.com.py/,https://ogapar.com.py/,depto|casa,B,no-go,DNS no resuelve
