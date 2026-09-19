@@ -142,12 +142,12 @@ export default function AgentDashboard(){
       listOffers(session),
       getAgencyOpportunities(session.user.agency_id,session),
       getAnalytics(session),
-      getProperties({agency_id:session.user.agency_id}),
+      getProperties({agency_id:session.user.agency_id,limit:100,offset:0}),
     ]);
     setAgency(a);setNameDraft(a.name);setInstagramDraft(a.instagram||'');setWebsiteDraft(a.websiteLink||'');
     if(isOffersRestricted(o)){setOffers([]);setOffersRestrictedCount(o.count)}
     else{setOffers(o);setOffersRestrictedCount(null)}
-    setOpps(opp as OppData);setAnalytics(an as any);setMyProperties(props);
+    setOpps(opp as OppData);setAnalytics(an as any);setMyProperties((props as any).items||props||[]);
   })().catch((e:any)=>{setLoadError(e?.message||'No pudimos cargar el panel de agencia.')})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
@@ -158,8 +158,9 @@ export default function AgentDashboard(){
     setSuggestResults([]);
     setSuggestBusy(true);
     try{
-      const rows=await getProperties({exclude_agency_id:session?.user.agency_id||''});
-      setSuggestResults(Array.isArray(rows)?rows.slice(0,40):[]);
+      const page=await getProperties({exclude_agency_id:session?.user.agency_id||'',limit:100,offset:0});
+      const rows=page.items||[];
+      setSuggestResults(rows.slice(0,40));
     }catch(e:any){
       notify(e?.message||'No pudimos cargar propiedades de otras agencias.');
       setSuggestForId(null);
@@ -285,10 +286,10 @@ export default function AgentDashboard(){
       try{
         const [an,props]=await Promise.all([
           getAnalytics(session),
-          getProperties({agency_id:session.user.agency_id}),
+          getProperties({agency_id:session.user.agency_id,limit:100,offset:0}),
         ]);
         setAnalytics(an as any);
-        setMyProperties(props);
+        setMyProperties((props as any).items||props||[]);
       }catch{}
     }catch(e:any){
       notify(e?.message||'No pudimos publicar la propiedad.');
@@ -301,8 +302,8 @@ export default function AgentDashboard(){
   async function refreshMyProperties(){
     if(!session?.user.agency_id)return;
     try{
-      const props=await getProperties({agency_id:session.user.agency_id});
-      setMyProperties(props);
+      const page=await getProperties({agency_id:session.user.agency_id,limit:100,offset:0});
+      setMyProperties(page.items||[]);
     }catch{}
   }
 
