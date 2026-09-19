@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,ImagePlus,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,Trash2,TrendingUp,Unlock,Upload,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
 import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,GeoCatalog,uploadPropertyImages,deletePropertyImage} from '../lib/api';
-import {adminUnitLabel} from '../lib/geo';
+import {adminUnitLabel,formatMoney} from '../lib/geo';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -285,7 +285,7 @@ export default function AgentDashboard(){
       try{
         const [an,props]=await Promise.all([
           getAnalytics(session),
-          getProperties({agency_id:session.user.agency_id}),
+          getProperties({agency_id:session.user.agency_id,limit:100}),
         ]);
         setAnalytics(an as any);
         setMyProperties(props.items||[]);
@@ -889,7 +889,7 @@ function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers
                 <div key={r.id} className="opprow" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
                   <div>
                     <strong>{r.title}</strong>
-                    <div className="muted small">{r.zone} · USD {Number(r.price||0).toLocaleString('en-US')}</div>
+                    <div className="muted small">{r.zone} · {formatMoney(Number(r.price||0), r.currency)}</div>
                   </div>
                   <button type="button" className="primary" disabled={suggestBusy} onClick={()=>confirmSuggest(r.id)}>Sugerir</button>
                 </div>
