@@ -6,6 +6,7 @@ import PropertyCard from '../../../components/PropertyCard';
 import IntentWizard, {WizardMode} from '../../../components/IntentWizard';
 import {getAgencyBySlug,getProperties,trackEvent,captureOfferOriginFromUrl} from '../../../lib/api';
 import {Agency,Property} from '../../../lib/types';
+import {formatMoney} from '../../../lib/geo';
 
 // Etapa 015 (subdominios por agencia): storefront público mínimo de UNA
 // agencia. Llega acá vía:
@@ -46,8 +47,8 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
         const a = await getAgencyBySlug(slug);
         if (cancelled) return;
         setAgency(a);
-        const props = await getProperties({agency_id: a.id});
-        if (!cancelled) setItems(props);
+        const page = await getProperties({agency_id: a.id, limit: 100});
+        if (!cancelled) setItems(page.items || []);
       } catch (err: any) {
         if (!cancelled && err?.status === 404) setNotFound(true);
       }
@@ -143,8 +144,8 @@ export default function AgencyStorefront({params}: {params: Promise<{slug: strin
         <div>
           <div className="bigprice">
             {detail.priceMin!=null&&detail.priceMax!=null&&detail.priceMin!==detail.priceMax
-              ? <>USD {detail.priceMin.toLocaleString('en-US')} – {detail.priceMax.toLocaleString('en-US')}</>
-              : <>USD {Number(detail.price||0).toLocaleString('en-US')}</>}
+              ? <>{formatMoney(detail.priceMin, detail.currency)} – {formatMoney(detail.priceMax, detail.currency)}</>
+              : <>{formatMoney(detail.price, detail.currency)}</>}
           </div>
           {detail.groupMemberCount!=null&&detail.groupMemberCount>1&&(
             <p className="muted small">Ficha multi-agente · {detail.groupMemberCount} publicaciones</p>
