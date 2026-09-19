@@ -333,4 +333,22 @@ SOURCES: dict[str, SourceConfig] = {
         robots_note="2026-09-19 TIER B: /inmueble/{slug}/; listado status=venta ~200 hrefs; sin CF.",
     ),
 
+
+    "agency_address_uy": SourceConfig(
+        id="agency_address_uy",
+        name="Address (Montevideo)",
+        base_url="https://www.address.com.uy",
+        list_urls_fn=queries.agency_address_uy_list_urls,
+        enabled=True,
+        robots_note="2026-09-19 TIER B ronda3: /propiedad/{id}_slug/; /propiedades/ ~24 hrefs; sin CF.",
+    ),
+    "agency_boutique_uy": SourceConfig(
+        id="agency_boutique_uy",
+        name="Boutique (Montevideo)",
+        base_url="https://www.inmobiliariaboutique.com.uy",
+        list_urls_fn=queries.agency_boutique_uy_list_urls,
+        enabled=True,
+        robots_note="2026-09-19 TIER B ronda3: detalle.aspx?id=; parser descarta alquiler puro; sin CF.",
+    ),
+
 }

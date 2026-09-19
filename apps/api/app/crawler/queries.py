@@ -409,3 +409,15 @@ def agency_dunod_ar_list_urls() -> Iterator[str]:
     yield "https://dunod.com.ar/inmuebles/?status%5B%5D=venta"
     for page in range(2, 8):
         yield f"https://dunod.com.ar/inmuebles/page/{page}/?status%5B%5D=venta"
+
+def agency_address_uy_list_urls() -> Iterator[str]:
+    """Address UY — /propiedades/ + home + páginas."""
+    yield "https://www.address.com.uy/propiedades/"
+    yield "https://www.address.com.uy/"
+    for page in range(2, 6):
+        yield f"https://www.address.com.uy/propiedades/page/{page}/"
+
+
+def agency_boutique_uy_list_urls() -> Iterator[str]:
+    """Boutique Montevideo — home con detalle.aspx?id= (parser filtra alquiler puro)."""
+    yield "https://www.inmobiliariaboutique.com.uy/"

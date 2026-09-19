@@ -37,6 +37,8 @@ SOURCE_COUNTRY: dict[str, str] = {
     "agency_canepa_uy": "Uruguay",
     "agency_gorlero_uy": "Uruguay",
     "agency_dunod_ar": "Argentina",
+    "agency_address_uy": "Uruguay",
+    "agency_boutique_uy": "Uruguay",
 }
 
 

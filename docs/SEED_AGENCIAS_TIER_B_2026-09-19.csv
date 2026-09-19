@@ -1,7 +1,7 @@
 country,city_area,name,official_url,catalog_url,inventory_types,tier,status,source_id,notes
 Paraguay,Multi,Brokers,https://www.brokers.com.py/,https://www.brokers.com.py/,depto|casa|terreno|comercial,B,go,agency_brokers_py,enabled 2026-09-19; ~248 fichas home
 Uruguay,Punta del Este,Canepa,https://www.canepa.com.uy/,https://www.canepa.com.uy/casas/en-venta/,casa|apto|terreno|campo,B,go,agency_canepa_uy,enabled 2026-09-19; listados por tipo
-Uruguay,Montevideo,Boutique,https://www.inmobiliariaboutique.com.uy/,https://www.inmobiliariaboutique.com.uy/,departamento|casa,B,deferred,,detalle.aspx; mayormente alquiler en home
+Uruguay,Montevideo,Boutique,https://www.inmobiliariaboutique.com.uy/,https://www.inmobiliariaboutique.com.uy/,departamento|casa,B,go,agency_boutique_uy,enabled 2026-09-19 ronda3; parser filtra alquiler puro
 Paraguay,Multi,Rodan,https://rodan.com.py/,https://rodan.com.py/propiedades/,loteo|fraccion,B,deferred,,loteos; parser P5 UX
 Paraguay,Multi,Crecer,https://www.crecer.com.py/,https://www.crecer.com.py/loteamientos,loteo,B,deferred,,SPA-light loteamientos
 Argentina,CABA,Puerto y Cia,https://www.puertoycia.com/,https://www.puertoycia.com/propiedades.php,venta|pozo|depto|casa,B,deferred,,hrefs de ficha no estables en HTML
@@ -15,3 +15,4 @@ Argentina,Rosario,Dunod,https://dunod.com.ar/,https://dunod.com.ar/inmuebles/?st
 Argentina,Rosario,Uno Propiedades,https://unopropiedades.com.ar/,https://unopropiedades.com.ar/propiedades,depto|casa,B,no-go,404 en catalog_url smoke
 Argentina,Rosario,Ducler,https://ducler.com.ar/,https://ducler.com.ar/propiedades,depto|casa,B,no-go,404 en catalog_url smoke
 Paraguay,Asuncion,Ogapar,https://ogapar.com.py/,https://ogapar.com.py/,depto|casa,B,no-go,DNS no resuelve
+Uruguay,Montevideo,Address,https://www.address.com.uy/,https://www.address.com.uy/propiedades/,casa|apto,B,go,agency_address_uy,enabled 2026-09-19 ronda3
