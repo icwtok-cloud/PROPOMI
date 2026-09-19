@@ -1,0 +1,3 @@
+ apps/web/app/globals.css | 19 +++++++++++++++++--
+ apps/web/app/page.tsx    | 26 +++++++++++---------------
+ 2 files changed, 28 insertions(+), 17 deletions(-)

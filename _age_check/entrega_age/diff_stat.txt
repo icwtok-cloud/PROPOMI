@@ -1,0 +1,8 @@
+ apps/api/app/crawler/normalize.py            | 38 ++++++++++++++++++++++++++++
+ apps/api/app/crawler/parsers/argenprop.py    | 13 ++++++++++
+ apps/api/app/crawler/parsers/bienesonline.py | 12 +++++++++
+ apps/api/app/crawler/parsers/infocasas.py    | 11 ++++++++
+ apps/api/app/crawler/parsers/mercadolibre.py | 18 +++++++++++++
+ apps/api/app/crawler/parsers/zonaprop.py     | 26 +++++++++++++++++++
+ apps/api/app/crawler/runner.py               | 19 ++++++++++++--
+ 7 files changed, 135 insertions(+), 2 deletions(-)

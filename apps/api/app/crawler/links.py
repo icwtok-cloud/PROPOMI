@@ -84,22 +84,24 @@ def _mercado_unico(html: str, base_url: str) -> list[str]:
 
 
 def _mercadolibre(html: str, base_url: str) -> list[str]:
-    """Detalle MLA desde listado real (solo dominios *.mercadolibre.com.ar / path /MLA-)."""
+    """Detalle MLA/MLM desde listado (AR + MX)."""
     hrefs = re.findall(
-        r'href="(https?://(?:inmueble|casa|departamento)\.mercadolibre\.com\.ar/[^"]*MLA-?\d+[^"]*)"',
+        r'href="(https?://(?:inmueble|casa|departamento|terreno|campo)\.mercadolibre\.com\.(?:ar|mx)/[^"]*ML[A-Z]-?\d+[^"]*)"',
         html,
     )
-    hrefs += re.findall(r'href="(/(?:MLA-?\d{8,14})[^"]*)"', html)
+    hrefs += re.findall(r'href="(/(?:ML[A-Z]-?\d{8,14})[^"]*)"', html)
     ids = re.findall(
-        r"(?:inmueble|casa|departamento)\.mercadolibre\.com\.ar/(MLA-?\d+)",
+        r"(?:inmueble|casa|departamento|terreno|campo)\.mercadolibre\.com\.(?:ar|mx)/(ML[A-Z]-?\d+)",
         html,
     )
-    ids += re.findall(r'href="/(MLA-?\d{8,14})"', html)
+    ids += re.findall(r'href="/(ML[A-Z]-?\d{8,14})"', html)
+    is_mx = ".com.mx" in base_url or "mercadolibre.com.mx" in html[:2000]
     out = [urljoin(base_url, h) for h in hrefs]
     for i in ids:
-        mid = i if i.startswith("MLA") else f"MLA-{i}"
-        mid = re.sub(r"MLA-+", "MLA-", mid)
-        out.append(f"https://inmueble.mercadolibre.com.ar/{mid}")
+        mid = i if re.match(r"ML[A-Z]", i) else f"MLA-{i}"
+        mid = re.sub(r"(ML[A-Z])-+", r"\1-", mid)
+        host = "inmueble.mercadolibre.com.mx" if is_mx or mid.startswith("MLM") else "inmueble.mercadolibre.com.ar"
+        out.append(f"https://{host}/{mid}")
     clean = []
     for u in out:
         u = u.split("#")[0].split("?")[0]
@@ -107,6 +109,26 @@ def _mercadolibre(html: str, base_url: str) -> list[str]:
             continue
         clean.append(u)
     return _dedupe(clean)
+
+
+def _argencasas(html: str, base_url: str) -> list[str]:
+    hrefs = re.findall(r'href="([^"]*/propiedad-[^"?#]+)"', html)
+    return _dedupe([urljoin(base_url, h) for h in hrefs])
+
+
+def _departamentosenpozo(html: str, base_url: str) -> list[str]:
+    hrefs = re.findall(r'href="(/desarrollos-inmobiliarios/[a-z0-9\-]+/?)"', html)
+    out = []
+    for h in hrefs:
+        if h.rstrip("/") == "/desarrollos-inmobiliarios":
+            continue
+        out.append(urljoin(base_url, h))
+    return _dedupe(out)
+
+
+def _bullano(html: str, base_url: str) -> list[str]:
+    hrefs = re.findall(r'href="([^"]*/campos/ficha/[^"]+\.html)"', html)
+    return _dedupe([urljoin(base_url, h) for h in hrefs])
 
 
 def _inmoclick(html: str, base_url: str) -> list[str]:
@@ -153,11 +175,15 @@ EXTRACTORS = {
     "mercado_unico": _mercado_unico,
     "inmoclick": _inmoclick,
     "mercadolibre": _mercadolibre,
+    "mercadolibre_mx": _mercadolibre,
     "properati": _properati,
     "inmoup": _inmoup,
     "infocasas_py": _infocasas,
     "infocasas_uy": _infocasas,
     "bienesonline": _bienesonline,
+    "argencasas": _argencasas,
+    "departamentosenpozo": _departamentosenpozo,
+    "bullano": _bullano,
 }
 
 

@@ -1,0 +1,5 @@
+ apps/api/app/main.py                   | 130 ++++++++++++++++++++-
+ apps/web/app/globals.css               |  37 ++++--
+ apps/web/components/AgentDashboard.tsx | 203 +++++++++++++++++++++++----------
+ apps/web/lib/api.ts                    |  11 ++
+ 4 files changed, 307 insertions(+), 74 deletions(-)

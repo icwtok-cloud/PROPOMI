@@ -11,7 +11,7 @@ import {canonicalAdminUnits,adminUnitLabel,propertyTypeLabel} from '../lib/geo';
 
 const LEVELS=[['Ver',1,'Exploración'],['Guardar',2,'Interés'],['Comparar',3,'Evaluación'],['Preguntar',4,'Consulta'],['Visitar',6,'Intención'],['Ofertar',8,'Decisión'],['Negociar',10,'Negociación'],['Compartir contacto',10,'Contacto']];
 const FUNNEL=['Vistas','Guardados','Comparaciones','Consultas','Visitas','Ofertas','Negociaciones','Contacto compartido','Operaciones'];
-const PROPERTY_TYPES=['Todos','Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
+const PROPERTY_TYPES=['Todos','Departamento','Casa','PH','Oficina','Local','Terreno','Campo','Chacra','En Pozo'];
 
 /** Heurística espejo del backend (GET /properties/filters): ciudad válida si
  *  tiene letras, >2 chars, no es solo dígitos, y no parece dirección. */
@@ -160,7 +160,7 @@ export default function Home(){
         }else if(p.city!==city) return false;
       }
       if(zone&&p.zone!==zone) return false;
-      if(ptype==='En Pozo'){ if(!p.underConstruction) return false; }
+      if(ptype==='En Pozo'){ if(!(p.underConstruction||p.type==='En Pozo')) return false; }
       else if(ptype!=='Todos'&&p.type!==ptype) return false;
       if(rooms&&rooms!=='Todos'&&p.rooms!==Number(rooms)) return false;
       if(!(p.price<=Number(budget||Infinity))) return false;
@@ -207,8 +207,9 @@ export default function Home(){
   const typeIcon=(name:string)=>{
     if(name==='Casa')return <HomeIcon size={18}/>;
     if(name==='Oficina')return <Briefcase size={18}/>;
-    if(name==='Terreno')return <Map size={18}/>;
+    if(name==='Terreno'||name==='Campo'||name==='Chacra')return <Map size={18}/>;
     if(name==='Local')return <Store size={18}/>;
+    if(name==='En Pozo')return <Building2 size={18}/>;
     return <Building2 size={18}/>;
   };
   const compareItems=items.filter(p=>compared.includes(p.id));

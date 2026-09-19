@@ -1,0 +1,1100 @@
+From 0aa51bc7a7f14612b75acd3c228d5882ed7447da Mon Sep 17 00:00:00 2001
+From: Delivery Bot <delivery@propomi.local>
+Date: Thu, 17 Sep 2026 17:45:05 +0000
+Subject: [PATCH] =?UTF-8?q?fix(crawler):=20combinar=20detecci=C3=B3n=20de?=
+ =?UTF-8?q?=20operation=20(JSON-LD)=20con=20scale-inventory?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- detect_operation_from_signals en base.py (JSON embebido -> JSON-LD/Breadcrumb -> URL -> title)
+- 8 parsers usan el detector en vez de hardcodear Venta
+- runner.py: gate hidden_at en update (Alquiler oculta, Venta re-muestra) + max_details_for()/max_list_pages_for() con MAX_*_OVERRIDE
+- mercadolibre.py: mapeo completo de provincias AR (capital-federal/caba -> CABA) + operation via detector
+- fixtures Alquiler + test_operation_detection.py (15 passed) + backfill_operation_leaks.py
+
+Base: 445a522
+---
+ apps/api/app/crawler/base.py                  | 205 +++++++++++++++
+ apps/api/app/crawler/parsers/argenprop.py     |   4 +-
+ apps/api/app/crawler/parsers/bienesonline.py  |   4 +-
+ apps/api/app/crawler/parsers/cordobaprop.py   |   4 +-
+ apps/api/app/crawler/parsers/inmoclick.py     |   4 +-
+ apps/api/app/crawler/parsers/inmoup.py        |   4 +-
+ apps/api/app/crawler/parsers/mercado_unico.py |   4 +-
+ apps/api/app/crawler/parsers/mercadolibre.py  |  62 ++++-
+ apps/api/app/crawler/parsers/zonaprop.py      |   4 +-
+ apps/api/app/crawler/runner.py                |  56 +++-
+ .../tests/fixtures/bienesonline_alquiler.html |  10 +
+ .../tests/fixtures/cordobaprop_alquiler.html  |   7 +
+ .../tests/fixtures/inmoclick_alquiler.html    |   5 +
+ apps/api/tests/fixtures/inmoup_alquiler.html  |   5 +
+ .../fixtures/mercado_unico_alquiler.html      |   5 +
+ .../tests/fixtures/mercadolibre_alquiler.html |  11 +
+ apps/api/tests/test_operation_detection.py    | 247 ++++++++++++++++++
+ scripts/backfill_operation_leaks.py           | 115 ++++++++
+ 18 files changed, 726 insertions(+), 30 deletions(-)
+ create mode 100644 apps/api/tests/fixtures/bienesonline_alquiler.html
+ create mode 100644 apps/api/tests/fixtures/cordobaprop_alquiler.html
+ create mode 100644 apps/api/tests/fixtures/inmoclick_alquiler.html
+ create mode 100644 apps/api/tests/fixtures/inmoup_alquiler.html
+ create mode 100644 apps/api/tests/fixtures/mercado_unico_alquiler.html
+ create mode 100644 apps/api/tests/fixtures/mercadolibre_alquiler.html
+ create mode 100644 apps/api/tests/test_operation_detection.py
+ create mode 100644 scripts/backfill_operation_leaks.py
+
+diff --git a/apps/api/app/crawler/base.py b/apps/api/app/crawler/base.py
+index 4b548ca..16cff2d 100644
+--- a/apps/api/app/crawler/base.py
++++ b/apps/api/app/crawler/base.py
+@@ -1,10 +1,14 @@
+ """Tipos y utilidades compartidas para parsers de fichas."""
+ from __future__ import annotations
+ 
++import json
++import logging
+ import re
+ from dataclasses import dataclass, field
+ from typing import Any
+ 
++logger = logging.getLogger("propomi.crawler")
++
+ 
+ @dataclass
+ class RawListing:
+@@ -47,6 +51,9 @@ EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
+ URL_RE = re.compile(r"https?://[^\s]+|www\.[^\s]+", re.I)
+ WHATSAPP_RE = re.compile(r"whatsapp|wa\.me|api\.whatsapp", re.I)
+ 
++_ALQUILER_KEYS = ("alquiler", "renta", "rent", "lease", "temporal")
++_VENTA_KEYS = ("venta", "sale", "comprar", "buy", "compra")
++
+ 
+ def strip_contact_leaks(text: str | None) -> str:
+     """Sanitiza descripción: quita teléfonos, emails, URLs y menciones WA."""
+@@ -84,3 +91,201 @@ def first_int(*vals: Any) -> int | None:
+             if m:
+                 return int(m.group(0))
+     return None
++
++
++def _norm_op(text: str | None) -> str | None:
++    """Normaliza texto libre a 'Venta' | 'Alquiler' | None. Alquiler tiene prioridad."""
++    if not text:
++        return None
++    t = text.strip().lower()
++    if not t:
++        return None
++    if any(k in t for k in _ALQUILER_KEYS):
++        return "Alquiler"
++    if any(k in t for k in _VENTA_KEYS):
++        return "Venta"
++    return None
++
++
++def _operation_from_url(url: str) -> str | None:
++    """Heurística de path/query usada por portales AR/UY/PY."""
++    u = (url or "").lower()
++    if re.search(r"(/|\?|&|=)(alquiler|rent|renta)([/\-?]|$)", u):
++        return "Alquiler"
++    if re.search(r"(/|\?|&|=)(venta|sale)([/\-?]|$)", u):
++        return "Venta"
++    if (
++        "-en-alquiler" in u
++        or "/en-alquiler" in u
++        or "/alquiler-" in u
++        or "operaciones=2" in u
++    ):
++        return "Alquiler"
++    if (
++        "-en-venta" in u
++        or "/en-venta" in u
++        or "/venta-" in u
++        or "operaciones=1" in u
++    ):
++        return "Venta"
++    return None
++
++
++def _all_ld_json(html: str) -> list[dict[str, Any]]:
++    out: list[dict[str, Any]] = []
++    for m in re.finditer(
++        r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
++        html,
++        re.S | re.I,
++    ):
++        try:
++            data = json.loads(m.group(1))
++        except json.JSONDecodeError:
++            continue
++        if isinstance(data, list):
++            out.extend([x for x in data if isinstance(x, dict)])
++        elif isinstance(data, dict):
++            if "@graph" in data and isinstance(data["@graph"], list):
++                out.extend([x for x in data["@graph"] if isinstance(x, dict)])
++            else:
++                out.append(data)
++    return out
++
++
++def _operation_from_json_ld(html: str) -> str | None:
++    """Extrae operación de JSON-LD: businessFunction, BreadcrumbList, additionalType."""
++    for obj in _all_ld_json(html):
++        # BreadcrumbList (MercadoLibre Inmuebles: item.name = Venta|Alquiler)
++        if obj.get("@type") == "BreadcrumbList":
++            for el in obj.get("itemListElement") or []:
++                if not isinstance(el, dict):
++                    continue
++                item = el.get("item") if isinstance(el.get("item"), dict) else el
++                name = str((item or {}).get("name") or "")
++                op = _norm_op(name)
++                if op:
++                    return op
++                iid = str((item or {}).get("@id") or "")
++                op = _operation_from_url(iid)
++                if op:
++                    return op
++
++        bf = obj.get("businessFunction") or obj.get("additionalType") or ""
++        if isinstance(bf, list):
++            bf = " ".join(str(x) for x in bf)
++        op = _norm_op(str(bf))
++        if op:
++            return op
++
++        # Offer / RealEstateListing a veces traen name con operación
++        for key in ("name", "description", "category"):
++            op = _norm_op(str(obj.get(key) or ""))
++            if op:
++                return op
++    return None
++
++
++def _operation_from_embedded_json(html: str) -> str | None:
++    """Busca claves típicas en blobs embebidos (NUXT, avisoInfo, melidata, etc.)."""
++    patterns = (
++        r'"operacion"\s*:\s*"([^"]+)"',
++        r'"operation"\s*:\s*"([^"]+)"',
++        r'"operation_type"\s*:\s*"([^"]+)"',
++        r'"tipoOperacion"\s*:\s*"([^"]+)"',
++        r'"tipo_operacion"\s*:\s*"([^"]+)"',
++        r'"transaction_type"\s*:\s*"([^"]+)"',
++        r'"operationType"\s*:\s*"([^"]+)"',
++        r'"realEstateBusiness"\s*:\s*"([^"]+)"',
++    )
++    for pat in patterns:
++        m = re.search(pat, html, re.I)
++        if m:
++            op = _norm_op(m.group(1))
++            if op:
++                return op
++
++    # operationId numérico (ZonaProp histórico: 1=venta 2=alquiler — solo si hay más señal)
++    m = re.search(r'"operationId"\s*:\s*(\d+)', html)
++    if m:
++        # No asumir solo por id; dejar a otros canales
++        pass
++
++    # melidata / category_id con texto
++    m = re.search(r'"category_id"\s*:\s*"([^"]+)"', html)
++    if m:
++        op = _norm_op(m.group(1))
++        if op:
++            return op
++
++    return None
++
++
++def detect_operation_from_signals(
++    *,
++    url: str = "",
++    html: str = "",
++    title: str = "",
++    embedded: dict[str, Any] | None = None,
++) -> str:
++    """Detecta Venta|Alquiler con prioridad de señales.
++
++    Orden:
++      1. Campos explícitos en dict embebido (si se pasa)
++      2. JSON embebido en HTML (operacion, operation_type, …)
++      3. JSON-LD (businessFunction, BreadcrumbList)
++      4. Path/query de la URL
++      5. Título (og:title / <title>)
++      6. Default "Venta" + warning (catálogo es solo Venta)
++
++    Alquiler tiene prioridad semántica sobre Venta en normalización de texto.
++    """
++    # 1) dict embebido explícito
++    if embedded:
++        for key in (
++            "operacion",
++            "operation",
++            "operation_type",
++            "tipoOperacion",
++            "tipo_operacion",
++            "transaction_type",
++            "operationType",
++        ):
++            val = embedded.get(key)
++            if val is not None:
++                op = _norm_op(str(val))
++                if op:
++                    return op
++
++    if html:
++        # 2) JSON embebido
++        op = _operation_from_embedded_json(html)
++        if op:
++            return op
++        # 3) JSON-LD / Breadcrumb
++        op = _operation_from_json_ld(html)
++        if op:
++            return op
++
++    # 4) URL
++    op = _operation_from_url(url)
++    if op:
++        return op
++
++    # 5) título
++    if not title and html:
++        m = re.search(r'property="og:title"\s+content="([^"]+)"', html, re.I)
++        if m:
++            title = m.group(1)
++        else:
++            m = re.search(r"<title[^>]*>([^<]+)</title>", html, re.I)
++            if m:
++                title = m.group(1)
++    op = _norm_op(title)
++    if op:
++        return op
++
++    logger.warning(
++        "detect_operation_from_signals: sin señal de operación, default Venta url=%s",
++        (url or "")[:120],
++    )
++    return "Venta"
+diff --git a/apps/api/app/crawler/parsers/argenprop.py b/apps/api/app/crawler/parsers/argenprop.py
+index 1d03fe2..4fc663f 100644
+--- a/apps/api/app/crawler/parsers/argenprop.py
++++ b/apps/api/app/crawler/parsers/argenprop.py
+@@ -4,7 +4,7 @@ from __future__ import annotations
+ import html as html_lib
+ import re
+ 
+-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
++from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
+ 
+ SOURCE = "argenprop"
+ 
+@@ -88,7 +88,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         bedrooms=bedrooms,
+         rooms=bedrooms,
+         property_type="Departamento",
+-        operation="Venta",
++        operation=detect_operation_from_signals(url=url, html=html, title=title),
+         images=images,
+         origin_published_at=origin or None,
+     )
+diff --git a/apps/api/app/crawler/parsers/bienesonline.py b/apps/api/app/crawler/parsers/bienesonline.py
+index 0718b4d..1cc0561 100644
+--- a/apps/api/app/crawler/parsers/bienesonline.py
++++ b/apps/api/app/crawler/parsers/bienesonline.py
+@@ -5,7 +5,7 @@ import json
+ import re
+ from typing import Any
+ 
+-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
++from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
+ 
+ SOURCE = "bienesonline"
+ 
+@@ -107,7 +107,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         bathrooms=bathrooms,
+         rooms=bedrooms,
+         property_type="Terreno" if (surface and bedrooms == 0) else "Propiedad",
+-        operation="Venta",
++        operation=detect_operation_from_signals(url=url, html=html, title=title),
+         images=list(images)[:5],
+         agency_name=agency or "",
+         origin_published_at=origin or None,
+diff --git a/apps/api/app/crawler/parsers/cordobaprop.py b/apps/api/app/crawler/parsers/cordobaprop.py
+index 451115f..9cc1dc3 100644
+--- a/apps/api/app/crawler/parsers/cordobaprop.py
++++ b/apps/api/app/crawler/parsers/cordobaprop.py
+@@ -5,7 +5,7 @@ import json
+ import re
+ from typing import Any
+ 
+-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
++from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
+ 
+ SOURCE = "cordobaprop"
+ 
+@@ -105,7 +105,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         bathrooms=bathrooms,
+         rooms=bedrooms,
+         property_type=ptype,
+-        operation="Venta",
++        operation=detect_operation_from_signals(url=url, html=html, title=title),
+         images=images,
+         agency_name=agency,
+         origin_published_at=origin,
+diff --git a/apps/api/app/crawler/parsers/inmoclick.py b/apps/api/app/crawler/parsers/inmoclick.py
+index 5bde0e7..fb6d253 100644
+--- a/apps/api/app/crawler/parsers/inmoclick.py
++++ b/apps/api/app/crawler/parsers/inmoclick.py
+@@ -3,7 +3,7 @@ from __future__ import annotations
+ 
+ import re
+ 
+-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
++from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
+ 
+ SOURCE = "inmoclick"
+ 
+@@ -90,6 +90,6 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         bathrooms=bathrooms,
+         rooms=bedrooms,
+         property_type="Casa" if re.search(r"casa|duplex|dúplex", title, re.I) else "Departamento",
+-        operation="Venta",
++        operation=detect_operation_from_signals(url=url, html=html, title=title),
+         images=images[:5],
+     )
+diff --git a/apps/api/app/crawler/parsers/inmoup.py b/apps/api/app/crawler/parsers/inmoup.py
+index c4ff51e..9b82c8a 100644
+--- a/apps/api/app/crawler/parsers/inmoup.py
++++ b/apps/api/app/crawler/parsers/inmoup.py
+@@ -5,7 +5,7 @@ import json
+ import re
+ from typing import Any
+ 
+-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
++from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
+ 
+ SOURCE = "inmoup"
+ 
+@@ -136,7 +136,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         bedrooms=bedrooms,
+         bathrooms=bathrooms,
+         property_type="Departamento",
+-        operation="Venta",
++        operation=detect_operation_from_signals(url=url, html=html, title=title),
+         images=images,
+         agency_phone=phone,
+     )
+diff --git a/apps/api/app/crawler/parsers/mercado_unico.py b/apps/api/app/crawler/parsers/mercado_unico.py
+index 7d53dbc..73f351a 100644
+--- a/apps/api/app/crawler/parsers/mercado_unico.py
++++ b/apps/api/app/crawler/parsers/mercado_unico.py
+@@ -5,7 +5,7 @@ import json
+ import re
+ from typing import Any
+ 
+-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
++from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
+ 
+ SOURCE = "mercado_unico"
+ 
+@@ -114,7 +114,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         bathrooms=bathrooms,
+         rooms=bedrooms,
+         property_type="Casa",
+-        operation="Venta",
++        operation=detect_operation_from_signals(url=url, html=html, title=title),
+         images=imgs,
+         agency_name=agency_m.group(1) if agency_m else "",
+         agency_phone=phone_m.group(1) if phone_m else "",
+diff --git a/apps/api/app/crawler/parsers/mercadolibre.py b/apps/api/app/crawler/parsers/mercadolibre.py
+index ede802a..da8b3d0 100644
+--- a/apps/api/app/crawler/parsers/mercadolibre.py
++++ b/apps/api/app/crawler/parsers/mercadolibre.py
+@@ -4,25 +4,71 @@ from __future__ import annotations
+ import json
+ import re
+ 
+-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
++from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
+ 
+ SOURCE = "mercadolibre"
+ 
+ 
+ def _province_from_url_or_html(url: str, html: str) -> str:
++    """Mapeo exhaustivo de provincias AR (scale-inventory).
++
++    capital-federal / caba → "CABA" (no colapsar a Buenos Aires).
++    Orden: señales más específicas primero (CABA antes que Buenos Aires).
++    """
+     u = url.lower()
+-    h = html.lower()
+-    for key, name in [
++    h = html.lower()[:8000]
++    # (key_in_url_or_html, canonical_name) — CABA primero
++    pairs = [
++        ("capital-federal", "CABA"),
++        ("capital_federal", "CABA"),
++        ("caba", "CABA"),
++        ("ciudad-autonoma", "CABA"),
++        ("ciudad-autónoma", "CABA"),
+         ("cordoba", "Córdoba"),
+         ("c%C3%B3rdoba", "Córdoba"),
++        ("córdoba", "Córdoba"),
+         ("mendoza", "Mendoza"),
+         ("santa-fe", "Santa Fe"),
+         ("santa_fe", "Santa Fe"),
+         ("buenos-aires", "Buenos Aires"),
+-        ("capital-federal", "Buenos Aires"),
+-        ("caba", "Buenos Aires"),
+-    ]:
+-        if key in u or key in h[:5000]:
++        ("bs-as", "Buenos Aires"),
++        ("provincia-de-buenos-aires", "Buenos Aires"),
++        ("catamarca", "Catamarca"),
++        ("chaco", "Chaco"),
++        ("chubut", "Chubut"),
++        ("corrientes", "Corrientes"),
++        ("entre-rios", "Entre Ríos"),
++        ("entre_rios", "Entre Ríos"),
++        ("entrerios", "Entre Ríos"),
++        ("formosa", "Formosa"),
++        ("jujuy", "Jujuy"),
++        ("la-pampa", "La Pampa"),
++        ("la_pampa", "La Pampa"),
++        ("la-rioja", "La Rioja"),
++        ("la_rioja", "La Rioja"),
++        ("misiones", "Misiones"),
++        ("neuquen", "Neuquén"),
++        ("neuquén", "Neuquén"),
++        ("rio-negro", "Río Negro"),
++        ("rio_negro", "Río Negro"),
++        ("río-negro", "Río Negro"),
++        ("salta", "Salta"),
++        ("san-juan", "San Juan"),
++        ("san_juan", "San Juan"),
++        ("san-luis", "San Luis"),
++        ("san_luis", "San Luis"),
++        ("santa-cruz", "Santa Cruz"),
++        ("santa_cruz", "Santa Cruz"),
++        ("santiago-del-estero", "Santiago del Estero"),
++        ("santiago_del_estero", "Santiago del Estero"),
++        ("tierra-del-fuego", "Tierra del Fuego"),
++        ("tierra_del_fuego", "Tierra del Fuego"),
++        ("tucuman", "Tucumán"),
++        ("tucumán", "Tucumán"),
++        ("tucum%C3%A1n", "Tucumán"),
++    ]
++    for key, name in pairs:
++        if key in u or key in h:
+             return name
+     return "Buenos Aires"
+ 
+@@ -135,7 +181,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         province=province,
+         rooms=rooms,
+         property_type="Casa" if "casa" in (title + url).lower() else "Departamento",
+-        operation="Venta",
++        operation=detect_operation_from_signals(url=url, html=html, title=title),
+         images=images[:5],
+         origin_published_at=origin or None,
+     )
+diff --git a/apps/api/app/crawler/parsers/zonaprop.py b/apps/api/app/crawler/parsers/zonaprop.py
+index 8f6e78e..6816124 100644
+--- a/apps/api/app/crawler/parsers/zonaprop.py
++++ b/apps/api/app/crawler/parsers/zonaprop.py
+@@ -5,7 +5,7 @@ import json
+ import re
+ from typing import Any
+ 
+-from ..base import RawListing, first_int, parse_price, strip_contact_leaks
++from ..base import RawListing, detect_operation_from_signals, first_int, parse_price, strip_contact_leaks
+ 
+ SOURCE = "zonaprop"
+ 
+@@ -136,7 +136,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         bedrooms=bedrooms,
+         bathrooms=bathrooms,
+         property_type="Departamento",
+-        operation="Venta",
++        operation=detect_operation_from_signals(url=url, html=html, title=title),
+         images=images,
+         agency_phone=phone,  # no subir a Property pública; solo hint interno
+         origin_published_at=origin or None,
+diff --git a/apps/api/app/crawler/runner.py b/apps/api/app/crawler/runner.py
+index c652812..f7f9c1d 100644
+--- a/apps/api/app/crawler/runner.py
++++ b/apps/api/app/crawler/runner.py
+@@ -40,6 +40,22 @@ MAX_LIST_PAGES_PER_SOURCE = 5
+ MAX_DETAILS_PER_SOURCE = 80
+ REQUEST_DELAY_SECONDS = 1.0
+ 
++# Overrides por fuente (scale-inventory): permiten subir topes en fuentes
++# con alto volumen / robots permisivos sin tocar el default global.
++MAX_LIST_PAGES_PER_SOURCE_OVERRIDE: dict[str, int] = {
++    "cordobaprop": 8,
++    "mercadolibre": 6,
++    "mendozaprop": 6,
++    "bienesonline": 6,
++}
++MAX_DETAILS_PER_SOURCE_OVERRIDE: dict[str, int] = {
++    "mercadolibre": 120,
++    "mendozaprop": 100,
++    "cordobaprop": 100,
++    "bienesonline": 100,
++    "mercado_unico": 90,
++}
++
+ # Tope de paginación por fuente (robots.txt / cortesía). Al llegar se reinicia.
+ SOURCE_MAX_PAGE: dict[str, int] = {
+     "zonaprop": 5,  # robots.txt: solo páginas 1-5
+@@ -49,6 +65,16 @@ SOURCE_MAX_PAGE: dict[str, int] = {
+ }
+ 
+ 
++def max_list_pages_for(source_id: str) -> int:
++    """Tope de páginas de listado por corrida (override → default)."""
++    return MAX_LIST_PAGES_PER_SOURCE_OVERRIDE.get(source_id, MAX_LIST_PAGES_PER_SOURCE)
++
++
++def max_details_for(source_id: str) -> int:
++    """Tope de fichas por corrida (override → default)."""
++    return MAX_DETAILS_PER_SOURCE_OVERRIDE.get(source_id, MAX_DETAILS_PER_SOURCE)
++
++
+ def _get(url: str, timeout: int = 20) -> str:
+     resp = requests.get(
+         url,
+@@ -116,7 +142,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
+     absolute_page = start_idx  # 0-based index in all_list_urls
+ 
+     for list_url in list_slice:
+-        if pages_fetched >= MAX_LIST_PAGES_PER_SOURCE:
++        if pages_fetched >= max_list_pages_for(source.id):
+             break
+         try:
+             html = _get(list_url)
+@@ -129,7 +155,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
+         absolute_page += 1
+         time.sleep(REQUEST_DELAY_SECONDS)
+         try:
+-            found = extract_detail_urls(source.id, html, source.base_url, limit=MAX_DETAILS_PER_SOURCE)
++            found = extract_detail_urls(source.id, html, source.base_url, limit=max_details_for(source.id))
+         except KeyError:
+             logger.warning("crawler source=%s sin extractor de links", source.id)
+             break
+@@ -137,7 +163,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
+             if u not in seen:
+                 seen.add(u)
+                 urls.append(u)
+-        if len(urls) >= MAX_DETAILS_PER_SOURCE:
++        if len(urls) >= max_details_for(source.id):
+             break
+ 
+     if cursor is not None:
+@@ -150,7 +176,7 @@ def discover_detail_urls(source: SourceConfig, db=None) -> list[str]:
+         cursor.total_seen = (cursor.total_seen or 0) + len(urls)
+         db.flush()
+ 
+-    return urls[:MAX_DETAILS_PER_SOURCE]
++    return urls[:max_details_for(source.id)]
+ 
+ 
+ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
+@@ -174,7 +200,6 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
+         # podía corregir datos malos (ej. el mojibake de encoding) ni
+         # reflejar cambios reales del portal de origen.
+         existing.type = payload["type"] or existing.type
+-        existing.operation = payload["operation"] or existing.operation
+         existing.currency = payload["currency"] or existing.currency
+         existing.zone = payload["zone"] or existing.zone
+         existing.city = payload["city"] or existing.city
+@@ -194,16 +219,31 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
+             existing.images = payload["images"][:MAX_PROPERTY_IMAGES]
+             existing.image = payload["images"][0]
+         existing.last_seen_at = now
+-        # Si el aviso reaparece en el portal, re-mostrar (plan maestro secc. 7)
+-        existing.hidden_at = None
+         if payload.get("priority_score") is not None:
+             existing.priority_score = float(payload["priority_score"])
+         if payload.get("origin_published_at"):
+             existing.origin_published_at = payload["origin_published_at"]
++
++        # Gate de operación también en actualización: si ahora se detecta
++        # no-Venta, ocultar (hidden_at) sin borrar. Si sigue siendo Venta,
++        # re-mostrar (plan maestro secc. 7).
++        op = (payload.get("operation") or existing.operation or "Venta").strip()
++        existing.operation = op
++        if op != "Venta":
++            existing.hidden_at = now
++            logger.info(
++                "hiding existing listing source=%s url=%s operation=%s",
++                source_id,
++                src_url,
++                op,
++            )
++            return "updated"
++
++        existing.hidden_at = None
+         match_demand_requests_for_property(db, existing)
+         return "updated"
+ 
+-    # Gate de operación: solo Venta entra al catálogo (solo altas nuevas).
++    # Gate de operación: solo Venta entra al catálogo (altas nuevas).
+     # Protege contra parsers que hardcodean o filtran mal por URL.
+     op = (payload.get("operation") or "Venta").strip()
+     if op != "Venta":
+diff --git a/apps/api/tests/fixtures/bienesonline_alquiler.html b/apps/api/tests/fixtures/bienesonline_alquiler.html
+new file mode 100644
+index 0000000..f628bdf
+--- /dev/null
++++ b/apps/api/tests/fixtures/bienesonline_alquiler.html
+@@ -0,0 +1,10 @@
++<!DOCTYPE html>
++<html><head>
++<script type="application/ld+json">
++{"@context":"https://schema.org","@graph":[
++  {"@type":"RealEstateListing","name":"Depto 2 amb","description":"Alquiler mensual","businessFunction":"http://purl.org/goodrelations/v1#LeaseOut"},
++  {"@type":"Offer","price":"450","priceCurrency":"USD"}
++]}
++</script>
++<title>Departamento en Alquiler - La Punta</title>
++</head><body></body></html>
+diff --git a/apps/api/tests/fixtures/cordobaprop_alquiler.html b/apps/api/tests/fixtures/cordobaprop_alquiler.html
+new file mode 100644
+index 0000000..229be70
+--- /dev/null
++++ b/apps/api/tests/fixtures/cordobaprop_alquiler.html
+@@ -0,0 +1,7 @@
++<!DOCTYPE html>
++<html><head>
++<script type="application/ld+json">
++{"@type":"Product","name":"Casa en Alquiler Córdoba","description":"Alquiler tradicional"}
++</script>
++<title>Casa en Alquiler - Nueva Córdoba</title>
++</head><body></body></html>
+diff --git a/apps/api/tests/fixtures/inmoclick_alquiler.html b/apps/api/tests/fixtures/inmoclick_alquiler.html
+new file mode 100644
+index 0000000..3daab0b
+--- /dev/null
++++ b/apps/api/tests/fixtures/inmoclick_alquiler.html
+@@ -0,0 +1,5 @@
++<!DOCTYPE html>
++<html><head>
++<meta property="og:title" content="Casa en Alquiler - Rosario Centro"/>
++<title>Casa en Alquiler - Rosario Centro</title>
++</head><body></body></html>
+diff --git a/apps/api/tests/fixtures/inmoup_alquiler.html b/apps/api/tests/fixtures/inmoup_alquiler.html
+new file mode 100644
+index 0000000..9f80f70
+--- /dev/null
++++ b/apps/api/tests/fixtures/inmoup_alquiler.html
+@@ -0,0 +1,5 @@
++<!DOCTYPE html>
++<html><head>
++<meta property="og:title" content="Departamento en alquiler en Mendoza"/>
++<title>Departamento en alquiler en Mendoza</title>
++</head><body></body></html>
+diff --git a/apps/api/tests/fixtures/mercado_unico_alquiler.html b/apps/api/tests/fixtures/mercado_unico_alquiler.html
+new file mode 100644
+index 0000000..7d2a530
+--- /dev/null
++++ b/apps/api/tests/fixtures/mercado_unico_alquiler.html
+@@ -0,0 +1,5 @@
++<!DOCTYPE html>
++<html><head>
++<script>window.__NUXT__={data:[{operacion:"Alquiler",titulo:"PH en alquiler"}]};</script>
++<title>PH en alquiler - Santa Fe</title>
++</head><body></body></html>
+diff --git a/apps/api/tests/fixtures/mercadolibre_alquiler.html b/apps/api/tests/fixtures/mercadolibre_alquiler.html
+new file mode 100644
+index 0000000..5d9887c
+--- /dev/null
++++ b/apps/api/tests/fixtures/mercadolibre_alquiler.html
+@@ -0,0 +1,11 @@
++<!DOCTYPE html>
++<html><head>
++<script type="application/ld+json">
++{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[
++  {"position":1,"item":{"name":"Inmuebles","@id":"https://inmuebles.mercadolibre.com.ar/"},"@type":"ListItem"},
++  {"position":2,"item":{"name":"Departamentos","@id":"https://inmuebles.mercadolibre.com.ar/departamentos/"},"@type":"ListItem"},
++  {"position":3,"item":{"name":"Alquiler","@id":"https://inmuebles.mercadolibre.com.ar/departamentos/alquiler/"},"@type":"ListItem"}
++]}
++</script>
++<title>Departamento en alquiler | MercadoLibre</title>
++</head><body></body></html>
+diff --git a/apps/api/tests/test_operation_detection.py b/apps/api/tests/test_operation_detection.py
+new file mode 100644
+index 0000000..b4ea91d
+--- /dev/null
++++ b/apps/api/tests/test_operation_detection.py
+@@ -0,0 +1,247 @@
++"""Tests de detección de operation (Venta vs Alquiler) y gate del runner."""
++from __future__ import annotations
++
++from pathlib import Path
++from types import SimpleNamespace
++from unittest.mock import MagicMock, patch
++
++import pytest
++
++from app.crawler.base import detect_operation_from_signals
++from app.crawler.parsers.argenprop import parse_detail as parse_argenprop
++from app.crawler.parsers.bienesonline import parse_detail as parse_bienesonline
++from app.crawler.parsers.cordobaprop import parse_detail as parse_cordobaprop
++from app.crawler.parsers.inmoclick import parse_detail as parse_inmoclick
++from app.crawler.parsers.inmoup import parse_detail as parse_inmoup
++from app.crawler.parsers.mercado_unico import parse_detail as parse_mercado_unico
++from app.crawler.parsers.mercadolibre import parse_detail as parse_mercadolibre
++from app.crawler.parsers.zonaprop import parse_detail as parse_zonaprop
++
++FIX = Path(__file__).parent / "fixtures"
++
++
++# ---------------------------------------------------------------------------
++# Detector unitario
++# ---------------------------------------------------------------------------
++
++
++def test_detect_from_url_alquiler():
++    assert detect_operation_from_signals(url="https://x.com/alquiler-casa-3amb") == "Alquiler"
++    assert detect_operation_from_signals(url="https://x.com/propiedades/en-alquiler/123") == "Alquiler"
++    assert detect_operation_from_signals(url="https://x.com/?operaciones=2") == "Alquiler"
++
++
++def test_detect_from_url_venta():
++    assert detect_operation_from_signals(url="https://x.com/venta-duplex") == "Venta"
++    assert detect_operation_from_signals(url="https://x.com/propiedades/en-venta/99") == "Venta"
++    assert detect_operation_from_signals(url="https://x.com/?operaciones=1") == "Venta"
++
++
++def test_detect_alquiler_priority_over_venta_in_text():
++    assert detect_operation_from_signals(title="Venta y Alquiler disponible") == "Alquiler"
++
++
++def test_detect_from_embedded_dict():
++    assert (
++        detect_operation_from_signals(embedded={"operacion": "Alquiler"}) == "Alquiler"
++    )
++    assert detect_operation_from_signals(embedded={"operation_type": "Venta"}) == "Venta"
++
++
++def test_detect_from_json_ld_business_function():
++    html = '''<script type="application/ld+json">
++    {"@type":"RealEstateListing","businessFunction":"http://purl.org/goodrelations/v1#LeaseOut"}
++    </script>'''
++    assert detect_operation_from_signals(html=html) == "Alquiler"
++
++
++def test_detect_from_breadcrumb_ml():
++    html = (FIX / "mercadolibre_alquiler.html").read_text(encoding="utf-8")
++    assert detect_operation_from_signals(
++        url="https://departamento.mercadolibre.com.ar/MLA-999-_JM",
++        html=html,
++    ) == "Alquiler"
++
++
++def test_detect_default_venta_with_no_signal():
++    op = detect_operation_from_signals(url="https://example.com/propiedad/123", title="Depto 2 amb")
++    assert op == "Venta"
++
++
++# ---------------------------------------------------------------------------
++# Parsers con fixtures Alquiler
++# ---------------------------------------------------------------------------
++
++
++def test_bienesonline_alquiler_fixture():
++    html = (FIX / "bienesonline_alquiler.html").read_text(encoding="utf-8")
++    raw = parse_bienesonline(html, "https://bienesonline.ai/es/argentina/x/propiedad/1-alquiler")
++    assert raw is not None
++    assert raw.operation == "Alquiler"
++
++
++def test_cordobaprop_alquiler_fixture():
++    html = (FIX / "cordobaprop_alquiler.html").read_text(encoding="utf-8")
++    raw = parse_cordobaprop(html, "https://cordobaprop.com/propiedad/1-alquiler-casa")
++    assert raw is not None
++    assert raw.operation == "Alquiler"
++
++
++def test_mercado_unico_alquiler_fixture():
++    html = (FIX / "mercado_unico_alquiler.html").read_text(encoding="utf-8")
++    raw = parse_mercado_unico(html, "https://mercado-unico.com/propiedades/abc123")
++    assert raw is not None
++    assert raw.operation == "Alquiler"
++
++
++def test_inmoup_alquiler_fixture():
++    html = (FIX / "inmoup_alquiler.html").read_text(encoding="utf-8")
++    raw = parse_inmoup(
++        html, "https://www.inmoup.com.ar/departamentos-en-alquiler-en-mendoza/123"
++    )
++    assert raw is not None
++    assert raw.operation == "Alquiler"
++
++
++def test_inmoclick_alquiler_fixture():
++    html = (FIX / "inmoclick_alquiler.html").read_text(encoding="utf-8")
++    raw = parse_inmoclick(html, "https://www.inmoclick.com.ar/propiedad/1-alquiler")
++    assert raw is not None
++    assert raw.operation == "Alquiler"
++
++
++def test_mercadolibre_alquiler_fixture():
++    html = (FIX / "mercadolibre_alquiler.html").read_text(encoding="utf-8")
++    raw = parse_mercadolibre(
++        html,
++        "https://departamento.mercadolibre.com.ar/MLA-999-departamento-en-alquiler-_JM",
++    )
++    assert raw is not None
++    assert raw.operation == "Alquiler"
++
++
++# ---------------------------------------------------------------------------
++# Runner gate (mock sin sqlalchemy real)
++# ---------------------------------------------------------------------------
++
++
++def _make_existing(**kwargs):
++    defaults = dict(
++        title="x",
++        price=100,
++        description="",
++        type="Departamento",
++        operation="Venta",
++        currency="USD",
++        zone="",
++        city="",
++        country="AR",
++        province="",
++        surface=None,
++        rooms=None,
++        bedrooms=None,
++        bathrooms=None,
++        images=[],
++        image=None,
++        last_seen_at=None,
++        hidden_at=None,
++        priority_score=None,
++        origin_published_at=None,
++        source_url="https://example.com/p/1",
++    )
++    defaults.update(kwargs)
++    return SimpleNamespace(**defaults)
++
++
++def test_runner_hides_existing_when_now_alquiler():
++    existing = _make_existing(operation="Venta", hidden_at=None)
++    db = MagicMock()
++    db.scalar.return_value = existing
++
++    payload = {
++        "title": "Depto",
++        "price": 100,
++        "description": "",
++        "type": "Departamento",
++        "operation": "Alquiler",
++        "currency": "USD",
++        "zone": "",
++        "city": "",
++        "images": [],
++        "source_url": "https://example.com/p/1",
++    }
++
++    # Stubs para imports lazy dentro de upsert_payload
++    fake_prop = type("Property", (), {"source_url": SimpleNamespace()})
++    with patch.dict(
++        "sys.modules",
++        {
++            "sqlalchemy": MagicMock(),
++            "app.main": MagicMock(
++                Property=fake_prop,
++                MAX_PROPERTY_IMAGES=5,
++                match_demand_requests_for_property=MagicMock(),
++            ),
++        },
++    ):
++        # sqlalchemy.select needs .where chain
++        import sys
++
++        sa = sys.modules["sqlalchemy"]
++        sel = MagicMock()
++        sel.where.return_value = sel
++        sa.select = MagicMock(return_value=sel)
++
++        from app.crawler.runner import upsert_payload
++
++        status = upsert_payload(db, payload, "testsrc")
++
++    assert status == "updated"
++    assert existing.operation == "Alquiler"
++    assert existing.hidden_at is not None
++
++
++def test_runner_shows_existing_when_still_venta():
++    existing = _make_existing(operation="Venta", hidden_at="old")
++    db = MagicMock()
++    db.scalar.return_value = existing
++
++    payload = {
++        "title": "Depto",
++        "price": 100,
++        "description": "",
++        "type": "Departamento",
++        "operation": "Venta",
++        "currency": "USD",
++        "zone": "",
++        "city": "",
++        "images": [],
++        "source_url": "https://example.com/p/1",
++    }
++
++    fake_prop = type("Property", (), {"source_url": SimpleNamespace()})
++    with patch.dict(
++        "sys.modules",
++        {
++            "sqlalchemy": MagicMock(),
++            "app.main": MagicMock(
++                Property=fake_prop,
++                MAX_PROPERTY_IMAGES=5,
++                match_demand_requests_for_property=MagicMock(),
++            ),
++        },
++    ):
++        import sys
++
++        sa = sys.modules["sqlalchemy"]
++        sel = MagicMock()
++        sel.where.return_value = sel
++        sa.select = MagicMock(return_value=sel)
++
++        from app.crawler.runner import upsert_payload
++
++        status = upsert_payload(db, payload, "testsrc")
++
++    assert status == "updated"
++    assert existing.operation == "Venta"
++    assert existing.hidden_at is None
+diff --git a/scripts/backfill_operation_leaks.py b/scripts/backfill_operation_leaks.py
+new file mode 100644
+index 0000000..947fae4
+--- /dev/null
++++ b/scripts/backfill_operation_leaks.py
+@@ -0,0 +1,115 @@
++#!/usr/bin/env python3
++"""Backfill: re-detecta operation en filas existentes y oculta Alquiler.
++
++Uso (desde raíz del repo, con DATABASE_URL):
++  python scripts/backfill_operation_leaks.py --dry-run
++  python scripts/backfill_operation_leaks.py --sources=bienesonline,cordobaprop --limit 50
++  python scripts/backfill_operation_leaks.py --from-diagnose --sources=mercado_unico
++
++Solo hace UPDATE puntual por source_url cuando la página real indica Alquiler:
++  operation='Alquiler', hidden_at=now()
++
++No borra filas. No toca Venta confirmadas.
++"""
++from __future__ import annotations
++
++import argparse
++import os
++import sys
++import time
++from datetime import datetime, timezone
++from urllib.request import Request, urlopen
++
++ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
++sys.path.insert(0, os.path.join(ROOT, "apps", "api"))
++
++from app.crawler.base import detect_operation_from_signals  # noqa: E402
++
++UA = "PropomiBackfill/1.0 (+https://propomi.lat)"
++
++DEFAULT_SOURCES = [
++    "bienesonline",
++    "cordobaprop",
++    "inmoclick",
++    "inmoup",
++    "mercado_unico",
++    "mercadolibre",
++    "argenprop",
++    "zonaprop",
++]
++
++
++def fetch(url: str, timeout: int = 20) -> str | None:
++    try:
++        req = Request(url, headers={"User-Agent": UA, "Accept-Language": "es-AR,es;q=0.9"})
++        with urlopen(req, timeout=timeout) as r:
++            return r.read().decode("utf-8", errors="replace")
++    except Exception as e:
++        print(f"  FETCH_ERR {url[:90]}: {e}", file=sys.stderr)
++        return None
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser(description=__doc__)
++    ap.add_argument("--sources", default=",".join(DEFAULT_SOURCES))
++    ap.add_argument("--limit", type=int, default=50)
++    ap.add_argument("--sleep", type=float, default=0.5)
++    ap.add_argument("--dry-run", action="store_true")
++    ap.add_argument(
++        "--from-diagnose",
++        action="store_true",
++        help="Solo filas con operation='Venta' (candidatos a leak)",
++    )
++    args = ap.parse_args()
++    sources = [s.strip() for s in args.sources.split(",") if s.strip()]
++
++    db_url = os.environ.get("DATABASE_URL") or "sqlite:///./propomi.db"
++    try:
++        from sqlalchemy import create_engine, text
++    except ImportError:
++        print("sqlalchemy requerido", file=sys.stderr)
++        return 1
++
++    engine = create_engine(db_url)
++    now = datetime.now(timezone.utc)
++    total_hidden = 0
++
++    with engine.begin() as conn:
++        for src in sources:
++            q = text(
++                "SELECT id, source_url, operation FROM properties "
++                "WHERE source = :src AND source_url IS NOT NULL AND source_url != '' "
++                + ("AND operation = 'Venta' " if args.from_diagnose else "")
++                + "AND (hidden_at IS NULL) "
++                "ORDER BY last_seen_at DESC NULLS LAST LIMIT :lim"
++            )
++            rows = list(conn.execute(q, {"src": src, "lim": args.limit}))
++            print(f"\n=== {src} === {len(rows)} filas")
++            for i, (pid, url, cur_op) in enumerate(rows, 1):
++                html = fetch(url)
++                if html is None:
++                    time.sleep(args.sleep)
++                    continue
++                op = detect_operation_from_signals(url=url, html=html)
++                print(f"  [{i}] id={pid} cur={cur_op} detected={op}  {url[:70]}")
++                if op == "Alquiler" and cur_op != "Alquiler":
++                    if args.dry_run:
++                        print(f"    DRY-RUN would hide id={pid}")
++                    else:
++                        conn.execute(
++                            text(
++                                "UPDATE properties SET operation='Alquiler', hidden_at=:now "
++                                "WHERE id=:id"
++                            ),
++                            {"now": now, "id": pid},
++                        )
++                        print(f"    HIDDEN id={pid}")
++                    total_hidden += 1
++                time.sleep(args.sleep)
++
++    print(f"\nTotal ocultados (o dry-run): {total_hidden}")
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+-- 
+2.43.0
+

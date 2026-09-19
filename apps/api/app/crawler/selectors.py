@@ -1,10 +1,9 @@
 """Configuración por fuente: dominio, generador de URLs de listado, robots_note.
 
-Estado 2026-09-16 (tanda 1 expansión AR/PY/UY):
-  enabled=True (9): cordobaprop, mendozaprop, mercado_unico, mercadolibre,
-    inmoup, inmoclick, infocasas_py, infocasas_uy, bienesonline.
-  enabled=False: zonaprop/argenprop/properati (anti-bot histórico) + cola
-    remax_*/gallito_uy/nestoria_ar/infocasas_ar/century21_ar (triage 2026-09-16).
+Estado 2026-09-19:
+  enabled=True (13): previas + argencasas, departamentosenpozo, bullano,
+    mercadolibre_mx. ML AR ampliado a ph/terrenos/campos.
+  enabled=False: zonaprop/argenprop/properati + cola SPA/anti-bot.
 run_crawl() salta fuentes con enabled=False.
 """
 from __future__ import annotations
@@ -154,6 +153,39 @@ SOURCES: dict[str, SourceConfig] = {
         list_urls_fn=queries.bienesonline_list_urls,
         enabled=True,
         robots_note="2026-09-16: bienesonline.com.ar → bienesonline.ai; robots 200; listado con href /propiedad/{id}; ficha JSON-LD RealEstateListing. Cobertura AR multi-provincia.",
+    ),
+    # --- Expansión 2026-09-19: fuera de portales clásicos + ML MX ---
+    "argencasas": SourceConfig(
+        id="argencasas",
+        name="Argencasas",
+        base_url="https://www.argencasas.com",
+        list_urls_fn=queries.argencasas_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: listado /venta + /propiedad-* fichas; JSON-LD RealEstateListing; sin CF.",
+    ),
+    "departamentosenpozo": SourceConfig(
+        id="departamentosenpozo",
+        name="DepartamentosEnPozo",
+        base_url="https://departamentosenpozo.com.ar",
+        list_urls_fn=queries.departamentosenpozo_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: catálogo /desarrollos-inmobiliarios/ (~800 proyectos); HTML limpio; tipo En Pozo.",
+    ),
+    "bullano": SourceConfig(
+        id="bullano",
+        name="Bullano Campos",
+        base_url="https://www.bullano.com.ar",
+        list_urls_fn=queries.bullano_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: /campos/ficha/{slug}-{id}.html; campos y chacras; sin CF.",
+    ),
+    "mercadolibre_mx": SourceConfig(
+        id="mercadolibre_mx",
+        name="MercadoLibre MX",
+        base_url="https://inmuebles.mercadolibre.com.mx",
+        list_urls_fn=queries.mercadolibre_mx_list_urls,
+        enabled=True,
+        robots_note="2026-09-19: mismo patrón ML AR (poly-card + JSON-LD Product); prefijo MLM-; estados prioritarios.",
     ),
     # --- Cola anti-bot / no viable (2026-09-16 triage) — enabled=False ---
     "remax_ar": SourceConfig(

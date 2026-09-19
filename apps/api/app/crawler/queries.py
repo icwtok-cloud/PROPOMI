@@ -128,7 +128,7 @@ def inmoclick_list_urls() -> Iterator[str]:
 
 
 def mercadolibre_list_urls() -> Iterator[str]:
-    """ML Inmuebles — casas y deptos en venta, todas las provincias AR."""
+    """ML Inmuebles AR — casas, deptos, PH, terrenos, campos (24 provincias)."""
     provincias = (
         "capital-federal",
         "buenos-aires",
@@ -155,13 +155,82 @@ def mercadolibre_list_urls() -> Iterator[str]:
         "santa-cruz",
         "tierra-del-fuego",
     )
+    tipos = ("casas", "departamentos", "ph", "terrenos", "campos")
     for prov in provincias:
-        yield f"https://inmuebles.mercadolibre.com.ar/casas/venta/{prov}/"
-        yield f"https://inmuebles.mercadolibre.com.ar/departamentos/venta/{prov}/"
+        for tipo in tipos:
+            yield f"https://inmuebles.mercadolibre.com.ar/{tipo}/venta/{prov}/"
+
+
+def mercadolibre_mx_list_urls() -> Iterator[str]:
+    """ML Inmuebles México — estados prioritarios + tipos clave."""
+    estados = (
+        "distrito-federal",
+        "estado-de-mexico",
+        "jalisco",
+        "nuevo-leon",
+        "queretaro",
+        "puebla",
+        "guanajuato",
+        "yucatan",
+        "quintana-roo",
+        "baja-california",
+        "veracruz",
+        "chihuahua",
+        "coahuila",
+        "michoacan",
+        "morelos",
+        "hidalgo",
+        "aguascalientes",
+        "san-luis-potosi",
+    )
+    tipos = ("casas", "departamentos", "terrenos", "locales-comerciales")
+    for est in estados:
+        for tipo in tipos:
+            yield f"https://inmuebles.mercadolibre.com.mx/{tipo}/venta/{est}/"
+
+
+def argencasas_list_urls() -> Iterator[str]:
+    """Argencasas — venta nacional + paginación amplia."""
+    yield "https://www.argencasas.com/venta"
+    for page in range(2, 31):
+        yield f"https://www.argencasas.com/motor/props.php?superoper=0&page={page}"
+    for tipo in ("casas", "departamentos", "ph", "locales", "terrenos"):
+        yield f"https://www.argencasas.com/venta/{tipo}"
+
+
+def departamentosenpozo_list_urls() -> Iterator[str]:
+    """Catálogo de desarrollos en pozo (CABA/GBA) — una página trae ~800 links."""
+    yield "https://departamentosenpozo.com.ar/desarrollos-inmobiliarios/"
+    yield "https://departamentosenpozo.com.ar/"
+
+
+def bullano_list_urls() -> Iterator[str]:
+    """Bullano — campos y chacras en venta (nacional + provincias)."""
+    for path in (
+        "campos/venta--chacra.html",
+        "campos/venta.html",
+        "campos/venta--chacra--dueno-directo.html",
+        "campos/venta--chacra--inmobiliaria.html",
+        "campos/venta--chacra--buenos-aires.html",
+        "campos/venta--chacra--cordoba.html",
+        "campos/venta--chacra--mendoza.html",
+        "campos/venta--chacra--santa-fe.html",
+        "campos/venta--chacra--misiones.html",
+        "campos/venta--chacra--entre-rios.html",
+        "campos/venta--chacra--la-pampa.html",
+        "campos/venta--chacra--san-luis.html",
+        "campos/venta--chacra--rio-negro.html",
+        "campos/venta--chacra--neuquen.html",
+        "campos/venta--chacra--chubut.html",
+        "campos/venta--chacra--salta.html",
+        "campos/venta--chacra--tucuman.html",
+        "campos/venta--chacra--corrientes.html",
+    ):
+        yield f"https://www.bullano.com.ar/{path}"
 
 
 def infocasas_py_list_urls() -> Iterator[str]:
-    """InfoCasas Paraguay — listados por ciudad (SSR + __NEXT_DATA__)."""
+    """InfoCasas Paraguay — listados por ciudad + tipos (SSR + __NEXT_DATA__)."""
     for path in (
         "venta/inmuebles/asuncion",
         "venta/inmuebles/san-lorenzo",
@@ -170,13 +239,21 @@ def infocasas_py_list_urls() -> Iterator[str]:
         "venta/inmuebles/fernando-de-la-mora",
         "venta/inmuebles/lambare",
         "venta/inmuebles/encarnacion",
+        "venta/inmuebles/capiata",
+        "venta/inmuebles/nemby",
+        "venta/inmuebles/mariano-roque-alonso",
+        "venta/inmuebles/villa-elisa",
+        "venta/inmuebles/pedro-juan-caballero",
+        "venta/casas",
+        "venta/departamentos",
+        "venta/terrenos",
         "venta",
     ):
         yield f"https://www.infocasas.com.py/{path}"
 
 
 def infocasas_uy_list_urls() -> Iterator[str]:
-    """InfoCasas Uruguay — listados por ciudad / departamento."""
+    """InfoCasas Uruguay — listados por ciudad / departamento + tipos."""
     for path in (
         "venta/inmuebles/montevideo",
         "venta/inmuebles/canelones",
@@ -184,6 +261,13 @@ def infocasas_uy_list_urls() -> Iterator[str]:
         "venta/inmuebles/colonia",
         "venta/inmuebles/salto",
         "venta/inmuebles/paysandu",
+        "venta/inmuebles/rocha",
+        "venta/inmuebles/soriano",
+        "venta/inmuebles/florida",
+        "venta/inmuebles/san-jose",
+        "venta/casas",
+        "venta/apartamentos",
+        "venta/terrenos",
         "venta",
     ):
         yield f"https://www.infocasas.com.uy/{path}"

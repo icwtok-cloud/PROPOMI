@@ -9,6 +9,25 @@ from ..base import RawListing, detect_operation_from_signals, first_int, parse_p
 SOURCE = "mercadolibre"
 
 
+def _property_type_from_signals(title: str, url: str) -> str:
+    blob = f"{title} {url}".lower()
+    if "campo" in blob:
+        return "Campo"
+    if "chacra" in blob or "quinta" in blob:
+        return "Chacra"
+    if "terreno" in blob or "lote" in blob:
+        return "Terreno"
+    if re.search(r"\bph\b", blob) or "duplex" in blob:
+        return "PH"
+    if "local" in blob or "comercial" in blob:
+        return "Local"
+    if "oficina" in blob:
+        return "Oficina"
+    if "casa" in blob or "chalet" in blob:
+        return "Casa"
+    return "Departamento"
+
+
 def _province_from_url_or_html(url: str, html: str) -> str:
     """Mapeo exhaustivo de provincias AR (scale-inventory).
 
@@ -140,9 +159,9 @@ def parse_detail(html: str, url: str) -> RawListing | None:
                 pass
 
     if not item_id:
-        im = re.search(r"MLA-?(\d+)", url)
+        im = re.search(r"(ML[A-Z])-?(\d+)", url)
         if im:
-            item_id = f"MLA{im.group(1)}"
+            item_id = f"{im.group(1)}{im.group(2)}"
 
     if not title:
         title_m = re.search(r'property="og:title"\s+content="([^"]+)"', html)
@@ -180,7 +199,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
         city=city or province,
         province=province,
         rooms=rooms,
-        property_type="Casa" if "casa" in (title + url).lower() else "Departamento",
+        property_type=_property_type_from_signals(title, url),
         operation=detect_operation_from_signals(url=url, html=html, title=title),
         images=images[:5],
         origin_published_at=origin or None,

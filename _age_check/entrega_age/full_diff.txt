@@ -1,0 +1,275 @@
+diff --git a/apps/api/app/crawler/normalize.py b/apps/api/app/crawler/normalize.py
+index 7fc31af..b6690d9 100644
+--- a/apps/api/app/crawler/normalize.py
++++ b/apps/api/app/crawler/normalize.py
+@@ -2,6 +2,7 @@
+ from __future__ import annotations
+ 
+ import re
++from datetime import datetime, timezone
+ from typing import Any
+ 
+ from .base import RawListing
+@@ -26,6 +27,43 @@ SOURCE_COUNTRY: dict[str, str] = {
+ }
+ 
+ 
++
++def parse_origin_date(raw: str | None) -> datetime | None:
++    """Parsea fechas de publicación del portal de origen.
++
++    Soporta ISO 8601 (con o sin hora/Z/offset) y dd/mm/aaaa o dd-mm-aaaa.
++    Devuelve datetime aware (UTC) o None si no reconoce el formato.
++    Nunca lanza: un string basura no debe tumbar el parseo de la ficha.
++    """
++    if raw is None:
++        return None
++    s = str(raw).strip()
++    if not s:
++        return None
++    # ISO 8601 (date-only or datetime)
++    try:
++        iso = s.replace("Z", "+00:00")
++        # date-only YYYY-MM-DD
++        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
++            dt = datetime.fromisoformat(s).replace(tzinfo=timezone.utc)
++            return dt
++        dt = datetime.fromisoformat(iso)
++        if dt.tzinfo is None:
++            dt = dt.replace(tzinfo=timezone.utc)
++        return dt
++    except (ValueError, TypeError):
++        pass
++    # dd/mm/yyyy or dd-mm-yyyy
++    m = re.fullmatch(r"(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})", s)
++    if m:
++        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
++        try:
++            return datetime(y, mo, d, tzinfo=timezone.utc)
++        except ValueError:
++            return None
++    return None
++
++
+ def fix_mojibake(text: str | None) -> str:
+     """Repara double-encoding típico UTF-8 leído como Latin-1 (CÃ³rdoba → Córdoba).
+ 
+diff --git a/apps/api/app/crawler/parsers/argenprop.py b/apps/api/app/crawler/parsers/argenprop.py
+index 37e5219..1d03fe2 100644
+--- a/apps/api/app/crawler/parsers/argenprop.py
++++ b/apps/api/app/crawler/parsers/argenprop.py
+@@ -60,6 +60,18 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+     if em:
+         external = em.group(1)
+ 
++    origin = ""
++    for pat in (
++        r'property="article:published_time"\s+content="([^"]+)"',
++        r'"datePublished"\s*:\s*"([^"]+)"',
++        r'"dateModified"\s*:\s*"([^"]+)"',
++        r"Publicado\s+(?:el\s+)?(\d{1,2}[/\-]\d{1,2}[/\-]\d{4})",
++    ):
++        m = re.search(pat, html, re.I)
++        if m:
++            origin = m.group(1).strip()
++            break
++
+     return RawListing(
+         source=SOURCE,
+         source_url=url,
+@@ -78,4 +90,5 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         property_type="Departamento",
+         operation="Venta",
+         images=images,
++        origin_published_at=origin or None,
+     )
+diff --git a/apps/api/app/crawler/parsers/bienesonline.py b/apps/api/app/crawler/parsers/bienesonline.py
+index e2cc85f..0718b4d 100644
+--- a/apps/api/app/crawler/parsers/bienesonline.py
++++ b/apps/api/app/crawler/parsers/bienesonline.py
+@@ -35,6 +35,17 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         return None
+ 
+     title = (listing or {}).get("name") or (place or {}).get("name") or ""
++    origin = ""
++    for obj in (listing, place, offer):
++        if not isinstance(obj, dict):
++            continue
++        for key in ("datePublished", "dateModified", "dateCreated"):
++            val = obj.get(key)
++            if val:
++                origin = str(val).strip()
++                break
++        if origin:
++            break
+     if not title:
+         og = re.search(r'property="og:title"\s+content="([^"]+)"', html)
+         title = og.group(1) if og else ""
+@@ -99,5 +110,6 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         operation="Venta",
+         images=list(images)[:5],
+         agency_name=agency or "",
++        origin_published_at=origin or None,
+         extras={"country": "Argentina"},
+     )
+diff --git a/apps/api/app/crawler/parsers/infocasas.py b/apps/api/app/crawler/parsers/infocasas.py
+index 5b2ef13..d915be8 100644
+--- a/apps/api/app/crawler/parsers/infocasas.py
++++ b/apps/api/app/crawler/parsers/infocasas.py
+@@ -100,6 +100,16 @@ def _parse_detail(html: str, url: str, source: str, default_country: str) -> Raw
+     if isinstance(seller, dict):
+         agency_name = seller.get("name") or ""
+ 
++    origin = ""
++    for key in (
++        "published_at", "publishedAt", "created_at", "createdAt",
++        "date_published", "publication_date", "updated_at", "updatedAt",
++    ):
++        val = data.get(key)
++        if val:
++            origin = str(val).strip()
++            break
++
+     return RawListing(
+         source=source,
+         source_url=url,
+@@ -123,6 +133,7 @@ def _parse_detail(html: str, url: str, source: str, default_country: str) -> Raw
+         lat=float(data["latitude"]) if data.get("latitude") else None,
+         lng=float(data["longitude"]) if data.get("longitude") else None,
+         agency_name=agency_name,
++        origin_published_at=origin or None,
+         extras={"country": default_country, "code": data.get("code")},
+     )
+ 
+diff --git a/apps/api/app/crawler/parsers/mercadolibre.py b/apps/api/app/crawler/parsers/mercadolibre.py
+index ae5a62a..ede802a 100644
+--- a/apps/api/app/crawler/parsers/mercadolibre.py
++++ b/apps/api/app/crawler/parsers/mercadolibre.py
+@@ -35,6 +35,7 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+     images: list[str] = []
+     item_id = None
+     city = zone = ""
++    origin = ""
+ 
+     # 1) JSON-LD Product (más estable)
+     for m in re.finditer(
+@@ -60,6 +61,15 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+             sku = data.get("sku") or data.get("productID")
+             if sku:
+                 item_id = str(sku)
++            origin = (
++                data.get("datePublished")
++                or data.get("dateModified")
++                or data.get("releaseDate")
++                or origin
++            )
++            if isinstance(origin, dict):
++                origin = origin.get("value") or ""
++            origin = str(origin or "").strip()
+ 
+     # 2) melidata fallback
+     if price is None:
+@@ -73,6 +83,13 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+                 zone = data.get("neighborhood") or zone
+                 if data.get("item_id"):
+                     item_id = data.get("item_id")
++                if not origin:
++                    origin = str(
++                        data.get("start_time")
++                        or data.get("date_created")
++                        or data.get("creation_date")
++                        or ""
++                    ).strip()
+             except json.JSONDecodeError:
+                 pass
+ 
+@@ -120,4 +137,5 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         property_type="Casa" if "casa" in (title + url).lower() else "Departamento",
+         operation="Venta",
+         images=images[:5],
++        origin_published_at=origin or None,
+     )
+diff --git a/apps/api/app/crawler/parsers/zonaprop.py b/apps/api/app/crawler/parsers/zonaprop.py
+index 9ff059b..8f6e78e 100644
+--- a/apps/api/app/crawler/parsers/zonaprop.py
++++ b/apps/api/app/crawler/parsers/zonaprop.py
+@@ -63,6 +63,31 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+             price = parse_price(offers.get("price"))
+             currency = offers.get("priceCurrency") or currency
+ 
++    # Fecha de publicación / modificación en JSON-LD (si el portal la expone)
++    origin = ""
++    if apartment:
++        origin = (
++            apartment.get("datePublished")
++            or apartment.get("dateModified")
++            or apartment.get("dateCreated")
++            or ""
++        )
++        if isinstance(origin, dict):
++            origin = origin.get("value") or origin.get("@value") or ""
++        origin = str(origin or "").strip()
++    if not origin:
++        # meta article:published_time u og
++        for pat in (
++            r'property="article:published_time"\s+content="([^"]+)"',
++            r'property="og:updated_time"\s+content="([^"]+)"',
++            r'"datePublished"\s*:\s*"([^"]+)"',
++            r'"dateModified"\s*:\s*"([^"]+)"',
++        ):
++            m = re.search(pat, html)
++            if m:
++                origin = m.group(1).strip()
++                break
++
+     # Meta / title fallback
+     if not title:
+         tm = re.search(r"<title>([^|<]+)", html)
+@@ -114,4 +139,5 @@ def parse_detail(html: str, url: str) -> RawListing | None:
+         operation="Venta",
+         images=images,
+         agency_phone=phone,  # no subir a Property pública; solo hint interno
++        origin_published_at=origin or None,
+     )
+diff --git a/apps/api/app/crawler/runner.py b/apps/api/app/crawler/runner.py
+index 05a2d01..3e34662 100644
+--- a/apps/api/app/crawler/runner.py
++++ b/apps/api/app/crawler/runner.py
+@@ -25,13 +25,13 @@ import requests
+ 
+ from .dedup import is_duplicate
+ from .links import extract_detail_urls
+-from .normalize import to_property_payload
++from .normalize import parse_origin_date, to_property_payload
+ from .parsers import parse_by_source
+ from .selectors import SOURCES, SourceConfig
+ 
+ logger = logging.getLogger("propomi.crawler")
+ 
+-MAX_AGE_DAYS = 60
++MAX_AGE_DAYS = 90
+ USER_AGENT = "PropomiBot/0.1 (+https://propomi.lat; research)"
+ 
+ # Límites de cortesía — evitar hammering de portales de terceros y del
+@@ -203,6 +203,21 @@ def upsert_payload(db, payload: dict[str, Any], source_id: str) -> str:
+         match_demand_requests_for_property(db, existing)
+         return "updated"
+ 
++    # Filtro de antigüedad (solo altas nuevas — no borra filas existentes).
++    origin_dt = parse_origin_date(payload.get("origin_published_at"))
++    if origin_dt is not None:
++        age_days = (now - origin_dt).days
++        if age_days > MAX_AGE_DAYS:
++            logger.info(
++                "skip stale listing source=%s url=%s origin=%s age_days=%s max=%s",
++                source_id,
++                src_url,
++                payload.get("origin_published_at"),
++                age_days,
++                MAX_AGE_DAYS,
++            )
++            return "skipped"
++
+     from app.main import normalize_phone
+     from .dedup import find_cross_source_match
+     phone_raw = payload.get("contact_phone_raw") or None

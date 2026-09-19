@@ -120,7 +120,7 @@ export default function AgentDashboard(){
   const [propFormFiles,setPropFormFiles]=useState<File[]>([]);
   const [photoBusyId,setPhotoBusyId]=useState<string|null>(null);
   const [geoCatalog,setGeoCatalog]=useState<GeoCatalog|null>(null);
-  const PROP_TYPES=['Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
+  const PROP_TYPES=['Departamento','Casa','PH','Oficina','Local','Terreno','Campo','Chacra','En Pozo'];
   const [myProperties,setMyProperties]=useState<Property[]>([]);
   const [toast,setToast]=useState('');
   const [loadError,setLoadError]=useState<string|null>(null);

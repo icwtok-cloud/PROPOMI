@@ -1,0 +1,56 @@
+services:
+  - type: web
+    name: propomi-api
+    env: python
+    rootDir: apps/api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ADMIN_KEY
+        sync: false
+      - key: API_URL
+        sync: false
+
+  # --- Crons ---
+  # Render solo habilita cron jobs en planes pagos. Si el deploy falla al
+  # aplicar este Blueprint por "cron not available", comentar los dos
+  # bloques siguientes y usar cron-job.org (instrucciones exactas en
+  # docs/CRON_EXTERNO.md).
+
+  - type: cron
+    name: propomi-expire-stale
+    env: python
+    rootDir: apps/api
+    schedule: "0 4 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL'].rstrip('/')+'/admin/properties/expire-stale', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r, timeout=120)"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: ADMIN_KEY
+        sync: false
+      - key: API_URL
+        sync: false
+
+  - type: cron
+    name: propomi-crawler-weekly
+    env: python
+    rootDir: apps/api
+    schedule: "0 5 * * 1"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      python -c "import os,urllib.request; r=urllib.request.Request(os.environ['API_URL'].rstrip('/')+'/admin/crawler/run', method='POST', headers={'X-Admin-Key': os.environ['ADMIN_KEY']}); urllib.request.urlopen(r, timeout=600)"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: ADMIN_KEY
+        sync: false
+      - key: API_URL
+        sync: false

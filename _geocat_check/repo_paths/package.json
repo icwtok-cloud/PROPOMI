@@ -1,0 +1,11 @@
+{
+  "name": "propomi",
+  "private": true,
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "dev:api": "cd apps/api && uvicorn app.main:app --reload --port 8000",
+    "test:api": "cd apps/api && python -m pytest -q",
+    "check": "bash scripts/check.sh"
+  }
+}

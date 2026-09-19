@@ -1,0 +1,81 @@
+diff --git a/apps/web/app/globals.css b/apps/web/app/globals.css
+index 628c9ee..c5e997a 100644
+--- a/apps/web/app/globals.css
++++ b/apps/web/app/globals.css
+@@ -263,12 +263,13 @@
+ }
+ 
+ 
+-/* Cards estilo Airbnb: elevación, tipografía, sombra */
++/* Cards estilo Airbnb: elevación, tipografía, sombra + altura alineada en grid */
+ .property-card-v2{
+   border-radius:14px;overflow:hidden;background:#fff;
+   border:1px solid #e8edf3;
+   box-shadow:0 2px 10px rgba(16,32,51,.06);
+   transition:transform .15s ease, box-shadow .15s ease;
++  display:flex;flex-direction:column;height:100%;
+ }
+ .property-card-v2:hover{
+   transform:translateY(-2px);
+@@ -280,7 +281,10 @@
+ .property-card-v2 .pbody,
+ .property-card-v2 .body,
+ .property-card-v2 .pcard-body,
+-.property .body{padding:12px 12px 14px}
++.property .body{
++  padding:12px 12px 14px;
++  display:flex;flex-direction:column;flex:1;min-height:0;
++}
+ .property-card-v2 .pcard-title,
+ .property-card-v2 h3,
+ .property h3{
+@@ -290,10 +294,19 @@
+ .property-card-v2 .pcard-price,
+ .property-card-v2 .price,
+ .property .price{font-size:16px;font-weight:700;display:block;margin:0 0 4px;color:#102033}
+-.property-card-v2 .pcard-subtitle{font-size:13px;margin:0 0 6px;color:#536174}
++.property-card-v2 .pcard-subtitle{
++  font-size:13px;margin:0 0 6px;color:#536174;
++  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
++}
+ .property-card-v2 .specs,
+-.property .specs{font-size:12px;color:#536174}
+-.property-card-v2 .actions{gap:6px;margin-top:10px}
++.property .specs{
++  font-size:12px;color:#536174;
++  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
++}
++.property-card-v2 .actions{
++  display:flex;flex-wrap:wrap;gap:6px;
++  margin-top:auto;padding-top:10px;
++}
+ .property-card-v2 .actions .primary,
+ .property-card-v2 .actions .secondary{padding:7px 10px;font-size:12px}
+ 
+diff --git a/apps/web/components/PropertyCard.tsx b/apps/web/components/PropertyCard.tsx
+index 3344b0e..1a3ea1b 100644
+--- a/apps/web/components/PropertyCard.tsx
++++ b/apps/web/components/PropertyCard.tsx
+@@ -88,13 +88,15 @@ export default function PropertyCard({
+           {p.bathrooms != null && <> · {p.bathrooms} baño</>}
+         </div>
+         {p.originPublishedAt && <div className="muted small">{p.originPublishedAt}</div>}
+-        <div className="tags">
+-          {p.parking && <span>Cochera</span>}
+-          {p.balcony && <span>Balcón</span>}
+-          {p.credit && <span>Crédito</span>}
+-          {p.pool && <span>Pileta</span>}
+-          {p.petFriendly && <span>Acepta mascotas</span>}
+-        </div>
++        {(p.parking||p.balcony||p.credit||p.pool||p.petFriendly)&&(
++          <div className="tags">
++            {p.parking && <span>Cochera</span>}
++            {p.balcony && <span>Balcón</span>}
++            {p.credit && <span>Crédito</span>}
++            {p.pool && <span>Pileta</span>}
++            {p.petFriendly && <span>Acepta mascotas</span>}
++          </div>
++        )}
+         <div className="actions">
+           <button type="button" onClick={onCompare} className={compared ? 'secondary active' : 'secondary'}>
+             <GitCompare size={15}/>{compared ? 'Comparada' : 'Comparar'}

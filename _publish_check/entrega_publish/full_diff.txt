@@ -1,0 +1,473 @@
+diff --git a/apps/api/app/main.py b/apps/api/app/main.py
+index 479e6e7..98737db 100644
+--- a/apps/api/app/main.py
++++ b/apps/api/app/main.py
+@@ -383,6 +383,20 @@ class Agency(Base):
+     slug: Mapped[str | None] = mapped_column(String(160), nullable=True, unique=True)
+ 
+ 
++
++class GeoCity(Base):
++    """Ciudades agregadas por agentes (extienden el catálogo estático de geo_catalog.py)."""
++    __tablename__ = "geo_cities"
++    __table_args__ = (UniqueConstraint("country", "province", "normalized", name="uq_geo_city_place"),)
++    id: Mapped[str] = mapped_column(String(40), primary_key=True)
++    country: Mapped[str] = mapped_column(String(100))
++    province: Mapped[str] = mapped_column(String(100))
++    city: Mapped[str] = mapped_column(String(120))
++    normalized: Mapped[str] = mapped_column(String(120))
++    created_by_agency_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
++    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc))
++
++
+ class AgencyPhone(Base):
+     """Telefonos adicionales de una agencia (celular personal + linea de oficina, etc.).
+     Agency.phone sigue siendo el telefono principal/original; esta tabla permite sumar
+@@ -2151,14 +2165,120 @@ def is_valid_city_name(name: str | None) -> bool:
+ 
+ 
+ 
++def _normalize_city_name(s: str) -> str:
++    """NFKD + ascii + lower + strip — misma idea que el backfill de province."""
++    nfkd = unicodedata.normalize("NFKD", (s or "").strip())
++    return nfkd.encode("ascii", "ignore").decode("ascii").lower().strip()
++
++
+ @app.get("/geo/catalog")
+ def geo_catalog():
+-    """Catálogo geográfico estático (país → provincia → ciudad) para el
+-    formulario de alta de agencia. No depende de Property: permite publicar
+-    en ciudades donde el crawler todavía no scrapeó. El pill público del
+-    home sigue usando GET /properties/filters (solo ciudades con inventario)."""
++    """Catálogo geográfico (estático + ciudades agregadas por agentes) para el
++    formulario de alta de agencia. Países/provincias siguen cerrados; ciudades
++    se mergean con GeoCity. El pill público sigue en GET /properties/filters."""
+     from .geo_catalog import get_geo_catalog
+-    return get_geo_catalog()
++    base = get_geo_catalog()
++    cities_by_province: dict[str, list[str]] = {
++        k: list(v) for k, v in (base.get("citiesByProvince") or {}).items()
++    }
++    with Session(engine) as db:
++        rows = db.scalars(select(GeoCity)).all()
++        for row in rows:
++            key = f"{row.country}|{row.province}"
++            bucket = cities_by_province.setdefault(key, [])
++            if row.city not in bucket:
++                bucket.append(row.city)
++    for key in cities_by_province:
++        cities_by_province[key] = sorted(set(cities_by_province[key]))
++    base["citiesByProvince"] = cities_by_province
++    return base
++
++
++class GeoCityIn(BaseModel):
++    country: str = Field(min_length=1, max_length=100)
++    province: str = Field(min_length=1, max_length=100)
++    city: str = Field(min_length=1, max_length=120)
++    force: bool = False
++
++
++@app.post("/geo/cities")
++def add_geo_city(payload: GeoCityIn, session: dict[str, Any] = Depends(require_agent)):
++    """Alta de ciudad por un agente. Dedup exacto + sugerencia fuzzy (ratio>=0.82)."""
++    from .geo_catalog import GEO_CATALOG
++    import difflib
++
++    country = payload.country.strip()
++    province = payload.province.strip()
++    city = payload.city.strip()
++    if not city:
++        raise HTTPException(status_code=400, detail="Ingresá el nombre de la ciudad")
++    if country not in GEO_CATALOG or province not in GEO_CATALOG.get(country, {}):
++        raise HTTPException(status_code=400, detail="País o provincia no válidos en el catálogo")
++
++    agency_id = session.get("agency_id") or ""
++    _rate.check(f"geo-city:{agency_id}", 20, 86400)
++
++    static_cities = list(GEO_CATALOG[country][province])
++    norm = _normalize_city_name(city)
++
++    # Universo canónico: estáticas + DB
++    with Session(engine) as db:
++        db_rows = db.scalars(
++            select(GeoCity).where(GeoCity.country == country, GeoCity.province == province)
++        ).all()
++        canon: list[tuple[str, str]] = []  # (display, normalized)
++        for c in static_cities:
++            canon.append((c, _normalize_city_name(c)))
++        for r in db_rows:
++            canon.append((r.city, r.normalized))
++
++        # Match exacto normalizado
++        for display, n in canon:
++            if n == norm:
++                return {"created": False, "city": display}
++
++        if not payload.force:
++            best = None
++            best_ratio = 0.0
++            for display, n in canon:
++                ratio = difflib.SequenceMatcher(None, norm, n).ratio()
++                if ratio > best_ratio:
++                    best_ratio = ratio
++                    best = display
++            if best is not None and best_ratio >= 0.82:
++                return {
++                    "created": False,
++                    "needsConfirmation": True,
++                    "suggestion": best,
++                }
++
++        # Insertar
++        new_id = f"gc-{uuid.uuid4().hex[:12]}"
++        row = GeoCity(
++            id=new_id,
++            country=country,
++            province=province,
++            city=city,
++            normalized=norm,
++            created_by_agency_id=agency_id or None,
++        )
++        db.add(row)
++        try:
++            db.commit()
++        except Exception:
++            db.rollback()
++            # carrera: otro agente insertó el mismo normalized
++            existing = db.scalars(
++                select(GeoCity).where(
++                    GeoCity.country == country,
++                    GeoCity.province == province,
++                    GeoCity.normalized == norm,
++                )
++            ).first()
++            if existing:
++                return {"created": False, "city": existing.city}
++            raise
++        return {"created": True, "city": city}
+ 
+ 
+ @app.get("/properties/filters")
+diff --git a/apps/web/app/globals.css b/apps/web/app/globals.css
+index 78aaea3..5dccb4d 100644
+--- a/apps/web/app/globals.css
++++ b/apps/web/app/globals.css
+@@ -297,16 +297,35 @@
+ .property-card-v2 .actions .primary,
+ .property-card-v2 .actions .secondary{padding:7px 10px;font-size:12px}
+ 
+-/* Chips de publicación (panel agencia) — misma paleta que el pill del home */
+-.publish-geo-block{margin:10px 0 4px}
+-.publish-chip-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px}
+-.publish-chip-row .chip{
+-  border:1.5px solid #d9e1e9;background:#fff;border-radius:999px;
+-  padding:8px 14px;font-size:13px;font-weight:600;color:#102033;cursor:pointer;
++/* Formulario Publicar nueva — secciones + selects nativos */
++.publish-card{padding-bottom:18px}
++.publish-section{margin-top:18px;padding-top:16px;border-top:1px solid #e8edf3}
++.publish-section:first-of-type{margin-top:12px;padding-top:0;border-top:0}
++.publish-section-title{
++  font-size:12px;font-weight:700;color:#536174;letter-spacing:.03em;
++  text-transform:uppercase;margin:0 0 12px;
+ }
+-.publish-chip-row .chip.active,
+-.publish-chip-row .chip:hover{
+-  border-color:#BF4E32;background:#fff0f1;color:#9E3F28;
++.publish-field{display:block;font-size:12px;font-weight:600;color:#536174;margin-bottom:12px}
++.publish-field input,
++.publish-field select,
++.publish-field textarea{
++  margin-top:8px;width:100%;border:1px solid #d9e1e9;border-radius:9px;
++  padding:11px 12px;background:#fff;color:#102033;font-size:14px;
++}
++.publish-field select:focus,
++.publish-field input:focus,
++.publish-field textarea:focus{
++  outline:0;border-color:#BF4E32;box-shadow:0 0 0 3px rgba(191,78,50,.12);
++}
++.publish-field select:disabled{opacity:.55;cursor:not-allowed;background:#f5f7fa}
++.publish-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
++.publish-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
++.publish-other-city{
++  margin-top:4px;padding:12px;background:#f8fafc;border:1px solid #e3e8ee;
++  border-radius:12px;
++}
++@media(max-width:700px){
++  .publish-grid-2,.publish-grid-3{grid-template-columns:1fr}
+ }
+ .invest-badge{top:auto!important;bottom:10px;left:8px;right:auto!important;background:#1f6b3b!important;color:#fff!important;font-size:11px!important;font-weight:750!important;padding:4px 8px!important;border-radius:8px!important}
+ .pozo-badge{top:36px!important;left:8px!important;right:auto!important;background:#BF4E32!important;color:#fff!important;font-size:11px!important;font-weight:750!important;padding:4px 8px!important;border-radius:8px!important}
+diff --git a/apps/web/components/AgentDashboard.tsx b/apps/web/components/AgentDashboard.tsx
+index 90431d6..1658edf 100644
+--- a/apps/web/components/AgentDashboard.tsx
++++ b/apps/web/components/AgentDashboard.tsx
+@@ -2,7 +2,7 @@
+ import {useEffect,useState} from 'react';
+ import {Building2,Check,Copy,ExternalLink,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,TrendingUp,Unlock,User} from 'lucide-react';
+ import {Agency,Offer,Property,Session} from '../lib/types';
+-import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,GeoCatalog} from '../lib/api';
++import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,addGeoCity,GeoCatalog} from '../lib/api';
+ import {adminUnitLabel} from '../lib/geo';
+ import AgentOfferActions from './AgentOfferActions';
+ import DemandPanel from './DemandPanel';
+@@ -119,6 +119,11 @@ export default function AgentDashboard(){
+   const [propForm,setPropForm]=useState({title:'',zone:'',city:'',country:'Argentina',province:'',type:'Departamento',price:'',surface:'',rooms:'2',description:'',imageUrls:''});
+   const [geoCatalog,setGeoCatalog]=useState<GeoCatalog|null>(null);
+   const PROP_TYPES=['Departamento','Casa','PH','Oficina','Local','Terreno','En Pozo'];
++  const [otherCityOpen,setOtherCityOpen]=useState(false);
++  const [otherCityDraft,setOtherCityDraft]=useState('');
++  const [otherCityBusy,setOtherCityBusy]=useState(false);
++  const [otherCitySuggest,setOtherCitySuggest]=useState<string|null>(null);
++  const [otherCityError,setOtherCityError]=useState('');
+   const [myProperties,setMyProperties]=useState<Property[]>([]);
+   const [toast,setToast]=useState('');
+   const [loadError,setLoadError]=useState<string|null>(null);
+@@ -236,6 +241,33 @@ export default function AgentDashboard(){
+     }
+   }
+ 
++  async function confirmOtherCity(force=false){
++    if(!session||!propForm.country||!propForm.province)return;
++    const name=otherCityDraft.trim();
++    if(!name){setOtherCityError('Ingresá el nombre de la ciudad');return;}
++    setOtherCityBusy(true);setOtherCityError('');setOtherCitySuggest(null);
++    try{
++      const r=await addGeoCity({country:propForm.country,province:propForm.province,city:name,force},session);
++      if(r.needsConfirmation&&r.suggestion&&!force){
++        setOtherCitySuggest(r.suggestion);
++        return;
++      }
++      const finalCity=(r.city||name).trim();
++      setGeoCatalog(prev=>{
++        if(!prev)return prev;
++        const key=`${propForm.country}|${propForm.province}`;
++        const list=Array.from(new Set([...(prev.citiesByProvince[key]||[]),finalCity])).sort();
++        return {...prev,citiesByProvince:{...prev.citiesByProvince,[key]:list}};
++      });
++      setPropForm(f=>({...f,city:finalCity}));
++      setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
++    }catch(e:any){
++      setOtherCityError(e?.message||'No pudimos agregar la ciudad.');
++    }finally{
++      setOtherCityBusy(false);
++    }
++  }
++
+   async function submitProperty(){
+     if(!session)return;
+     if(agency?.verificationStatus!=='VERIFIED'){
+@@ -411,81 +443,132 @@ export default function AgentDashboard(){
+         );
+       })}
+ 
+-      <div className="summarycard account-block" style={{marginTop:16}}>
++      <div className="summarycard account-block publish-card" style={{marginTop:16}}>
+         <div className="account-block-head">
+           <Plus size={18}/>
+           <div>
+             <h3 className="account-block-title">Publicar nueva</h3>
+-            <p className="muted small" style={{margin:0}}>Elegí ubicación del catálogo y completá los datos de la propiedad.</p>
++            <p className="muted small" style={{margin:0}}>Completá los datos. País y provincia del catálogo; ciudad se puede ampliar.</p>
+           </div>
+         </div>
+ 
+-        <label>Título<input value={propForm.title} onChange={e=>setPropForm(f=>({...f,title:e.target.value}))} placeholder="2 ambientes luminoso en Palermo"/></label>
+-
+-        <div className="publish-geo-block">
+-          <div className="muted small" style={{marginBottom:6,fontWeight:700}}>País</div>
+-          <div className="publish-chip-row">
+-            {(geoCatalog?.countries||['Argentina','Paraguay','Uruguay']).map(c=>(
+-              <button type="button" key={c}
+-                className={propForm.country===c?'chip active':'chip'}
+-                onClick={()=>setPropForm(f=>({...f,country:c,province:'',city:''}))}
+-              >{c}</button>
+-            ))}
++        <div className="publish-section">
++          <div className="publish-section-title">Información básica</div>
++          <label className="publish-field">Título
++            <input value={propForm.title} onChange={e=>setPropForm(f=>({...f,title:e.target.value}))} placeholder="2 ambientes luminoso en Palermo"/>
++          </label>
++          <label className="publish-field">Tipo
++            <select value={propForm.type} onChange={e=>setPropForm(f=>({...f,type:e.target.value}))}>
++              {PROP_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
++            </select>
++          </label>
++        </div>
++
++        <div className="publish-section">
++          <div className="publish-section-title">Ubicación</div>
++          <div className="publish-grid-2">
++            <label className="publish-field">País
++              <select value={propForm.country} onChange={e=>{
++                setPropForm(f=>({...f,country:e.target.value,province:'',city:''}));
++                setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
++              }}>
++                {(geoCatalog?.countries||['Argentina','Paraguay','Uruguay']).map(c=><option key={c} value={c}>{c}</option>)}
++              </select>
++            </label>
++            <label className="publish-field">{adminUnitLabel(propForm.country)}
++              <select
++                value={propForm.province}
++                disabled={!propForm.country}
++                onChange={e=>{
++                  setPropForm(f=>({...f,province:e.target.value,city:''}));
++                  setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
++                }}
++              >
++                <option value="">{propForm.country?'Elegí…':'Elegí un país primero'}</option>
++                {(geoCatalog?.provincesByCountry?.[propForm.country]||[]).map(p=><option key={p} value={p}>{p}</option>)}
++              </select>
++            </label>
+           </div>
+-          <div className="muted small" style={{margin:'12px 0 6px',fontWeight:700}}>{adminUnitLabel(propForm.country)}</div>
+-          <div className="publish-chip-row">
+-            {(geoCatalog?.provincesByCountry?.[propForm.country]||[]).map(p=>(
+-              <button type="button" key={p}
+-                className={propForm.province===p?'chip active':'chip'}
+-                onClick={()=>setPropForm(f=>({...f,province:p,city:''}))}
+-              >{p}</button>
+-            ))}
+-            {!geoCatalog && <span className="muted small">Cargando catálogo…</span>}
++          <div className="publish-grid-2">
++            <label className="publish-field">Ciudad
++              <select
++                value={otherCityOpen?'__other__':propForm.city}
++                disabled={!propForm.province}
++                onChange={e=>{
++                  const v=e.target.value;
++                  if(v==='__other__'){setOtherCityOpen(true);setPropForm(f=>({...f,city:''}));}
++                  else{setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);setPropForm(f=>({...f,city:v}));}
++                }}
++              >
++                <option value="">{propForm.province?'Elegí…':'Elegí provincia primero'}</option>
++                {(geoCatalog?.citiesByProvince?.[`${propForm.country}|${propForm.province}`]||[]).map(c=><option key={c} value={c}>{c}</option>)}
++                {propForm.province&&<option value="__other__">+ Otra ciudad…</option>}
++              </select>
++            </label>
++            <label className="publish-field">Zona / barrio
++              <input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo, Pocitos, Centro…"/>
++            </label>
+           </div>
+-          {propForm.province && (
+-            <>
+-              <div className="muted small" style={{margin:'12px 0 6px',fontWeight:700}}>Ciudad</div>
+-              <div className="publish-chip-row">
+-                {(geoCatalog?.citiesByProvince?.[`${propForm.country}|${propForm.province}`]||[]).map(c=>(
+-                  <button type="button" key={c}
+-                    className={propForm.city===c?'chip active':'chip'}
+-                    onClick={()=>setPropForm(f=>({...f,city:c}))}
+-                  >{c}</button>
+-                ))}
+-              </div>
+-            </>
++          {otherCityOpen&&(
++            <div className="publish-other-city">
++              <label className="publish-field">Nombre de la ciudad
++                <input value={otherCityDraft} onChange={e=>setOtherCityDraft(e.target.value)} placeholder="Ej: Libertad" disabled={otherCityBusy}/>
++              </label>
++              {otherCitySuggest&&(
++                <div className="notice" style={{marginTop:8}}>
++                  ¿Quisiste decir <strong>{otherCitySuggest}</strong>?
++                  <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
++                    <button type="button" className="primary" disabled={otherCityBusy} onClick={()=>{
++                      setPropForm(f=>({...f,city:otherCitySuggest!}));
++                      setOtherCityOpen(false);setOtherCityDraft('');setOtherCitySuggest(null);
++                    }}>Sí, usar esa</button>
++                    <button type="button" className="secondary" disabled={otherCityBusy} onClick={()=>confirmOtherCity(true)}>No, es una ciudad distinta</button>
++                  </div>
++                </div>
++              )}
++              {otherCityError&&<div className="notice notice-error" style={{marginTop:8}}>{otherCityError}</div>}
++              {!otherCitySuggest&&(
++                <div style={{marginTop:8}}>
++                  <button type="button" className="secondary" disabled={otherCityBusy} onClick={()=>confirmOtherCity(false)}>
++                    {otherCityBusy?'Agregando…':'Agregar ciudad'}
++                  </button>
++                </div>
++              )}
++            </div>
+           )}
+-          <label style={{marginTop:12}}>Zona / barrio (texto libre)
+-            <input value={propForm.zone} onChange={e=>setPropForm(f=>({...f,zone:e.target.value}))} placeholder="Palermo, Pocitos, Centro…"/>
+-          </label>
+         </div>
+ 
+-        <div className="muted small" style={{margin:'8px 0 6px',fontWeight:700}}>Tipo</div>
+-        <div className="publish-chip-row">
+-          {PROP_TYPES.map(t=>(
+-            <button type="button" key={t}
+-              className={propForm.type===t?'chip active':'chip'}
+-              onClick={()=>setPropForm(f=>({...f,type:t}))}
+-            >{t}</button>
+-          ))}
++        <div className="publish-section">
++          <div className="publish-section-title">Precio y superficie</div>
++          <div className="publish-grid-3">
++            <label className="publish-field">Precio (USD)
++              <input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/>
++            </label>
++            <label className="publish-field">Superficie (m²)
++              <input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/>
++            </label>
++            <label className="publish-field">Ambientes
++              <input type="number" min={0} value={propForm.rooms} onChange={e=>setPropForm(f=>({...f,rooms:e.target.value}))}/>
++            </label>
++          </div>
+         </div>
+ 
+-        <div className="account-form-grid" style={{marginTop:12}}>
+-          <label>Precio (USD)<input type="number" min={1} value={propForm.price} onChange={e=>setPropForm(f=>({...f,price:e.target.value}))} placeholder="120000"/></label>
+-          <label>Superficie (m²)<input type="number" min={1} value={propForm.surface} onChange={e=>setPropForm(f=>({...f,surface:e.target.value}))} placeholder="48"/></label>
+-          <label>Ambientes<input type="number" min={0} value={propForm.rooms} onChange={e=>setPropForm(f=>({...f,rooms:e.target.value}))}/></label>
++        <div className="publish-section">
++          <div className="publish-section-title">Fotos y descripción</div>
++          <label className="publish-field">Fotos (opcional, una URL por línea, máx. 5)
++            <textarea
++              value={propForm.imageUrls}
++              onChange={e=>setPropForm(f=>({...f,imageUrls:e.target.value}))}
++              rows={3}
++              placeholder={"https://.../foto1.jpg\nhttps://.../foto2.jpg"}
++            />
++          </label>
++          <p className="muted small">Solo URLs http(s). Se usan en la galería del detalle.</p>
++          <label className="publish-field">Descripción (sin teléfonos ni links)
++            <textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/>
++          </label>
+         </div>
+ 
+-        <label>Fotos (opcional, una URL por línea, máx. 5)
+-          <textarea
+-            value={propForm.imageUrls}
+-            onChange={e=>setPropForm(f=>({...f,imageUrls:e.target.value}))}
+-            rows={3}
+-            placeholder={"https://.../foto1.jpg\nhttps://.../foto2.jpg"}
+-          />
+-        </label>
+-        <p className="muted small">Solo URLs http(s). Se usan en la galería del detalle.</p>
+-        <label>Descripción (sin teléfonos ni links)<textarea value={propForm.description} onChange={e=>setPropForm(f=>({...f,description:e.target.value}))} rows={3} placeholder="Ambientes luminosos, buena ubicación..."/></label>
+         <div className="modalactions" style={{justifyContent:'flex-start'}}>
+           <button className="primary" disabled={busy||agency?.verificationStatus!=='VERIFIED'} onClick={submitProperty}><Plus size={15}/> Publicar propiedad</button>
+         </div>
+diff --git a/apps/web/lib/api.ts b/apps/web/lib/api.ts
+index f10f58d..3a5753e 100644
+--- a/apps/web/lib/api.ts
++++ b/apps/web/lib/api.ts
+@@ -58,6 +58,17 @@ export async function getGeoCatalog():Promise<GeoCatalog>{
+   }
+   return req<GeoCatalog>('/geo/catalog');
+ }
++export type AddGeoCityResult={created:boolean;city?:string;needsConfirmation?:boolean;suggestion?:string};
++export async function addGeoCity(
++  payload:{country:string;province:string;city:string;force?:boolean},
++  session:Session,
++):Promise<AddGeoCityResult>{
++  if(!base){
++    return {created:true,city:payload.city.trim()};
++  }
++  return req<AddGeoCityResult>('/geo/cities',{method:'POST',body:JSON.stringify(payload)},session.token);
++}
++
+ export async function trackEvent(name:EventName,property_id?:string,context?:Record<string,unknown>,session?:Session|null){if(!base)return;return req('/events',{method:'POST',body:JSON.stringify({name,property_id,session_id:'web-session',context})},session?.token)}
+ const BUYER_KEY='propomi-buyer-session';
+ function getBuyerSession():Session|null{try{const raw=localStorage.getItem(BUYER_KEY);return raw?JSON.parse(raw):null}catch{return null}}

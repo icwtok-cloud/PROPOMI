@@ -34,33 +34,42 @@ logger = logging.getLogger("propomi.crawler")
 MAX_AGE_DAYS = 90
 USER_AGENT = "PropomiBot/0.1 (+https://propomi.lat; research)"
 
-# Límites de cortesía — evitar hammering de portales de terceros y del
-# propio dyno free de Render. Ajustar cuando haya cron real + colas.
-MAX_LIST_PAGES_PER_SOURCE = 10
-MAX_DETAILS_PER_SOURCE = 200
-REQUEST_DELAY_SECONDS = 1.0  # no bajar: volumen con geo + cron, no martilleo
+# Scale 2026-09-19 — flywheel: más páginas/detalles por corrida.
+# Delay moderado para no martillar; cron cada 6h acumula inventario.
+MAX_LIST_PAGES_PER_SOURCE = 25
+MAX_DETAILS_PER_SOURCE = 800
+REQUEST_DELAY_SECONDS = 0.6
 
-# Overrides por fuente (scale-inventory AR/PY/UY).
+# Overrides por fuente (volumen alto en agregadores nacionales).
 MAX_LIST_PAGES_PER_SOURCE_OVERRIDE: dict[str, int] = {
-    "cordobaprop": 12,
-    "mercadolibre": 10,
-    "mendozaprop": 10,
-    "bienesonline": 10,
-    "inmoup": 8,
-    "inmoclick": 8,
-    "infocasas_py": 8,
-    "infocasas_uy": 8,
+    "cordobaprop": 20,
+    "mercadolibre": 40,
+    "mercadolibre_mx": 30,
+    "mendozaprop": 15,
+    "bienesonline": 20,
+    "inmoup": 15,
+    "inmoclick": 20,
+    "infocasas_py": 15,
+    "infocasas_uy": 15,
+    "argencasas": 20,
+    "departamentosenpozo": 5,
+    "bullano": 15,
+    "mercado_unico": 8,
 }
 MAX_DETAILS_PER_SOURCE_OVERRIDE: dict[str, int] = {
-    "mercadolibre": 250,
-    "mendozaprop": 200,
-    "cordobaprop": 200,
-    "bienesonline": 200,
-    "mercado_unico": 150,
-    "inmoup": 200,
-    "inmoclick": 200,
-    "infocasas_py": 200,
-    "infocasas_uy": 200,
+    "mercadolibre": 1500,
+    "mercadolibre_mx": 1000,
+    "mendozaprop": 600,
+    "cordobaprop": 600,
+    "bienesonline": 600,
+    "mercado_unico": 300,
+    "inmoup": 600,
+    "inmoclick": 800,
+    "infocasas_py": 600,
+    "infocasas_uy": 600,
+    "argencasas": 500,
+    "departamentosenpozo": 900,
+    "bullano": 400,
 }
 
 # Tope de paginación por fuente (robots.txt / cortesía). Al llegar se reinicia.
