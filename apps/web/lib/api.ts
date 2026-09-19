@@ -42,9 +42,15 @@ export async function getProperties(
     return {items, total: all.length, limit, offset, has_more: offset + items.length < all.length};
   }
   const qs = new URLSearchParams();
-  const merged = {limit: 48, offset: 0, ...(filters || {})};
+  const merged: Record<string, string | number | boolean> = {
+    limit: 48,
+    offset: 0,
+    ...(filters || {}),
+  };
   Object.entries(merged).forEach(([k, v]) => {
-    if (v !== '' && v !== undefined && v !== null) qs.set(k, String(v));
+    if (v === undefined || v === null) return;
+    if (typeof v === 'string' && v === '') return;
+    qs.set(k, String(v));
   });
   const data = await req<PropertiesPage | Property[]>(`/properties?${qs}`);
   // Compat: si el backend aún devolviera array plano
