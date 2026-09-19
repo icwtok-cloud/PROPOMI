@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 import {Building2,Check,Copy,ExternalLink,ImagePlus,Inbox,Instagram,LogOut,Plus,RefreshCw,ShieldCheck,ShieldQuestion,ShieldX,Sparkles,Trash2,TrendingUp,Unlock,Upload,User} from 'lucide-react';
 import {Agency,Offer,Property,Session} from '../lib/types';
 import {getAgentSession,setAgentSession,clearAgentSession,requestOtp,verifyOtp,listOffers,isOffersRestricted,getAgency,updateAgency,relinkAgency,getAgencyOpportunities,getAnalytics,createProperty,getProperties,buildShareUrl,createCheckout,registerAgency,suggestProperty,getGeoCatalog,GeoCatalog,uploadPropertyImages,deletePropertyImage} from '../lib/api';
-import {adminUnitLabel} from '../lib/geo';
+import {adminUnitLabel,formatMoney} from '../lib/geo';
 import AgentOfferActions from './AgentOfferActions';
 import DemandPanel from './DemandPanel';
 
@@ -137,17 +137,17 @@ export default function AgentDashboard(){
   useEffect(()=>{getGeoCatalog().then(setGeoCatalog).catch(()=>{})},[]);
   useEffect(()=>{const h=()=>setSection('cuenta');window.addEventListener('propomi:goto-cuenta',h);return()=>window.removeEventListener('propomi:goto-cuenta',h)},[]);
   useEffect(()=>{if(!session)return;(async()=>{
-    const [a,o,opp,an,props]=await Promise.all([
+    const [a,o,opp,an,propsPage]=await Promise.all([
       getAgency(session.user.agency_id,session),
       listOffers(session),
       getAgencyOpportunities(session.user.agency_id,session),
       getAnalytics(session),
-      getProperties({agency_id:session.user.agency_id,limit:100,offset:0}),
+      getProperties({agency_id:session.user.agency_id,limit:100}),
     ]);
     setAgency(a);setNameDraft(a.name);setInstagramDraft(a.instagram||'');setWebsiteDraft(a.websiteLink||'');
     if(isOffersRestricted(o)){setOffers([]);setOffersRestrictedCount(o.count)}
     else{setOffers(o);setOffersRestrictedCount(null)}
-    setOpps(opp as OppData);setAnalytics(an as any);setMyProperties((props as any).items||props||[]);
+    setOpps(opp as OppData);setAnalytics(an as any);setMyProperties(propsPage.items||[]);
   })().catch((e:any)=>{setLoadError(e?.message||'No pudimos cargar el panel de agencia.')})},[session]);
 
   function notify(msg:string){setToast(msg);setTimeout(()=>setToast(''),3500)}
@@ -158,9 +158,8 @@ export default function AgentDashboard(){
     setSuggestResults([]);
     setSuggestBusy(true);
     try{
-      const page=await getProperties({exclude_agency_id:session?.user.agency_id||'',limit:100,offset:0});
-      const rows=page.items||[];
-      setSuggestResults(rows.slice(0,40));
+      const page=await getProperties({exclude_agency_id:session?.user.agency_id||'',limit:100});
+      setSuggestResults((page.items||[]).slice(0,40));
     }catch(e:any){
       notify(e?.message||'No pudimos cargar propiedades de otras agencias.');
       setSuggestForId(null);
@@ -284,12 +283,12 @@ export default function AgentDashboard(){
       setPropFormFiles([]);
       notify('Propiedad publicada.');
       try{
-        const [an,props]=await Promise.all([
+        const [an,propsPage]=await Promise.all([
           getAnalytics(session),
-          getProperties({agency_id:session.user.agency_id,limit:100,offset:0}),
+          getProperties({agency_id:session.user.agency_id,limit:100}),
         ]);
         setAnalytics(an as any);
-        setMyProperties((props as any).items||props||[]);
+        setMyProperties(propsPage.items||[]);
       }catch{}
     }catch(e:any){
       notify(e?.message||'No pudimos publicar la propiedad.');
@@ -302,7 +301,7 @@ export default function AgentDashboard(){
   async function refreshMyProperties(){
     if(!session?.user.agency_id)return;
     try{
-      const page=await getProperties({agency_id:session.user.agency_id,limit:100,offset:0});
+      const page=await getProperties({agency_id:session.user.agency_id,limit:100});
       setMyProperties(page.items||[]);
     }catch{}
   }
@@ -890,7 +889,7 @@ function logout(){clearAgentSession();setSession(null);setAgency(null);setOffers
                 <div key={r.id} className="opprow" style={{display:'flex',justifyContent:'space-between',alignItems:'center',gap:10}}>
                   <div>
                     <strong>{r.title}</strong>
-                    <div className="muted small">{r.zone} · USD {Number(r.price||0).toLocaleString('en-US')}</div>
+                    <div className="muted small">{r.zone} · {formatMoney(Number(r.price||0), r.currency)}</div>
                   </div>
                   <button type="button" className="primary" disabled={suggestBusy} onClick={()=>confirmSuggest(r.id)}>Sugerir</button>
                 </div>

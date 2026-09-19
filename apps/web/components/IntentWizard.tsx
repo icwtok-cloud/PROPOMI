@@ -3,6 +3,7 @@ import {useState,useRef,useEffect} from 'react';
 import {Property,Intent,Session} from '../lib/types';
 import {createOffer,createLead,saveIntent,trackEvent,getOrCreateBuyerSession,getBuyerProfile,setBuyerProfile,requestOtp,verifyOtpBuyer,setBuyerSession,linkGoogleIdentity,getOfferOrigin,clearBuyerIdentity} from '../lib/api';
 import {renderGoogleButton} from '../lib/google';
+import {formatMoney} from '../lib/geo';
 
 export type WizardMode='offer'|'question'|'visit';
 
@@ -205,7 +206,7 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
     <div className="modal offerwizard">
       <div className="modalhead">
         <div><span className="eyebrow">{titles[mode].eyebrow}</span><h2>{titles[mode].title}</h2>
-          <p className="muted">{p.title} · USD {fmt(p.price)}</p></div>
+          <p className="muted">{p.title} · {formatMoney(p.price, p.currency)}</p></div>
         <button className="close" onClick={onClose}>×</button>
       </div>
 
@@ -215,8 +216,8 @@ export default function IntentWizard({p,mode,onClose,onDone}:{p:Property;mode:Wi
         <div className="qlabel">¿Cuánto querés ofrecer?</div>
         <div className="qhelp">Ajustá el control — sin escribir montos a mano.</div>
         <div className="sliderbox" style={skipProposal?{opacity:0.4,pointerEvents:'none'}:undefined}>
-          <div className="slidervalue">USD {fmt(amount)}</div>
-          <div className="sliderref">{pct===0?'Precio pedido':`${pct}% por debajo del pedido (USD ${fmt(p.price)})`}</div>
+          <div className="slidervalue">{formatMoney(amount, p.currency)}</div>
+          <div className="sliderref">{pct===0?'Precio pedido':`${pct}% por debajo del pedido (${formatMoney(p.price, p.currency)})`}</div>
           <input type="range" min={0} max={15} step={1} value={pct} onChange={e=>setPct(Number(e.target.value))}/>
           <div className="quickrow">
             {[0,5,8,12,15].map(v=>
