@@ -2475,9 +2475,9 @@ def properties_filters():
                         invalid_city_zones.add(zone)
         cities = sorted(by_city.keys())
         if has_invalid_city:
-            cities.append("Sin descripciÃ³n")
-            by_city["Sin descripciÃ³n"] = invalid_city_zones
-            # No agregamos "Sin descripciÃ³n" a citiesByProvince (es un alias de presentaciÃ³n).
+            cities.append("Sin descripción")
+            by_city["Sin descripción"] = invalid_city_zones
+            # No agregamos "Sin descripción" a citiesByProvince (es un alias de presentaciÃ³n).
         return {
             "countries": sorted(countries) or ["Argentina", "Paraguay", "Uruguay"],
             "provincesByCountry": {c: sorted(ps) for c, ps in provinces_by_country.items()},
@@ -2503,8 +2503,8 @@ def _properties_base_stmt(
     home). Separado para no duplicar la lÃ³gica de filtros/visibilidad."""
     stmt = select(Property)
     if zone: stmt = stmt.where(Property.zone == zone)
-    if city and city != "Sin descripciÃ³n":
-        # "Sin descripciÃ³n" es un alias de presentaciÃ³n (propiedades cuyo
+    if city and city != "Sin descripción":
+        # "Sin descripción" es un alias de presentaciÃ³n (propiedades cuyo
         # city falla is_valid_city_name); se filtra en Python sobre los
         # resultados, no acÃ¡.
         stmt = stmt.where(Property.city == city)
@@ -2649,7 +2649,7 @@ def properties_random(
         )
         stmt = stmt.order_by(func.random()).limit(limit)
         results = db.scalars(stmt).all()
-        if city == "Sin descripciÃ³n":
+        if city == "Sin descripción":
             results = [p for p in results if not is_valid_city_name(p.city)]
         group_info = _bulk_group_info(db, results)
         return [prop_dict(p, group_info) for p in results]

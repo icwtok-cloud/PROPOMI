@@ -31,7 +31,7 @@ export default function Home(){
   const [items,setItems]=useState<Property[]>([])
   const [searchTotal,setSearchTotal]=useState<number|null>(null);
   const [hasMore,setHasMore]=useState(false);
-  const [loadingMore,setLoadingMore]=useState(false);
+  const [loadingMore,setLoadingMore]=useState(false);;
   const [budget,setBudget]=useState('');
   // Etapa 2 (bug reportado 2026-09-15): "Dónde" ya no es una lista fija de
   // barrios de Buenos Aires — city/zone se autodetectan de lo que el
@@ -83,16 +83,17 @@ export default function Home(){
       // El usuario elige país/provincia/ciudad/zona desde el pill.
     }catch(e:any){console.warn('filters',e?.message||e)}
   })()},[]);
-  // NUNCA auto-seleccionar la primera zona al elegir ciudad.
-  // Eso dejaba ~20 resultados ("solo 21 en Argentina") filtrando de más.
-  // Si la zona actual no pertenece a la ciudad, se limpia; el usuario elige.
   useEffect(()=>{
+    // Nunca auto-seleccionar zona: solo limpiar si la zona elegida quedó
+    // stale (no pertenece a la ciudad actual). El usuario elige zona a mano;
+    // dejarla vacía = buscar en toda la ciudad (evita "solo 21 resultados"
+    // por quedar pegado en una única zona de fábrica).
     if(!city){
       if(zone) setZone('');
       return;
     }
     const zonesForCity=zonesByCity[city]||[];
-    if(zone && zonesForCity.length > 0 && !zonesForCity.includes(zone)){
+    if(zone&&!zonesForCity.includes(zone)){
       setZone('');
     }
   },[city,zonesByCity]);
